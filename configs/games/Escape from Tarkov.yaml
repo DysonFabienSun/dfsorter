@@ -1,0 +1,15 @@
+name: Escape from Tarkov
+code: EFT
+aliases: [eft, tarkov]
+fields:
+  kill: {}
+  weapon:
+    type: freeform
+    multiple: true
+    prefixes: [wpn]
+  map:
+    type: enum
+    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab, Woods]
+    aliases: {streets: Streets of Tarkov, labs: The Lab}
+display_order: [kill, map, weapon, mainline]
+required_for_export: []

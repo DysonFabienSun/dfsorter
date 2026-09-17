@@ -1,0 +1,20 @@
+name: VALORANT
+code: VAL
+aliases: [val, valorant]
+fields:
+  kill: {}
+  clutch: {}
+  agent:
+    type: enum
+    values: [Astra, Breach, Brimstone, Chamber, Clove, Cypher, Deadlock, Fade, Gekko, Harbor, Iso, Jett, Killjoy, Neon, Omen, Phoenix, Raze, Reyna, Sage, Skye, Sova, Tejo, Viper, Vyse, Waylay, Yoru]
+    aliases: {kj: Killjoy}
+  map:
+    type: enum
+    values: [Abyss, Ascent, Bind, Breeze, Corrode, Fracture, Haven, Icebox, Lotus, Pearl, Split, Sunset]
+  weapon:
+    type: enum
+    multiple: true
+    values: [Classic, Shorty, Frenzy, Ghost, Sheriff, Stinger, Spectre, Bucky, Judge, Bulldog, Guardian, Phantom, Vandal, Marshal, Outlaw, Operator, Ares, Odin, Headhunter, Tour de Force, Bladestorm, Showstopper]
+    aliases: {hh: Headhunter, op: Operator, tdf: Tour de Force}
+display_order: [clutch, kill, agent, map, weapon, mainline]
+required_for_export: [agent, weapon]

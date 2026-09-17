@@ -1,0 +1,11 @@
+name: Battlefield 6
+code: BF6
+aliases: [bf6, battlefield6]
+fields:
+  kill: {}
+  weapon:
+    type: freeform
+    multiple: true
+    prefixes: [wpn]
+display_order: [kill, weapon, mainline]
+required_for_export: []
