@@ -35,6 +35,17 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 - [x] Real whole/range sharing, mixed stereo AAC, silent sources, NVIDIA encoding and x264 fallback, cancellation cleanup, source preservation, and collision handling.
 - [ ] Subjective native-video presentation, responsiveness, and mixed-audio balance acceptance with the user's capture library.
 
+## Stage 5 — Coherent desktop design system
+
+- [x] Authoritative color, typography, spacing and component specification; shared Qt palette/QSS and painter tokens.
+- [x] Segoe UI hierarchy, compact controls, semantic verdict/error states, focused command bar and restrained application-wide styling.
+- [x] Compact bordered two-line clip cards, explicit presentation roles, status dots, unavailable warnings, elision and full-text tooltips.
+- [x] State-aware high-DPI Lucide icons, compact gold rating stars, cyan project indicator and 7 px cyan range timeline.
+- [x] Isolated visual review across six pages, narrow/normal/maximized layouts and dialogs at 100%, 125% and 150% scaling.
+- [ ] User acceptance of density, readability and clip-card grouping with the capture library.
+
+Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/format and `git diff --check` passed. Native Windows Qt fixture startup emitted a `0x8001010d` diagnostic, but the suite completed with exit code 0. Visual fixtures can be regenerated with `uv run --no-sync python tests/visual_design.py` and `QT_SCALE_FACTOR=1`, `1.25`, or `1.5`; outputs are in `cache/verification/design`. These fixtures deliberately include invalid/missing media to exercise unavailable states; the regression suite separately tests real H.264/AV1 playback.
+
 ## Verification and deliberate limits
 
 - [x] Focused catalogue/parser/output regression suite and real Qt interaction/playback tests.

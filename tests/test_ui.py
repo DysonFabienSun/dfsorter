@@ -8,12 +8,14 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import PySide6
 import pytest
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
 from dfsorter.ui import ROOT, Window, style_application
+from dfsorter.widgets import CLIP_ROLE
 
 
 @pytest.fixture(scope="module")
@@ -127,6 +129,51 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     assert window.right.isHidden() and window.command_area.isHidden()
     window.panel("Session")
     assert not window.filters.isHidden()
+
+
+def test_cards_and_verdict_state(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.edit({"mainline": "discard keep 中文 title", "triage": None})
+    window.refresh_library()
+    item = window.library.item(0)
+    assert item.data(Qt.ItemDataRole.UserRole) == ids[0]
+    assert item.data(CLIP_ROLE)["triage"] is None
+    assert "discard keep" in item.data(CLIP_ROLE)["title"]
+    assert window.triage_buttons[None].isChecked()
+    QTest.mouseClick(window.triage_buttons["keep"], Qt.MouseButton.LeftButton)
+    assert window.catalogue.clip(ids[0])["triage"] == "keep"
+    assert window.triage_buttons["keep"].isChecked()
+    assert not window.triage_buttons[None].isChecked()
+    window.edit({"triage": "discard"})
+    assert window.triage_buttons["discard"].isChecked()
+    window.undo()
+    assert window.triage_buttons["keep"].isChecked()
+    window.undo(True)
+    assert window.triage_buttons["discard"].isChecked()
+    window.edit({"rating": 2})
+    application.processEvents()
+    position = QPointF(window.rating.step * 3 + 4, 10)
+    application.sendEvent(
+        window.rating,
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            position,
+            position,
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert window.rating.preview == 4
+    assert window.catalogue.clip(ids[0])["rating"] == 2
+    QTest.mouseClick(
+        window.rating, Qt.MouseButton.LeftButton, pos=QPoint(window.rating.step * 3 + 4, 10)
+    )
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    QTest.mouseClick(window.rating, Qt.MouseButton.RightButton)
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    assert window.catalogue.clip(ids[0])["triage"] == "discard"
 
 
 @pytest.mark.parametrize("codec", ["libx264", "libaom-av1"])

@@ -294,7 +294,7 @@ Each clip may store one optional non-destructive In/Out range.
 
 ### 9.1 Theme
 
-Use a dark theme. A light theme is not required.
+Use the application-wide dark design system in §20. A light theme is not required.
 
 ### 9.2 Menu Bar
 
@@ -689,7 +689,7 @@ Deleting a Project removes only the Project and its memberships. It never delete
 
 The right project pane provides access to these operations and shows which Project, if any, is currently active.
 
-Use a compact icon toolbar and project context menu; Delete remains in the context menu with confirmation. Use vendored Lucide SVGs from `resources/icons`, never runtime assets from node_modules. Clip lists use 48 px elided title/metadata rows, status dots, full-text tooltips, and no horizontal scrollbar. Session creation uses Selected / First N / All with one primary Create Session action; enable the count only for First N.
+Use a compact icon toolbar and project context menu; Delete remains in the context menu with confirmation. Use vendored Lucide SVGs from `resources/icons`, never runtime assets from node_modules. Clip lists use the compact bordered cards in §20.4, status dots, full-text tooltips, and no horizontal scrollbar. Session creation uses Selected / First N / All with one primary Create Session action; enable the count only for First N.
 
 ---
 
@@ -872,3 +872,74 @@ The following are outside the initial scope unless separately specified later:
 - multi-user support;
 - source-file content hashing;
 - automatic deletion of missing source entries.
+
+---
+
+## 20. Design System
+
+### 20.1 Visual Direction and Ownership
+
+Use a Premiere/Resolve-adjacent neutral dark desktop design: dense, restrained, flat, low-saturation surfaces, subtle borders, quiet sidebars, strong alignment, and a large video area. Avoid gradients, oversized controls, pill buttons, neon styling, large rounded cards, and unnecessary panel borders. Compact clip cards are an intentional exception to border-light panels.
+
+Apply this system to all six pages, menus and application-owned dialogs. Native Windows file pickers keep operating-system styling. `src/dfsorter/theme.py` owns named tokens, typography, palette and generated QSS; custom painters, SVGs and rich text consume the same tokens. Do not scatter literal colors across widgets.
+
+### 20.2 Color Tokens
+
+| Role | Tokens and values |
+| --- | --- |
+| Backgrounds | `bg_app #1E2228`, `bg_panel #181C22`, `bg_panel_alt #15191F`, `bg_surface #252B33`, `bg_surface_hover #2D3540`, `bg_surface_pressed #343E4A`, `bg_input #12161C`, `bg_video #000000` |
+| Borders | `border_subtle #2B323C`, `border_default #3A4350`, `border_strong #4B5665`, `separator #303741` |
+| Text | `text_primary #E6E9ED`, `text_secondary #A9B0BA`, `text_muted #77808C`, `text_disabled #59616C`, `text_inverse #111317` |
+| Interaction | `accent #41B8C7`, `accent_hover #56C9D7`, `accent_pressed #3096A4`, `accent_muted #17373D`, `accent_selection #244A53`, `accent_focus #59D2E2` |
+| Success | `success #62C98D`, `success_muted #1C3A2A` |
+| Warning | `warning #D9A441`, `warning_muted #3A2D16` |
+| Danger | `danger #D9686A`, `danger_hover #E47D7F`, `danger_muted #3A2022` |
+| Information | `info #6AA9E9` |
+| Rating | `rating_filled #E8C45A`, `rating_hover #F0D16F`, `rating_empty #69717D` |
+| Component colors | `command_focus #141B21`, `timeline_track #3A424D`, `timeline_progress #617080`, `scrollbar_hover #56616F`, `tooltip #11151A` |
+
+Cyan means interaction, focus, selection, active project, playhead or I/O markers. Green means Keep or success; red means Discard, destructive operations or blocking errors. Warning amber means incomplete requirements or unavailable sources. Gold rating tokens are reserved for stars. Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
+
+### 20.3 Typography, Spacing and Dimensions
+
+Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallback. Do not download or bundle fonts. All dimensions below are logical pixels and scale with Qt's display scaling.
+
+| Tokens | Values |
+| --- | --- |
+| Font sizes xs / sm / md / base / lg / xl / xxl | 11 / 12 / 13 / 14 / 16 / 20 / 26 |
+| Weights regular / medium / semibold / bold | 400 / 500 / 600 / 700 |
+| Spacing 1–6 | 4 / 8 / 12 / 16 / 24 / 32 |
+| Radius none / sm / md / lg | 0 / 3 / 5 / 7 |
+| Control radius | 4 |
+| Control compact / normal / large | 24 / 28 / 32 |
+| Toolbar / navigation height | 28 / 34 |
+| Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
+
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Working titles use 16 px semibold, with mainline bold and primary-colored and structured portions secondary-colored. Section headings use 20 px semibold. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+
+Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px, panels 0–3 px. Font metrics take precedence over dimensions where necessary to avoid clipping.
+
+### 20.4 Left-Pane Clip Cards
+
+Use one shared delegate in all left-pane library, Session and Export views. A clip card has a 48 px body, 4 px external gap, 1 px subtle border, 3 px radius, neutral `bg_panel_alt` fill and 8 px horizontal padding. Grow only as required by font metrics.
+
+Line one is the existing working title or filename fallback at 13 px. Line two is a 6 px triage dot, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
+
+Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cyan left indicator. Keyboard focus uses a subtle cyan border. Preserve multi-selection outside Editing, single selection within Editing, frozen Session ordering and stable-boundary refresh behavior. Presentation data must use explicit roles, not substring matching against visible text.
+
+### 20.5 Component Rules
+
+- Neutral buttons use surface/hover/pressed colors and default borders. Primary actions use accent-muted fill and accent border sparingly. Destructive buttons use danger text/border with danger-muted fill. Disabled controls use panel background, subtle border and disabled text/icon colors; avoid fading whole widgets into illegibility.
+- Navigation tabs have transparent inactive backgrounds and muted text, surface hover, and primary active text with a 2 px cyan underline.
+- Inputs use input background, subtle border, primary text, muted placeholders, default hover border and focus-cyan border. The command bar uses the same idle styling and `command_focus` background when focused. No neon glow or native dotted focus rectangles. Preserve review/input focus semantics.
+- Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Undefined uses pressed-surface/strong-border/secondary-text. Selection reflects stored metadata after edits, navigation and undo/redo.
+- Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Delete stays separate in the context menu with confirmation.
+- Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
+- Rating uses 18 px SVG stars with 4 px spacing, gray empty stars, gold filled stars and lighter gold hover preview. The small `x` clear action and right-click clear remain available. Rating never changes triage.
+- Video is black. Retain the approved **7 px timeline groove** and larger hit area, overriding the original token sheet's 4–6 px suggestion. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In has a distinct shape/label. Transport/audio/time controls remain directly below.
+- Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
+- Tooltips use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata and technical notes recede; technical condition remains hidden when empty.
+
+### 20.6 Acceptance
+
+Verify adjacent populated cards, long and mixed Chinese/English titles, all triage states, missing sources, multi-selection, narrow panes, keyboard focus and rating hover/clear. Inspect all pages and representative dialogs at normal/maximized sizes and 100%, 125% and 150% scaling. Run existing regressions using isolated catalogues and generated media. Track completed implementation/verification separately from subjective user acceptance in `docs/features.md`.

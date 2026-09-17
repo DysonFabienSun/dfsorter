@@ -148,9 +148,7 @@ def title(
             value = " ".join(value)
         if rich:
             escaped = html.escape(str(value))
-            parts.append(
-                f'<b style="color:#f1f5f9">{escaped}</b>' if key == "mainline" else escaped
-            )
+            parts.append(f"<b>{escaped}</b>" if key == "mainline" else escaped)
         else:
             parts.append(str(value))
     fallback = Path(clip["source_path"]).stem

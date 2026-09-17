@@ -1,18 +1,23 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
+from .theme import COLORS, SIZES, role
 from .widgets import icon, tool
 
 
 class VideoSurface(QVideoWidget):
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("background: transparent;")
+        self.setStyleSheet(f"background: {COLORS['bg_video']};")
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor(COLORS["bg_video"]))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
 
     def clear(self):
         self.videoSink().setVideoFrame(QVideoFrame())
@@ -21,6 +26,7 @@ class VideoSurface(QVideoWidget):
 class RangeSlider(QSlider):
     def __init__(self):
         super().__init__(Qt.Orientation.Horizontal)
+        self.setObjectName("timeline")
         self.marker_range = (None, None)
         self.pending_in = None
         self.setMinimumHeight(30)
@@ -55,11 +61,13 @@ class RangeSlider(QSlider):
         if start is not None and end is not None:
             left = 8 + int((self.width() - 16) * start / self.maximum())
             width = int((self.width() - 16) * (end - start) / self.maximum())
-            painter.fillRect(left, self.height() // 2 - 3, width, 7, QColor(78, 190, 200, 95))
+            tint = QColor(COLORS["accent"])
+            tint.setAlphaF(0.18)
+            painter.fillRect(left, self.height() // 2 - 3, width, SIZES["timeline"], tint)
         for value, color, label in [
-            (start, "#67d7c0", "I"),
-            (end, "#e8bb72", "O"),
-            (self.pending_in, "#d6dce4", "·I"),
+            (start, COLORS["accent_focus"], "I"),
+            (end, COLORS["accent_focus"], "O"),
+            (self.pending_in, COLORS["accent"], "·I"),
         ]:
             if value is None:
                 continue
@@ -79,8 +87,13 @@ class Player(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         layout = QVBoxLayout(self)
         self.video = VideoSurface()
+        video_container = QWidget()
+        video_container.setStyleSheet(f"background: {COLORS['bg_video']};")
+        video_layout = QVBoxLayout(video_container)
+        video_layout.setContentsMargins(0, 0, 0, 0)
+        video_layout.addWidget(self.video)
         self.video.setMinimumSize(260, 150)
-        layout.addWidget(self.video, 1)
+        layout.addWidget(video_container, 1)
         self.media = QMediaPlayer(self)
         self.audio = QAudioOutput(self)
         self.audio.setVolume(0.6)
@@ -122,6 +135,7 @@ class Player(QWidget):
         controls.addStretch()
         layout.addLayout(controls)
         self.status = QLabel()
+        role(self.status, "warning")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.media.durationChanged.connect(self.seek.setMaximum)

@@ -2,31 +2,52 @@ from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QToolButton, QWidget
 
+from .theme import COLORS, SIZES, font
+
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
+CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 @lru_cache(maxsize=128)
-def icon(name, color="#cbd5df"):
-    data = (ICONS / f"{name}.svg").read_bytes().replace(b"currentColor", color.encode())
-    if name == "star" and color == "#efd17b":
-        data = data.replace(b'fill="none"', b'fill="#efd17b"')
-    renderer = QSvgRenderer(data)
-    pixmap = QPixmap(48, 48)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
-    return QIcon(pixmap)
+def icon(name, color=None, fill=False, size=24):
+    result = QIcon()
+    source = (ICONS / f"{name}.svg").read_bytes()
+    for mode, state, tint in [
+        (QIcon.Mode.Normal, QIcon.State.Off, color or COLORS["text_secondary"]),
+        (QIcon.Mode.Active, QIcon.State.Off, color or COLORS["text_primary"]),
+        (QIcon.Mode.Normal, QIcon.State.On, color or COLORS["accent"]),
+        (QIcon.Mode.Active, QIcon.State.On, color or COLORS["accent_hover"]),
+        (QIcon.Mode.Disabled, QIcon.State.Off, COLORS["text_disabled"]),
+        (QIcon.Mode.Disabled, QIcon.State.On, COLORS["text_disabled"]),
+    ]:
+        data = source.replace(b"currentColor", tint.encode())
+        if fill:
+            data = data.replace(b'fill="none"', f'fill="{tint}"'.encode())
+        for scale in (1, 2, 3):
+            pixmap = QPixmap(size * scale, size * scale)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            QSvgRenderer(data).render(painter)
+            painter.end()
+            pixmap.setDevicePixelRatio(scale)
+            result.addPixmap(pixmap, mode, state)
+    return result
 
 
 def tool(name, label, callback):
     control = QToolButton()
     control.setIcon(icon(name))
-    control.setIconSize(QSize(20, 20))
+    size = (
+        SIZES["icon_lg"]
+        if name in {"play", "pause", "skip-back", "skip-forward", "volume-2"}
+        else SIZES["icon_md"]
+    )
+    control.setIconSize(QSize(size, size))
+    control.setFixedSize(SIZES["toolbar"], SIZES["toolbar"])
     control.setToolTip(label)
     control.setAccessibleName(label)
     control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -36,37 +57,84 @@ def tool(name, label, callback):
 
 class ClipDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
-        return QSize(100, 48)
+        height = (
+            QFontMetrics(font("md", base=option.font)).height()
+            + QFontMetrics(font("xs", base=option.font)).height()
+            + 14
+        )
+        return QSize(100, max(SIZES["card"], height) + SIZES["card_gap"])
 
     def paint(self, painter, option, index):
         painter.save()
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(option.rect, QColor("#254557"))
-        title, _, detail = str(index.data()).partition("\n")
-        area = option.rect.adjusted(20, 3, -10, -3)
-        painter.setPen(QColor("#e2e7ed"))
-        painter.drawText(
-            area,
-            Qt.AlignmentFlag.AlignTop,
-            option.fontMetrics.elidedText(title, Qt.TextElideMode.ElideRight, area.width()),
-        )
-        painter.setPen(QColor("#94a3b2"))
-        painter.drawText(
-            area,
-            Qt.AlignmentFlag.AlignBottom,
-            option.fontMetrics.elidedText(detail, Qt.TextElideMode.ElideRight, area.width()),
-        )
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        data = index.data(CLIP_ROLE) or {}
+        card = option.rect.adjusted(1, 1, -1, -SIZES["card_gap"] - 1)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
         painter.setBrush(
             QColor(
-                "#67c7ae"
-                if "keep" in detail.lower()
-                else "#db8791"
-                if "discard" in detail.lower()
-                else "#687887"
+                COLORS[
+                    "accent_selection"
+                    if selected
+                    else "bg_surface_hover"
+                    if hovered
+                    else "bg_panel_alt"
+                ]
             )
         )
+        painter.setPen(QColor(COLORS["accent_focus" if focused else "border_subtle"]))
+        painter.drawRoundedRect(card, 3, 3)
+        if selected:
+            painter.fillRect(
+                card.left() + 1, card.top() + 4, 2, card.height() - 8, QColor(COLORS["accent"])
+            )
+        title_font = font("md", base=option.font)
+        detail_font = font("xs", base=option.font)
+        title_metrics = QFontMetrics(title_font)
+        detail_metrics = QFontMetrics(detail_font)
+        top = (
+            card.top() + (card.height() - title_metrics.height() - detail_metrics.height() - 2) // 2
+        )
+        area = QRect(card.left() + 8, top, max(0, card.width() - 16), title_metrics.height())
+        painter.setFont(title_font)
+        painter.setPen(QColor(COLORS["text_primary"]))
+        painter.drawText(
+            area,
+            Qt.AlignmentFlag.AlignVCenter,
+            title_metrics.elidedText(
+                data.get("title", str(index.data())), Qt.TextElideMode.ElideRight, area.width()
+            ),
+        )
+        detail = QRect(
+            area.left() + 12, area.bottom() + 3, max(0, area.width() - 12), detail_metrics.height()
+        )
+        painter.setFont(detail_font)
+        verdict = data.get("triage")
+        warning = " · Unavailable" if data.get("unavailable") else ""
+        status = f" · {(verdict or 'undefined').capitalize()}"
+        reserved = detail_metrics.horizontalAdvance(status + warning)
+        game = detail_metrics.elidedText(
+            data.get("game") or "Unassigned",
+            Qt.TextElideMode.ElideRight,
+            max(0, detail.width() - reserved),
+        )
+        text = game + status
+        painter.setClipRect(card)
+        painter.setPen(QColor(COLORS["text_secondary"]))
+        painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)
+        if warning:
+            painter.setPen(QColor(COLORS["warning"]))
+            painter.drawText(
+                detail.adjusted(detail_metrics.horizontalAdvance(text), 0, 0, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                warning,
+            )
+        painter.setBrush(
+            QColor(COLORS[{"keep": "success", "discard": "danger"}.get(verdict, "text_muted")])
+        )
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(option.rect.left() + 7, option.rect.center().y() - 3, 6, 6)
+        painter.drawEllipse(area.left(), detail.center().y() - 3, 6, 6)
         painter.restore()
 
 
@@ -77,7 +145,8 @@ class Rating(QWidget):
         super().__init__()
         self.value = None
         self.preview = None
-        self.setFixedSize(150, 30)
+        self.step = SIZES["rating"] + SIZES["rating_gap"]
+        self.setFixedSize(self.step * 5, SIZES["normal"])
         self.setMouseTracking(True)
         self.setAccessibleName("Rating, one to five stars; right-click to clear")
         self.setToolTip("Click a star to rate · Right-click to clear · R then 1–5")
@@ -86,12 +155,16 @@ class Rating(QWidget):
         painter = QPainter(self)
         value = self.preview if self.preview is not None else (self.value or 0)
         for position in range(5):
-            icon("star", "#efd17b" if position < value else "#566575").paint(
-                painter, QRect(position * 30 + 3, 3, 24, 24)
-            )
+            color = "rating_hover" if self.preview is not None else "rating_filled"
+            icon(
+                "star",
+                COLORS[color if position < value else "rating_empty"],
+                fill=position < value,
+                size=SIZES["rating"],
+            ).paint(painter, QRect(position * self.step + 2, 5, SIZES["rating"], SIZES["rating"]))
 
     def mouseMoveEvent(self, event):
-        self.preview = min(5, max(1, int(event.position().x()) // 30 + 1))
+        self.preview = min(5, max(1, int(event.position().x()) // self.step + 1))
         self.update()
 
     def leaveEvent(self, event):
@@ -102,5 +175,5 @@ class Rating(QWidget):
         self.changed.emit(
             None
             if event.button() == Qt.MouseButton.RightButton
-            else min(5, max(1, int(event.position().x()) // 30 + 1))
+            else min(5, max(1, int(event.position().x()) // self.step + 1))
         )

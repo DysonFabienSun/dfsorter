@@ -44,7 +44,8 @@ from .media import discover
 from .output import export_project, share_clip, validate
 from .parsing import parse_command, query_clips, requests_discarded
 from .playback import Player
-from .widgets import ClipDelegate, Rating, icon, tool
+from .theme import COLORS, SIZES, apply_theme, role
+from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tool
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -71,12 +72,18 @@ def button(text, callback):
     result = QPushButton(text)
     result.clicked.connect(callback)
     result.setMaximumWidth(260)
+    if text in {"Create Session", "Export project"}:
+        role(result, "primary")
+    elif text in {"Purge folder catalogue entries", "Delete project"}:
+        role(result, "danger")
     return result
 
 
 def page():
     widget = QWidget()
     layout = QVBoxLayout(widget)
+    layout.setContentsMargins(*([SIZES["panel_padding"]] * 4))
+    layout.setSpacing(8)
     return widget, layout
 
 
@@ -129,8 +136,10 @@ class Window(QMainWindow):
         navigation.addWidget(self.projects_toggle)
         outer.addLayout(navigation)
         self.splitter = QSplitter()
+        self.splitter.setHandleWidth(1)
         outer.addWidget(self.splitter, 1)
         self.left, left_layout = page()
+        role(self.left, "panel")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search or game:VAL agent:Jett kill:>=4")
         self.search.returnPressed.connect(self.refresh_library)
@@ -151,9 +160,12 @@ class Window(QMainWindow):
             control.currentIndexChanged.connect(self.refresh_library)
         left_layout.addWidget(self.filters)
         self.library_error = QLabel()
+        role(self.library_error, "error")
         self.library_error.setWordWrap(True)
         left_layout.addWidget(self.library_error)
         self.library = QListWidget()
+        self.library.setMouseTracking(True)
+        self.library.setUniformItemSizes(True)
         self.library.setItemDelegate(ClipDelegate(self.library))
         self.library.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.library.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
@@ -165,7 +177,9 @@ class Window(QMainWindow):
         self.pages = {}
         self.build_pages()
         self.right, right_layout = page()
+        role(self.right, "panel")
         self.active_label = QLabel()
+        role(self.active_label, "secondary")
         self.active_label.setWordWrap(True)
         right_layout.addWidget(self.active_label)
         self.projects = QListWidget()
@@ -189,8 +203,8 @@ class Window(QMainWindow):
                 "Rename": "pencil",
                 "Activate": "check",
                 "Deactivate": "power",
-                "Add selected clips": "plus",
-                "Remove selected clips": "minus",
+                "Add selected clips": "folder-plus",
+                "Remove selected clips": "folder-x",
             }
             if text in names:
                 project_tools.addWidget(tool(names[text], text, callback))
@@ -203,6 +217,7 @@ class Window(QMainWindow):
         self.splitter.splitterMoved.connect(self.panes_resized)
         self.command_area, command_layout = page()
         self.command_history = QLabel()
+        role(self.command_history, "muted")
         self.command_history.setWordWrap(True)
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
@@ -212,10 +227,12 @@ class Window(QMainWindow):
         self.shortcut_hint.setWordWrap(True)
         command_layout.addWidget(self.shortcut_hint)
         self.command = QLineEdit()
+        self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("1v4 3k jett vandal R4 -- Mainline -- Description")
         command_layout.addWidget(self.command)
         self.command_error = QLabel()
+        role(self.command_error, "error")
         self.command_error.setWordWrap(True)
         command_layout.addWidget(self.command_error)
         outer.addWidget(self.command_area)
@@ -233,16 +250,19 @@ class Window(QMainWindow):
             self.pages[name] = (widget, layout)
             self.center.addWidget(widget)
         home = self.pages["Home"][1]
-        home.addWidget(
-            QLabel("<h1>DFSorter</h1><p>Review clips. Keep your originals untouched.</p>")
-        )
+        home_title = QLabel("DFSorter")
+        role(home_title, "heading")
+        home.addWidget(home_title)
+        home.addWidget(QLabel("Review clips. Keep your originals untouched."))
         for name in ["Import", "Session", "Editing"]:
             home.addWidget(
                 button(f"Open {name}", lambda checked=False, name=name: self.panel(name))
             )
         home.addStretch()
         importing = self.pages["Import"][1]
-        importing.addWidget(QLabel("<h2>Capture folders</h2>"))
+        folder_heading = QLabel("Capture folders")
+        role(folder_heading, "heading")
+        importing.addWidget(folder_heading)
         self.folders = QListWidget()
         importing.addWidget(self.folders)
         for text, callback in [
@@ -308,17 +328,21 @@ class Window(QMainWindow):
         self.working_title.setObjectName("workingTitle")
         editing.addWidget(self.working_title)
         self.filename = QLabel()
-        self.filename.setStyleSheet("color: #9aa4af;")
+        role(self.filename, "secondary")
         self.filename.setWordWrap(True)
         editing.addWidget(self.filename)
         self.clip_status = QLabel()
+        role(self.clip_status, "secondary")
         self.clip_status.setWordWrap(True)
         editing.addWidget(self.clip_status)
         triage = QHBoxLayout()
+        self.triage_buttons = {}
         for text, state in [("Keep", "keep"), ("Discard", "discard"), ("Undefined", None)]:
-            triage.addWidget(
-                button(text, lambda checked=False, state=state: self.edit({"triage": state}))
-            )
+            control = button(text, lambda checked=False, state=state: self.edit({"triage": state}))
+            control.setCheckable(True)
+            role(control, state or "undefined")
+            self.triage_buttons[state] = control
+            triage.addWidget(control)
         triage.addWidget(button("Change game", self.change_game))
         triage.addStretch()
         editing.addLayout(triage)
@@ -360,7 +384,8 @@ class Window(QMainWindow):
                 "Clear range": "brackets",
                 "Share": "share-2",
             }
-            controls.addWidget(tool(names[text], text, callback))
+            label = {"Set In": "Set In · I", "Set Out": "Set Out · O"}.get(text, text)
+            controls.addWidget(tool(names[text], label, callback))
         controls.addStretch()
         editing.addLayout(controls)
         exporting = self.pages["Export"][1]
@@ -479,8 +504,11 @@ class Window(QMainWindow):
         project_selection = self.selected_id(self.projects)
         self.projects.clear()
         for project in projects:
-            item = QListWidgetItem(
-                ("● " if project["project_id"] == active else "") + project["name"]
+            item = QListWidgetItem(project["name"])
+            if project["project_id"] == active:
+                item.setIcon(icon("check", COLORS["accent"]))
+            item.setToolTip(
+                project["name"] + (" · Active project" if project["project_id"] == active else "")
             )
             item.setData(Qt.ItemDataRole.UserRole, project["project_id"])
             self.projects.addItem(item)
@@ -630,6 +658,15 @@ class Window(QMainWindow):
                 )
                 item.setToolTip(item.text() + "\n" + clip["source_path"])
                 item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
+                item.setData(
+                    CLIP_ROLE,
+                    {
+                        "title": title(clip, self.registry),
+                        "game": clip["game"],
+                        "triage": clip["triage"],
+                        "unavailable": bool(available),
+                    },
+                )
                 self.library.addItem(item)
                 if clip["clip_id"] == current:
                     self.library.setCurrentItem(item)
@@ -668,7 +705,8 @@ class Window(QMainWindow):
             return
         clip = self.catalogue.clip(self.current_id)
         rendered = title(clip, self.registry, rich=True)
-        rendered = f'<span style="color:#9caebb">{rendered}</span>'
+        rendered = rendered.replace("<b>", f'<b style="color:{COLORS["text_primary"]}">')
+        rendered = f'<span style="color:{COLORS["text_secondary"]}">{rendered}</span>'
         self.working_title.setText(rendered)
         self.filename.setText(Path(clip["source_path"]).name)
         member_ids = self.catalogue.memberships(self.current_id)
@@ -681,11 +719,14 @@ class Window(QMainWindow):
             f"{clip['triage'] or 'Undefined'} | {clip['game'] or 'No game'} | Projects: {', '.join(names) or 'None'}"
         )
         self.rating.value = clip["rating"]
+        self.rating.preview = None
         self.rating.update()
+        for state, control in self.triage_buttons.items():
+            control.setChecked(clip["triage"] == state)
         game = self.registry.game(clip["game"])
         self.structured.setText(
             " | ".join(
-                f"{key}: {value}"
+                f"{key}: {', '.join(map(str, value)) if isinstance(value, list) else value}"
                 for key, value in clip["metadata"].items()
                 if game and key in game.fields
             )
@@ -1248,6 +1289,7 @@ class Window(QMainWindow):
             return
         clips = self.export_clips()
         errors = validate(clips, self.registry)
+        role(self.export_errors, "error" if errors else "success")
         self.export_errors.setPlainText(
             "\n".join(message for clip_id, message in errors)
             or f"Ready: {sum(clip['triage'] == 'keep' for clip in clips)} kept clips"
@@ -1445,25 +1487,7 @@ class Window(QMainWindow):
 
 
 def style_application(application):
-    application.setStyle("Fusion")
-    application.setStyleSheet("""
-        QWidget { background: #20242a; color: #e2e7ed; font-size: 13px; }
-        QLineEdit, QPlainTextEdit, QListWidget, QComboBox { background: #15191f; padding: 6px; }
-        QPushButton { background: #323a45; border: 1px solid #495361; padding: 7px; border-radius: 3px; }
-        QPushButton:hover { background: #435568; }
-        QPushButton:checked { background: #294e60; border-color: #63cdd4; }
-        QPushButton:disabled { color: #75808d; }
-        QListWidget::item:selected { background: #35586c; }
-        QSplitter::handle { background: #424b55; }
-        QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; color: #90a0af; padding: 10px 18px; }
-        QPushButton#navigation:checked { color: #f0f5f8; border-bottom: 2px solid #63cdd4; }
-        QToolButton { background: transparent; border: none; padding: 6px; border-radius: 4px; }
-        QToolButton:hover, QToolButton:checked { background: #354655; }
-        QLabel#muted { color: #93a3b3; }
-        QLabel#workingTitle { font-size: 19px; }
-        QSlider::groove:horizontal { height: 7px; background: #3b4652; border-radius: 3px; }
-        QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: #d4e5ee; border-radius: 5px; }
-    """)
+    apply_theme(application)
 
 
 def main():
