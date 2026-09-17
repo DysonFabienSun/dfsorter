@@ -71,9 +71,9 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
     parts = segments(text)
     patch, metadata = {}, {}
     if len(parts) > 1:
-        patch["mainline"] = parts[1]
+        patch["mainline"] = parts[1].strip()
     if len(parts) > 2:
-        patch["description"] = parts[2]
+        patch["description"] = parts[2].strip()
     game = registry.game(game_name)
     tokens = tokenize(parts[0])
 
@@ -104,7 +104,7 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
 
     index = 0
     while index < len(tokens):
-        token = tokens[index].value
+        token = tokens[index].value.strip()
         folded = token.casefold()
         if re.fullmatch(r"r\d+", folded):
             rating = int(folded[1:])
@@ -133,10 +133,11 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
                     index += 1
                     value += gap + tokens[index].value
             else:
-                resolved = game.values.get(value.casefold())
+                resolved = game.values.get(value.strip().casefold())
                 if not resolved or resolved[0] != key:
                     raise ValueError(f"Unknown {key}: {value}")
                 value = resolved[1]
+            value = value.strip()
             if not value:
                 raise ValueError(f"{key} needs a value")
             assign(key, value)

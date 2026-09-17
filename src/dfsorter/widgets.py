@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPixmap, QTextDocument, QTextLayout
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QToolButton, QWidget
 
@@ -99,13 +99,35 @@ class ClipDelegate(QStyledItemDelegate):
         area = QRect(card.left() + 8, top, max(0, card.width() - 16), title_metrics.height())
         painter.setFont(title_font)
         painter.setPen(QColor(COLORS["text_primary"]))
-        painter.drawText(
-            area,
-            Qt.AlignmentFlag.AlignVCenter,
-            title_metrics.elidedText(
-                data.get("title", str(index.data())), Qt.TextElideMode.ElideRight, area.width()
-            ),
+        document = QTextDocument()
+        document.setDefaultFont(title_font)
+        document.setHtml(
+            '<span style="white-space:pre-wrap">' + data.get("rich_title", "") + "</span>"
         )
+        formats = []
+        fragment_iterator = document.begin().begin()
+        while not fragment_iterator.atEnd():
+            fragment = fragment_iterator.fragment()
+            span = QTextLayout.FormatRange()
+            span.start = fragment.position()
+            span.length = fragment.length()
+            span.format = fragment.charFormat()
+            formats.append(span)
+            fragment_iterator += 1
+        text = data.get("title", str(index.data()))
+        elided = QFontMetrics(font("md", "bold", base=option.font)).elidedText(
+            text, Qt.TextElideMode.ElideRight, area.width()
+        )
+        text_layout = QTextLayout(elided, title_font)
+        text_layout.setFormats(formats)
+        text_layout.beginLayout()
+        line = text_layout.createLine()
+        line.setLineWidth(area.width())
+        text_layout.endLayout()
+        painter.save()
+        painter.setClipRect(area)
+        text_layout.draw(painter, QPointF(area.left(), area.top()))
+        painter.restore()
         detail = QRect(
             area.left() + 12, area.bottom() + 3, max(0, area.width() - 12), detail_metrics.height()
         )

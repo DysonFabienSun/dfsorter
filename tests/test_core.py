@@ -19,8 +19,8 @@ def test_canonical_patch_and_text(registry):
     assert patch == {
         "metadata": {"clutch": 4, "kill": 3, "agent": "Killjoy", "weapon": ["Sheriff", "Vandal"]},
         "rating": 4,
-        "mainline": ' My  "Best" play! ',
-        "description": "  Notes  ",
+        "mainline": 'My  "Best" play!',
+        "description": "Notes",
     }
     assert parse_command("phantom", "VALORANT", registry) == {"metadata": {"weapon": ["Phantom"]}}
 
@@ -43,6 +43,17 @@ def test_invalid_command(text, registry):
 
 
 def test_freeform_and_quoted_boundaries(registry):
+    trimmed = parse_command(
+        'wpn:"  M4A1   SOPMOD  " --  Nice  shot  --  Notes  ', "Battlefield 6", registry
+    )
+    assert trimmed == {
+        "metadata": {"weapon": ["M4A1   SOPMOD"]},
+        "mainline": "Nice  shot",
+        "description": "Notes",
+    }
+    assert parse_command('agent:"  Jett  "', "VALORANT", registry)["metadata"] == {"agent": "Jett"}
+    with pytest.raises(ValueError):
+        parse_command('wpn:"   "', "Battlefield 6", registry)
     patch = parse_command('wpn:M4A1   SOPMOD wpn:"R4" 3K -- title', "Battlefield 6", registry)
     assert patch["metadata"] == {"weapon": ["M4A1   SOPMOD", "R4"], "kill": 3}
     assert parse_command('"Tour de Force"', "VALORANT", registry)["metadata"]["weapon"] == [

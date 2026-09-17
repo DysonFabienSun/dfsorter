@@ -26,7 +26,7 @@ A **Session** is a temporary-but-persisted, fixed review queue. It freezes the m
 - Canonical video-game references stored and displayed by DFSorter use their official names and capitalization where practical. Examples include `VALORANT`, `Battlefield 6`, `Escape from Tarkov`, `Jett`, `Headhunter`, `Tour de Force`, and `Bladestorm`.
 - Matching, parsing, aliases, filtering, and text sorting are case-insensitive.
 - Case-insensitive matching must not destroy the canonical capitalization of stored structured metadata.
-- Free-form human text such as `mainline` and `description` preserves the user's original capitalization, punctuation, and spacing.
+- Parsed field values have leading and trailing whitespace removed. Free-form human text such as `mainline` and `description` preserves the user's original capitalization, punctuation, and internal spacing.
 - Game-specific YAML files define the canonical game name and a three-letter uppercase display code such as `VAL`, `BF6`, or `EFT`.
 
 ---
@@ -558,7 +558,7 @@ Example:
 
 Structured metadata parsing is case-insensitive.
 
-The `mainline` and `description` segments preserve the user's capitalization, punctuation, quotes, and spacing.
+The `mainline` and `description` segments preserve the user's capitalization, punctuation, quotes, and internal spacing; leading and trailing whitespace is removed. The same edge trimming applies to identified structured field values, including quoted values. Existing catalogue text is not retroactively rewritten.
 
 The first `--` begins `mainline`.
 

@@ -728,15 +728,26 @@ class Window(QMainWindow):
             self.library.clear()
             for clip in clips:
                 available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
+                card_title = title(
+                    {**clip, "mainline": (clip.get("mainline") or "").strip()},
+                    self.registry,
+                    mainline_separator=" | ",
+                )
                 item = QListWidgetItem(
-                    f"{title(clip, self.registry)}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
+                    f"{card_title}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
                 )
                 item.setToolTip(item.text() + "\n" + clip["source_path"])
                 item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
                 item.setData(
                     CLIP_ROLE,
                     {
-                        "title": title(clip, self.registry),
+                        "title": card_title,
+                        "rich_title": title(
+                            {**clip, "mainline": (clip.get("mainline") or "").strip()},
+                            self.registry,
+                            rich=True,
+                            mainline_separator=" | ",
+                        ),
                         "game": clip["game"],
                         "triage": clip["triage"],
                         "unavailable": bool(available),

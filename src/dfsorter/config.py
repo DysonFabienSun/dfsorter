@@ -128,12 +128,14 @@ def title(
     selected: list[str] | None = None,
     prefix: bool = True,
     rich: bool = False,
+    mainline_separator: str = " ",
 ) -> str:
     import html
 
     game = registry.game(clip.get("game"))
     order = game.display_order if game else ["mainline"]
     parts = []
+    previous_key = None
     for key in order:
         if selected is not None and key not in selected:
             continue
@@ -146,11 +148,14 @@ def title(
             value = f"1v{value}"
         elif isinstance(value, list):
             value = " ".join(value)
+        if parts:
+            parts.append(mainline_separator if "mainline" in (previous_key, key) else " ")
         if rich:
             escaped = html.escape(str(value))
             parts.append(f"<b>{escaped}</b>" if key == "mainline" else escaped)
         else:
             parts.append(str(value))
+        previous_key = key
     fallback = Path(clip["source_path"]).stem
-    result = " ".join(parts) or (html.escape(fallback) if rich else fallback)
+    result = "".join(parts) or (html.escape(fallback) if rich else fallback)
     return f"{game.code}_{result}" if game and prefix else result
