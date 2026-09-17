@@ -78,6 +78,8 @@ class RangeSlider(QSlider):
 
 
 class Player(QWidget):
+    loading_started = Signal()
+    loading_finished = Signal()
     position_changed = Signal(int)
     previous = Signal()
     next = Signal()
@@ -145,10 +147,14 @@ class Player(QWidget):
                 icon("pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play")
             )
         )
-        self.media.errorOccurred.connect(lambda error, message: self.status.setText(message))
+        self.media.errorOccurred.connect(self.load_error)
         self.video.videoSink().videoFrameChanged.connect(self.first_frame)
         self.awaiting_frame = False
         self.fast_state = None
+        self.load_timeout = QTimer(self)
+        self.load_timeout.setSingleShot(True)
+        self.load_timeout.setInterval(15000)
+        self.load_timeout.timeout.connect(self.load_timed_out)
 
     def begin_scrub(self):
         self.awaiting_frame = False
@@ -172,6 +178,9 @@ class Player(QWidget):
             self.media.play()
 
     def load(self, clip):
+        self.load_timeout.stop()
+        self.awaiting_frame = False
+        self.loading_started.emit()
         self.fast(False)
         self.seek_timer.stop()
         self.pending_seek = None
@@ -185,8 +194,10 @@ class Player(QWidget):
         if not clip or not Path(clip["source_path"]).is_file():
             self.media.setSource(QUrl())
             self.status.setText("Source unavailable" if clip else "No clip selected")
+            self.loading_finished.emit()
             return
         self.awaiting_frame = True
+        self.load_timeout.start()
         self.media.setSource(QUrl.fromLocalFile(clip["source_path"]))
         self.media.play()
 
@@ -195,6 +206,22 @@ class Player(QWidget):
             self.awaiting_frame = False
             self.media.pause()
             self.media.setPosition(0)
+            self.load_timeout.stop()
+            self.loading_finished.emit()
+
+    def load_error(self, error, message):
+        self.status.setText(message)
+        if self.awaiting_frame:
+            self.awaiting_frame = False
+            self.load_timeout.stop()
+            self.loading_finished.emit()
+
+    def load_timed_out(self):
+        if self.awaiting_frame:
+            self.awaiting_frame = False
+            self.media.stop()
+            self.status.setText("Video preview timed out. Press Play to retry.")
+            self.loading_finished.emit()
 
     def position(self, milliseconds):
         if not self.seek.isSliderDown():

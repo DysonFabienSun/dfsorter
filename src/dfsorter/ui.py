@@ -248,6 +248,28 @@ class Window(QMainWindow):
         self.command_error.setWordWrap(True)
         command_layout.addWidget(self.command_error)
         outer.addWidget(self.command_area)
+        self.transition_generation = 0
+        self.transition_pending = False
+        self.transition_cover = QWidget(central)
+        self.transition_cover.setObjectName("pageLoading")
+        self.transition_cover.setStyleSheet(
+            f"QWidget#pageLoading {{ background: {COLORS['bg_app']}; }}"
+        )
+        cover_layout = QVBoxLayout(self.transition_cover)
+        cover_layout.addStretch()
+        self.loading_label = QLabel("Loading…")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        role(self.loading_label, "secondary")
+        cover_layout.addWidget(self.loading_label)
+        cover_layout.addStretch()
+        self.transition_cover.hide()
+        self.loading_indicator_timer = QTimer(self)
+        self.loading_indicator_timer.setSingleShot(True)
+        self.loading_indicator_timer.setInterval(1000)
+        self.loading_indicator_timer.timeout.connect(self.loading_label.show)
+        for player in (self.player, self.export_player):
+            player.loading_started.connect(self.begin_page_transition)
+            player.loading_finished.connect(self.queue_page_reveal)
         self.build_menus()
         QApplication.instance().installEventFilter(self)
         self.refresh_references()
@@ -478,10 +500,48 @@ class Window(QMainWindow):
         item = listing.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
+    def begin_page_transition(self):
+        self.transition_generation += 1
+        if not self.transition_pending:
+            self.transition_pending = True
+            self.loading_label.hide()
+            self.loading_indicator_timer.start()
+        for player in (self.player, self.export_player):
+            policy = player.video.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            player.video.setSizePolicy(policy)
+            player.video.hide()
+        self.transition_cover.setGeometry(self.centralWidget().rect())
+        self.transition_cover.show()
+        self.transition_cover.raise_()
+
+    def queue_page_reveal(self):
+        generation = self.transition_generation
+        QTimer.singleShot(0, lambda: self.reveal_page(generation))
+
+    def reveal_page(self, generation):
+        if generation != self.transition_generation or not self.transition_pending:
+            return
+        if self.current_panel in {"Editing", "Export"} and self.active_player().awaiting_frame:
+            return
+        self.loading_indicator_timer.stop()
+        self.transition_pending = False
+        self.transition_cover.hide()
+        self.centralWidget().layout().activate()
+        self.centralWidget().repaint()
+        for player in (self.player, self.export_player):
+            player.video.show()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "transition_cover"):
+            self.transition_cover.setGeometry(self.centralWidget().rect())
+
     def panel(self, name):
         if name == "Editing" and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
+        self.begin_page_transition()
         self.save_description()
         self.cancel_space()
         self.player.media.pause()
@@ -510,6 +570,7 @@ class Window(QMainWindow):
             self.review_mode()
         elif name == "Export":
             self.export_selection()
+        self.queue_page_reveal()
 
     def refresh_references(self):
         self.refreshing = True
@@ -710,8 +771,8 @@ class Window(QMainWindow):
         self.pending_in = None
         self.command.setText(self.drafts.get(clip_id, ""))
         self.command_error.clear()
-        self.player.load(self.catalogue.clip(clip_id))
         self.render_clip()
+        self.player.load(self.catalogue.clip(clip_id))
         self.review_mode()
 
     def render_clip(self):

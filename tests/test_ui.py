@@ -396,6 +396,36 @@ def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch):
     assert not player.seek_timer.isActive()
 
 
+def test_page_reveal_waits_and_delays_indicator(window, application):
+    application.processEvents()
+    window.current_panel = "Editing"
+    window.player.awaiting_frame = True
+    window.begin_page_transition()
+    generation = window.transition_generation
+    window.queue_page_reveal()
+    application.processEvents()
+    assert window.transition_pending
+    assert window.player.video.isHidden()
+    assert window.loading_label.isHidden()
+    QTest.qWait(1100)
+    assert window.loading_label.isVisible()
+    window.begin_page_transition()
+    window.player.awaiting_frame = False
+    window.reveal_page(generation)
+    assert window.transition_pending
+    window.queue_page_reveal()
+    application.processEvents()
+    assert not window.transition_pending
+    assert window.transition_cover.isHidden()
+    assert not window.player.video.isHidden()
+    window.player.awaiting_frame = True
+    window.begin_page_transition()
+    window.player.load_error(None, "Invalid media")
+    application.processEvents()
+    assert not window.transition_pending
+    assert window.player.status.text() == "Invalid media"
+
+
 def test_background_completion(window, application):
     results = []
     window.background(lambda cancelled, progress: 42, results.append)

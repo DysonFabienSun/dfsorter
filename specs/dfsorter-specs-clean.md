@@ -296,6 +296,8 @@ Each clip may store one optional non-destructive In/Out range.
 
 Use the application-wide dark design system in §20. A light theme is not required.
 
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Reveal the prepared page and video together. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the page with an error instead of leaving it covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+
 ### 9.2 Menu Bar
 
 The Windows-style menu bar contains:
