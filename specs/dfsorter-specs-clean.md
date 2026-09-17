@@ -286,6 +286,7 @@ Each clip may store one optional non-destructive In/Out range.
 - `I` sets the In point when text input does not own the key.
 - `O` sets the Out point when text input does not own the key.
 - The range is stored as source-relative time and shown on the player's progress display.
+- Opening a clip in Editing or Export places the paused playhead at its saved In point when `0 <= In < Out <= duration`; otherwise it starts at zero. Apply the position as soon as media loading permits seeking.
 - Invalid or incomplete ranges must not silently replace the last valid stored range.
 - In/Out points never trim or rewrite the source video.
 - Project Export copies whole videos without exporting In/Out metadata.

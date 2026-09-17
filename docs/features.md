@@ -17,6 +17,7 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 - [x] Six panels, dark theme, prescribed pane visibility, adjustable nonpersisted widths, and window reset.
 - [x] Fixed session queues, saved position, triage counts, command history, and keyboard-led review.
 - [x] H.264/AV1 playback, paused frame presentation, seek/audio controls, temporary 3× playback, and valid stored ranges.
+- [x] Editing and Export open paused at the saved In point when the complete range fits the video; absent, incomplete, reversed and out-of-duration ranges start at zero. Verified with H.264/AV1 playback in both players; 19 UI tests passed.
 
 ## Stage 3 — Share and export
 

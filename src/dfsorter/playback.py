@@ -205,7 +205,13 @@ class Player(QWidget):
         if self.awaiting_frame and frame.isValid():
             self.awaiting_frame = False
             self.media.pause()
-            self.media.setPosition(0)
+            start, end = self.seek.marker_range
+            valid_range = (
+                isinstance(start, int)
+                and isinstance(end, int)
+                and 0 <= start < end <= self.media.duration()
+            )
+            self.media.setPosition(start if valid_range else 0)
             self.load_timeout.stop()
             self.loading_finished.emit()
 

@@ -331,6 +331,19 @@ def test_real_playback(window, application, tmp_path, codec):
     assert player.video.videoSink().videoFrame().isValid()
     assert not player.video.videoSink().videoFrame().toImage().isNull()
     assert player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+    window.catalogue.patch(ids[0], {"in_ms": 500, "out_ms": 1500})
+    clip = window.catalogue.clip(ids[0])
+    for preview_player in [window.player, window.export_player]:
+        preview_player.load(clip)
+        assert wait_for(application, lambda: not preview_player.awaiting_frame)
+        assert preview_player.media.position() == 500
+        assert preview_player.seek.value() == 500
+        assert preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        for start, end in [(None, None), (500, None), (1500, 500), (500, 999999)]:
+            preview_player.load({**clip, "in_ms": start, "out_ms": end})
+            assert wait_for(application, lambda: not preview_player.awaiting_frame)
+            assert preview_player.media.position() == 0
+    window.export_player.load(None)
     window.command.setFocus()
     window.command.setText("jett")
     QTest.keyClick(window.command, Qt.Key.Key_Space)

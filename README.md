@@ -29,6 +29,8 @@ In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until 
 
 Description saves when leaving its editor or navigating, and has an explicit Save button. Rating and triage are independent. Ctrl+Z/Ctrl+Y undo/redo catalogue edits for the current run. Changing game requires confirmation and clears game-specific metadata; Undo restores it.
 
+Opening a clip in Editing or Export starts paused at its saved In point when its complete In/Out range fits the video. Clips without a valid saved range start at zero.
+
 ## Configuration and search
 
 Edit `configs/games/*.yaml`, then use **Config → Reload configurations**. Enum aliases resolve to canonical capitalization. Free-form prefixes support quoted values, for example `wpn:"M4A1 SOPMOD"`. Multiword enum names may be quoted or entered directly. Mainline and description retain the exact text between separators, including spaces. Removing YAML fields hides their stored values; restoring the stable field key restores access.
