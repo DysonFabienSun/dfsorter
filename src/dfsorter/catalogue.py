@@ -24,9 +24,10 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS clips (
                     clip_id TEXT PRIMARY KEY, source_path TEXT UNIQUE NOT NULL,
                     game TEXT, triage TEXT CHECK(triage IN ('keep','discard')),
@@ -55,8 +56,27 @@ class Catalogue:
                     PRIMARY KEY(project_id, clip_id)
                 );
                 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                PRAGMA user_version = 1;
+                CREATE TABLE IF NOT EXISTS media_cache (
+                    path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
+                    duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
+                );
+                PRAGMA user_version = 2;
+                COMMIT;
             """)
+
+    def media_cache(self):
+        return {row["path"]: row for row in self.rows("SELECT * FROM media_cache")}
+
+    def cache_media(self, entries, invalidated=()):
+        with self.connection() as database:
+            database.executemany(
+                "DELETE FROM media_cache WHERE path=?", [(path,) for path in invalidated]
+            )
+            database.executemany(
+                "INSERT OR REPLACE INTO media_cache VALUES "
+                "(:path,:size,:mtime_ns,:duration,:created,:error,:inspected_at)",
+                entries,
+            )
 
     @contextmanager
     def connection(self):
@@ -119,9 +139,11 @@ class Catalogue:
                 "UPDATE folders SET enabled=? WHERE folder_id=?", (int(enabled), folder_id)
             )
 
-    def ingest(self, folder_id, discovered):
+    def ingest(self, folder_id, discovered, cancelled=lambda: False):
         with self.connection() as database:
             for item in discovered:
+                if cancelled():
+                    raise InterruptedError("Scan cancelled")
                 path = normalized(item["path"])
                 database.execute(
                     """INSERT OR IGNORE INTO clips
@@ -132,10 +154,17 @@ class Catalogue:
                     "SELECT clip_id FROM clips WHERE source_path=?", (path,)
                 ).fetchone()[0]
                 database.execute("INSERT OR IGNORE INTO sources VALUES (?,?)", (folder_id, clip_id))
+            if cancelled():
+                raise InterruptedError("Scan cancelled")
 
     def remove_folder(self, folder_id, purge=False):
         with self.connection() as database:
             if purge:
+                database.execute(
+                    "DELETE FROM media_cache WHERE path IN (SELECT source_path FROM clips "
+                    "JOIN sources USING(clip_id) WHERE folder_id=?)",
+                    (folder_id,),
+                )
                 database.execute(
                     "DELETE FROM clips WHERE clip_id IN "
                     "(SELECT clip_id FROM sources WHERE folder_id=?)",
@@ -182,6 +211,10 @@ class Catalogue:
         ):
             raise ValueError("Migration would collide with an existing source identity")
         with self.connection() as database:
+            database.executemany(
+                "DELETE FROM media_cache WHERE path=?",
+                [(row["source_path"],) for row in rows] + [(path,) for path in targets],
+            )
             database.executemany("UPDATE clips SET source_path=? WHERE clip_id=?", updates)
             database.execute("UPDATE folders SET path=? WHERE folder_id=?", (str(new), folder_id))
 

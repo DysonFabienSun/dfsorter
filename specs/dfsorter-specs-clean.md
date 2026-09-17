@@ -395,6 +395,33 @@ It should not introduce unique data models or automated behavior in v1.
 
 ## 11. Import Panel
 
+### Incremental media inspection
+
+Startup and manual scans retain immediate cancellable modal progress. SQLite schema v2
+stores inspection results by normalized path, file size and nanosecond modification
+time; the path alone remains clip identity. Cached duration and capture date load before
+the initial library refresh. Unchanged successful results require no ffprobe launches,
+including after restart. File-specific failures retry after 24 hours or immediately
+when attributes change. Missing ffprobe produces an operation warning and no reusable
+failure entry. Reinspect all media… bypasses the cache for enabled capture folders.
+
+Discovery, cache access and folder ingestion run in a background coordinator. At most
+two ffprobe processes run at once, with a 20-second per-file timeout and cancellable
+polling that terminates and reaps active processes. Deterministic discovery order and
+existing game assignments, metadata and frozen Session membership remain unchanged.
+Compare size/mtime before and after inspection; discard unstable results and report
+them for retry. Completed folders commit independently. Cancellation rolls back the
+current folder's ingestion; completed inspections may remain cached. New folders still
+require preview confirmation before registration and background ingestion.
+
+Progress reports discovery, cache reuse, inspection, warnings and catalogue updates,
+throttled during each phase. Controls remain modal until cleanup finishes; refresh views
+once after applying results. Log traversal, inspection and database timings separately,
+plus UI refresh time and cache/probe counts. Migration and purge invalidate affected
+cache entries; missing sources retain catalogue records. Source files are never modified.
+No hashing, watchers or periodic scanning is introduced. Replacements preserving both
+size and mtime require explicit reinspection.
+
 Import is exclusively responsible for discovering source media and adding or maintaining references in the catalogue.
 
 Capture folders are persisted across application runs.

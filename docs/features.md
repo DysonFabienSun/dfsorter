@@ -66,3 +66,30 @@ Enabled capture folders rescan automatically on startup; manual rescan remains a
 - [x] Enter focuses the command bar in review mode and submits in command-input mode; review-mode Shift+Enter separately applies a legal verdict and advances, preserving explicit Discard.
 - [x] Pending commands block advancement; Keep requires a configured game and its required fields; the final clip reports Session complete.
 - [x] Startup background rescan of enabled capture folders preserves existing metadata, missing-source entries and frozen Session membership.
+
+## Stage 7 — Incremental rescanning
+
+- [x] Transactional schema-v2 media cache; duration and capture dates restored before initial library refresh.
+- [x] Unchanged rescans and reopened catalogues launch zero probes; changed/added videos launch one each. File failures expire after 24 hours; missing tools do not create reusable file failures.
+- [x] Deterministic discovery and at most two concurrent probes, cancellable polling, timeout cleanup, unstable-file rejection and per-folder transaction rollback.
+- [x] Background ingestion, preserved preview confirmation, immediate modal progress and Reinspect all media… in Import and Settings.
+- [x] Migration/purge invalidation and preservation of metadata, project memberships, missing entries and Session ordering.
+- [x] Isolated comparison on 319 real captures, without changing sources or the working catalogue.
+- [ ] User acceptance of scanning responsiveness with the capture library.
+
+2026-09-17 benchmark, seconds (one sequential run per mode):
+
+| Mode | Traversal | Inspection/cache lookup | Database | Probes | Hits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Previous sequential implementation | 0.067 | 20.538 | 0.127 | 319 | 0 |
+| First scan | 0.119 | 9.328 | 0.159 | 319 | 0 |
+| Unchanged | 0.201 | 0.074 | 0.142 | 0 | 319 |
+| Reopened catalogue | 0.149 | 0.042 | 0.132 | 0 | 319 |
+
+UI refresh measured separately: 0.083 s. Inspection timing includes scheduling,
+attribute checks and cache lookup; database timing includes cache writes and ingestion.
+Warm filesystem caches and machine load affect timings. Benchmark helper:
+`tests/benchmark_scanning.py`, with a disposable project-local database and read-only
+access to capture media. Automated coverage includes immediate modal startup/manual
+progress, restart metadata, failure expiry, forced inspection, cancellation rollback,
+process cleanup and the existing regression suite.

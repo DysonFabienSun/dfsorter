@@ -44,10 +44,10 @@ from .catalogue import Catalogue
 from .config import Registry, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
-from .media import discover
 from .output import export_project, share_clip, validate
 from .parsing import parse_command, query_clips, requests_discarded
 from .playback import Player
+from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, role
 from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tool
@@ -119,7 +119,7 @@ class Window(QMainWindow):
         self.space_timer.setSingleShot(True)
         self.space_timer.setInterval(200)
         self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
-        self.media_info = {}
+        self.media_info = self.catalogue.media_cache()
         self.pending_in = None
         self.worker = None
         self.refreshing = False
@@ -309,6 +309,7 @@ class Window(QMainWindow):
         for text, callback in [
             ("Add folder / preview", self.add_folder),
             ("Refresh / rescan", self.rescan),
+            ("Reinspect all media…", self.reinspect),
             ("Enable / disable", self.toggle_folder),
             ("Migrate source folder", self.migrate),
             ("Remove folder", self.remove_folder),
@@ -320,6 +321,7 @@ class Window(QMainWindow):
                     {
                         "Add folder / preview": "folder-plus",
                         "Refresh / rescan": "refresh-cw",
+                        "Reinspect all media…": "refresh-cw",
                         "Enable / disable": "power",
                         "Migrate source folder": "folder-input",
                         "Remove folder": "folder-x",
@@ -1416,6 +1418,7 @@ class Window(QMainWindow):
             self.error("Wait for the current operation to finish")
             return
         self.worker = Worker(function)
+        continuation = None
         progress = QProgressDialog(label, "Cancel", 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
@@ -1429,11 +1432,14 @@ class Window(QMainWindow):
             progress.show()
 
         progress.canceled.connect(cancel)
-        self.worker.progress.connect(progress.setLabelText)
+        self.worker.progress.connect(
+            lambda text: progress.setLabelText(text) if not self.worker.cancelled.is_set() else None
+        )
 
         def succeeded(result):
+            nonlocal continuation
             try:
-                done(result)
+                continuation = done(result)
             except Exception as error:
                 self.error(error)
 
@@ -1446,6 +1452,8 @@ class Window(QMainWindow):
             progress.deleteLater()
             self.worker.deleteLater()
             self.worker = None
+            if callable(continuation):
+                continuation()
 
         self.worker.succeeded.connect(succeeded)
         self.worker.failed.connect(failed)
@@ -1478,16 +1486,37 @@ class Window(QMainWindow):
             if self.confirm(
                 f"Found {len(found)} MP4 files:\n{dict(counts)}\n{errors} media inspection warnings.\nAdd this folder?"
             ):
-                folder_id = self.catalogue.add_folder(directory, forced_game)
-                self.catalogue.ingest(folder_id, found)
-                self.remember_media(found)
-                self.refresh_references()
-                self.refresh_library()
+
+                def ingest(cancelled, progress):
+                    if cancelled():
+                        raise InterruptedError("Import cancelled")
+                    folder_id = self.catalogue.add_folder(directory, forced_game)
+                    try:
+                        self.catalogue.ingest(folder_id, found, cancelled)
+                    except Exception:
+                        self.catalogue.remove_folder(folder_id)
+                        raise
+                    return found
+
+                def applied(found):
+                    self.remember_media(found)
+                    self.refresh_references()
+                    self.refresh_library()
+
+                return lambda: self.background(ingest, applied, "Updating catalogue…")
+
+        def inspect_folder(cancelled, progress):
+            coordinator = ScanCoordinator(self.catalogue, self.registry, cancelled, progress)
+            found = coordinator.folder({"path": directory, "forced_game": forced_game})
+            if not coordinator.executable:
+                for item in found:
+                    if item.get("duration") is None:
+                        item["error"] = "ffprobe unavailable"
+            logging.info("Folder preview metrics: %s", coordinator.metrics)
+            return found
 
         self.background(
-            lambda cancelled, progress: discover(
-                Path(directory), self.registry, forced_game, cancelled, progress
-            ),
+            inspect_folder,
             done,
             label="Inspecting capture folder…",
         )
@@ -1498,39 +1527,34 @@ class Window(QMainWindow):
         for item in found:
             self.media_info[normalized(item["path"])] = item
 
-    def rescan(self):
-        folders = [folder for folder in self.catalogue.folders() if folder["enabled"]]
-        if not folders:
+    def reinspect(self):
+        self.rescan(force=True)
+
+    def rescan(self, force=False):
+        if not any(folder["enabled"] for folder in self.catalogue.folders()):
             return
 
         def scan(cancelled, progress):
-            results, errors = [], []
-            for folder in folders:
-                try:
-                    found = discover(
-                        Path(folder["path"]),
-                        self.registry,
-                        folder["forced_game"],
-                        cancelled,
-                        progress,
-                    )
-                    results.append((folder["folder_id"], found))
-                except InterruptedError:
-                    raise
-                except (OSError, ValueError) as error:
-                    errors.append(str(error))
-            return results, errors
+            folders = [folder for folder in self.catalogue.folders() if folder["enabled"]]
+            return ScanCoordinator(self.catalogue, self.registry, cancelled, progress, force).run(
+                folders
+            )
 
         def done(result):
-            results, errors = result
-            for folder_id, found in results:
-                self.catalogue.ingest(folder_id, found)
-                self.remember_media(found)
+            found, errors, metrics = result
+            started = time.perf_counter()
+            self.remember_media(found)
             self.refresh_references()
             self.refresh_library()
-            self.statusBar().showMessage("\n".join(errors) or "Rescan complete", 12000)
+            metrics["ui_refresh"] = time.perf_counter() - started
+            logging.info("Scan including UI refresh: %s", metrics)
+            self.statusBar().showMessage(
+                f"Scan: {metrics['hits']} cached, {metrics['probes']} inspected, "
+                f"{metrics['warnings']} warnings. " + " · ".join(errors),
+                12000,
+            )
 
-        self.background(scan, done)
+        self.background(scan, done, label="Discovering files…")
 
     def toggle_folder(self):
         folder_id = self.selected_id(self.folders)
@@ -1549,6 +1573,7 @@ class Window(QMainWindow):
         ):
             try:
                 self.catalogue.migrate(folder_id, destination)
+                self.media_info = self.catalogue.media_cache()
                 self.refresh_references()
                 self.refresh_library()
             except (ValueError, OSError) as error:
@@ -1568,6 +1593,7 @@ class Window(QMainWindow):
             "Permanently purge this folder’s catalogue entries, memberships and session references? Source files remain. This cannot be undone."
         ):
             self.catalogue.remove_folder(folder_id, purge=True)
+            self.media_info = self.catalogue.media_cache()
             if self.current_id and not any(
                 clip["clip_id"] == self.current_id for clip in self.catalogue.clips()
             ):

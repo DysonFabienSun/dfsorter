@@ -576,6 +576,33 @@ def test_folder_dialogs_and_background_scan(window, application, tmp_path, monke
     assert len(window.catalogue.clips()) == 1
 
 
+def test_rescan_modal_cache_restart(window, application, tmp_path, monkeypatch):
+    from dfsorter.scanning import ScanCoordinator
+
+    add_clips(window, tmp_path)
+    calls = []
+
+    def probe(path, *args):
+        calls.append(path)
+        return dict(duration=15, created="2026-09-17", error=None)
+
+    monkeypatch.setattr("dfsorter.scanning.inspect_media", probe)
+    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    ScanCoordinator(window.catalogue, window.registry).run(window.catalogue.folders())
+    restarted = Window(tmp_path)
+    assert next(iter(restarted.media_info.values()))["duration"] == 15
+    restarted.show()
+    application.processEvents()
+    assert isinstance(QApplication.activeModalWidget(), QProgressDialog)
+    assert wait_for(application, lambda: restarted.worker is None)
+    assert len(calls) == 1
+    restarted.reinspect()
+    assert isinstance(QApplication.activeModalWidget(), QProgressDialog)
+    assert wait_for(application, lambda: restarted.worker is None)
+    assert len(calls) == 2
+    restarted.close()
+
+
 def test_all_panel_layouts(window, application, tmp_path):
     add_clips(window, tmp_path)
     project = window.catalogue.save_project("Example montage")

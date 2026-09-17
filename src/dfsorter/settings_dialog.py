@@ -34,6 +34,7 @@ class SettingsDialog(QDialog):
                 [
                     ("Add / preview", window.add_folder),
                     ("Rescan", window.rescan),
+                    ("Reinspect all media…", window.reinspect),
                     ("Enable / disable", window.toggle_folder),
                     ("Migrate", window.migrate),
                     ("Remove", window.remove_folder),

@@ -62,6 +62,25 @@ uv run ruff format --check src tests
 
 GUI tests open temporary windows and use disposable catalogues, never the working catalogue. They generate H.264/AV1 media, check decoded frames/audio/seek behavior, and capture normal/maximized windows. Windows can emit a handled COM exception through Python's faulthandler while creating a Qt window; the command above avoids that misleading diagnostic.
 
-Home and Config are intentionally lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in a background worker. Share cancellation terminates the active subprocess; scanning cancellation waits for the current ffprobe call (up to 20 seconds). Library search currently evaluates catalogue rows in memory.
+Home and Config are intentionally lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
+
+Scans persist duration, capture date and inspection failures in SQLite. Unchanged paths,
+sizes and nanosecond modification times reuse results across restarts with zero probes.
+Changed/new files use at most two concurrent probes; file failures retry after 24 hours
+or a change. Missing ffprobe is not cached as a file failure. **Reinspect all media…**
+in Import or Settings bypasses the cache for enabled folders, including replacements
+that preserve size and mtime. The first scan after upgrading populates the cache.
+Immediate modal progress stays open through cancellation cleanup. Completed folders
+remain committed; the interrupted folder is not ingested. Source files stay untouched.
+Scan phase timings, counts and UI refresh time are recorded in `data/dfsorter.log`.
+
+Measured on 319 existing capture videos (2026-09-17), using a disposable project-local
+catalogue: sequential baseline 20.73 s, first cached implementation scan 9.61 s,
+unchanged rescan 0.42 s, reopened-catalogue scan 0.32 s. Both repeat scans launched
+zero probes; isolated UI refresh took 0.083 s separately. Filesystem caching and machine
+load affect these single-run measurements. Reproduce with
+`uv run python tests/benchmark_scanning.py "PATH_TO_CAPTURE_FOLDER"`; the baseline
+comes from Git HEAD's media implementation, so retain the pre-change revision when
+comparing after committing. Source files and the working catalogue are not modified.
 
 Playback uses Qt native video rendering with hardware decoding where supported and software fallback. D3D11 decoding of H.264 and AV1 was confirmed on this machine with Qt diagnostics. To inspect decoder selection, set `QT_LOGGING_RULES=qt.multimedia.ffmpeg.hwaccel=true;qt.multimedia.playbackengine.codec=true` before launching. Native video surfaces may be absent from QWidget screenshots; decoded-frame artifacts are captured separately by tests. Subjective smoothness and audio balance still need acceptance with real captures.
