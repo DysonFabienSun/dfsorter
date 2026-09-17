@@ -270,6 +270,24 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     window.undo()
     assert "Undefined 1" in window.session_counts.text()
     assert window.catalogue.state("session")["ids"] == ids
+    assert window.description.isHidden()
+    assert window.command_history.isHidden()
+    assert window.command_error.isHidden()
+    command_y = window.command.mapTo(window.center_column, QPoint(0, 0)).y()
+    area_y = window.command_area.y()
+    window.command.setText("-- Example title -- Notes <keep literal>")
+    window.submit()
+    application.processEvents()
+    assert not window.command_history.isHidden()
+    assert abs(window.command.mapTo(window.center_column, QPoint(0, 0)).y() - command_y) <= 1
+    assert window.command_area.y() < area_y
+    assert window.command_area.height() - window.field_reminder.geometry().bottom() <= 5
+    assert window.description.text() == "Notes <keep literal>"
+    assert not window.description.isHidden()
+    assert window.catalogue.clip(ids[0])["description"] == "Notes <keep literal>"
+    window.edit({"description": None})
+    assert window.description.isHidden()
+    assert window.range_label.parentWidget() is window.player
     application.processEvents()
     assert window.library_error.isHidden()
     assert window.library.geometry().top() <= 8

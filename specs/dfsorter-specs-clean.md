@@ -538,7 +538,7 @@ Under the video player, show:
 4. current game assignment;
 5. rating as clickable stars;
 6. project membership/active-project information;
-7. a `description` text box.
+7. selectable, read-only `description` text, visible only when populated.
 
 The working title is derived from current structured metadata and `mainline` using the game's YAML `display_order`.
 
@@ -550,9 +550,9 @@ VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
 
 The `mainline` portion is visually emphasized in the UI.
 
-Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and a secondary description editor. Technical condition appears only when populated; **Clip → Edit technical condition…** adds or changes it.
+Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. Technical condition appears only when populated; **Clip → Edit technical condition…** adds or changes it.
 
-The description box is secondary and is never automatically appended to the working title.
+Description text is secondary and is never automatically appended to the working title. There is no dedicated description editor or Save description button. The In/Out summary and Set In, Set Out, Clear range and Share actions sit on the right of the playback-controls row immediately beneath the video timeline.
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
@@ -653,7 +653,7 @@ and the agent remains Jett.
 
 ### 13.5 Command History
 
-Show the last three valid commands entered for the current clip above the command bar.
+Show the last three valid commands entered for the current clip above the command bar. Hide empty history and error rows; size the command area to visible content with compact bottom padding. Adding history expands the area upward without reserving blank space below the command bar.
 
 This command history exists only in memory and does not persist across application restarts.
 

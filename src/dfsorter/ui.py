@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -135,7 +136,7 @@ class Window(QMainWindow):
         self.refreshing = False
         self.setWindowTitle("DFSorter")
         self.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
-        self.resize(1400, 900)
+        self.resize(1400, 918)
         central, outer = page()
         self.setCentralWidget(central)
         navigation = QHBoxLayout()
@@ -248,9 +249,13 @@ class Window(QMainWindow):
         self.splitter.setStretchFactor(2, 0)
         self.splitter.splitterMoved.connect(self.panes_resized)
         self.command_area, command_layout = page()
+        self.command_area.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        command_layout.setContentsMargins(12, 4 + self.fontMetrics().lineSpacing(), 12, 4)
+        command_layout.setSpacing(4)
         self.command_history = QLabel()
         role(self.command_history, "muted")
         self.command_history.setWordWrap(True)
+        self.command_history.hide()
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
             "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · ? Shortcuts"
@@ -276,6 +281,7 @@ class Window(QMainWindow):
         self.command_error = QLabel()
         role(self.command_error, "error")
         self.command_error.setWordWrap(True)
+        self.command_error.hide()
         command_layout.addWidget(self.command_error)
         center_layout.addWidget(self.command_area)
         self.transition_generation = 0
@@ -429,20 +435,21 @@ class Window(QMainWindow):
         self.structured.setObjectName("muted")
         self.structured.setWordWrap(True)
         editing.addWidget(self.structured)
-        self.description = QPlainTextEdit()
-        self.description.setPlaceholderText(
-            "Description — secondary notes, excluded from filenames"
-        )
-        self.description.setMaximumHeight(70)
+        self.description = QLabel()
+        self.description.setTextFormat(Qt.TextFormat.PlainText)
+        self.description.setWordWrap(True)
+        self.description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.description.setAccessibleName("Description")
+        self.description.hide()
         editing.addWidget(self.description)
-        editing.addWidget(button("Save description", self.save_description))
         self.technical = QLineEdit()
         self.technical.setPlaceholderText("Technical condition (optional)")
         self.technical.editingFinished.connect(self.save_technical)
         editing.addWidget(self.technical)
         self.range_label = QLabel("No In/Out range")
-        editing.addWidget(self.range_label)
-        controls = QHBoxLayout()
+        self.range_label.setWordWrap(True)
+        self.player.controls.addWidget(self.range_label)
+        controls = self.player.controls
         for text, callback in [
             ("Set In", self.mark_in),
             ("Set Out", self.mark_out),
@@ -457,8 +464,6 @@ class Window(QMainWindow):
             }
             label = {"Set In": "Set In · I", "Set Out": "Set Out · O"}.get(text, text)
             controls.addWidget(tool(names[text], label, callback))
-        controls.addStretch()
-        editing.addLayout(controls)
         exporting = self.pages["Export"][1]
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
@@ -526,6 +531,7 @@ class Window(QMainWindow):
         logging.error("%s", message)
         self.statusBar().showMessage(str(message), 12000)
         self.command_error.setText(str(message))
+        self.command_error.setVisible(bool(str(message)))
 
     def open_settings(self):
         dialog = SettingsDialog(self)
@@ -669,7 +675,6 @@ class Window(QMainWindow):
             self.error("Create a session before entering Editing")
             return
         self.begin_page_transition()
-        self.save_description()
         self.cancel_space()
         self.player.media.pause()
         self.export_player.media.pause()
@@ -938,7 +943,6 @@ class Window(QMainWindow):
     def switch_editing_clip(self, clip_id, ensure_visible=False):
         if clip_id == self.current_id:
             return
-        self.save_description()
         session = self.catalogue.state("session")
         self.catalogue.navigate(session["ids"].index(clip_id))
         for index in range(self.library.count()):
@@ -963,6 +967,7 @@ class Window(QMainWindow):
         self.pending_in = None
         self.command.setText(self.drafts.get(clip_id, ""))
         self.command_error.clear()
+        self.command_error.hide()
         self.render_clip()
         self.player.load(self.catalogue.clip(clip_id))
         self.review_mode()
@@ -1016,7 +1021,8 @@ class Window(QMainWindow):
             )
             or "No structured metadata"
         )
-        self.description.setPlainText(clip["description"] or "")
+        self.description.setText(clip["description"] or "")
+        self.description.setVisible(bool((clip["description"] or "").strip()))
         self.technical.setText(clip["technical_condition"] or "")
         self.technical.setVisible(bool(clip["technical_condition"]))
         self.range_label.setText(
@@ -1027,6 +1033,7 @@ class Window(QMainWindow):
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
+        self.command_history.setVisible(bool(self.command_history.text()))
         self.refresh_session_status()
 
     def render_field_reminder(self, clip, game):
@@ -1084,17 +1091,10 @@ class Window(QMainWindow):
         if self.current_panel != "Editing" or not self.current_id:
             return
         try:
-            self.save_description()
             self.catalogue.patch(self.current_id, patch, editing=True, **kwargs)
             self.render_clip()
         except (ValueError, OSError) as error:
             self.error(error)
-
-    def save_description(self):
-        if self.current_panel == "Editing" and self.current_id:
-            text = self.description.toPlainText()
-            if text != (self.catalogue.clip(self.current_id)["description"] or ""):
-                self.catalogue.patch(self.current_id, {"description": text})
 
     def save_technical(self):
         if self.current_panel == "Editing" and self.current_id:
@@ -1108,13 +1108,13 @@ class Window(QMainWindow):
         try:
             clip = self.catalogue.clip(self.current_id)
             patch = parse_command(text, clip["game"], self.registry)
-            self.save_description()
             self.catalogue.patch(self.current_id, patch, editing=True)
             if text.strip():
                 self.history[self.current_id].append(text)
                 self.history[self.current_id] = self.history[self.current_id][-3:]
             self.command.clear()
             self.command_error.clear()
+            self.command_error.hide()
             self.render_clip()
             self.review_mode()
         except ValueError as error:
@@ -1146,10 +1146,10 @@ class Window(QMainWindow):
                 self.error("Cannot Keep + Next: missing required fields: " + ", ".join(missing))
                 return
         try:
-            self.save_description()
             if clip["triage"] != "discard":
                 self.catalogue.patch(self.current_id, {"triage": "keep"}, editing=True)
             self.command_error.clear()
+            self.command_error.hide()
             clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
             next_id = next(
                 (
@@ -1277,8 +1277,6 @@ class Window(QMainWindow):
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
             self.cancel_space()
             self.rating_deadline = 0
-        if event.type() == QEvent.Type.FocusOut and watched is self.description:
-            self.save_description()
         if event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Space:
             if not event.isAutoRepeat() and self.space_down:
                 held = not self.space_timer.isActive()
@@ -1468,7 +1466,6 @@ class Window(QMainWindow):
         if self.catalogue.state("session") and self.confirm(
             "End this session? Clip metadata stays unchanged."
         ):
-            self.save_description()
             self.catalogue.set_state("session", None)
             self.current_id = None
             self.player.load(None)
@@ -1938,7 +1935,7 @@ class Window(QMainWindow):
     def reset_layout(self):
         self.pane_overrides.clear()
         self.showNormal()
-        self.resize(1400, 900)
+        self.resize(1400, 918)
         self.splitter.setSizes([420, 630, 350])
         self.update_projects_visibility()
 
@@ -1948,7 +1945,6 @@ class Window(QMainWindow):
             self.error("Cancelling current operation; close again after it finishes")
             event.ignore()
             return
-        self.save_description()
         self.player.media.stop()
         self.export_player.media.stop()
         QApplication.instance().removeEventFilter(self)

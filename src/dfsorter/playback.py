@@ -111,7 +111,7 @@ class Player(QWidget):
         self.pending_seek = None
         self.scrub_playing = False
         layout.addWidget(self.seek)
-        controls = QHBoxLayout()
+        self.controls = controls = QHBoxLayout()
         self.previous_button = tool("skip-back", "Previous clip", self.previous.emit)
         controls.addWidget(self.previous_button)
         self.play = tool("play", "Play / Pause · Space", self.toggle)
