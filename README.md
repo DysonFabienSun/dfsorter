@@ -15,6 +15,8 @@ After setup, double-click `launch.bat`. The launcher uses its own directory rega
 
 On this machine, dependency downloads use the PowerShell profile's proxy helpers: enable `proxy_on` / `proxyon` before `uv sync` and disable `proxy_off` / `proxyoff` in `finally` afterward.
 
+To open without a console window, run `pwsh -File .\create-shortcut.ps1` after setup, then double-click `DFSorter.lnk`. The shortcut runs this checkout's `.venv\Scripts\pythonw.exe` directly; it does not install or update dependencies. Recreate the shortcut if you move the checkout. `launch.bat` remains available for console output and troubleshooting. Application logs are stored in `data/dfsorter.log`.
+
 ## Review workflow
 
 1. **Import:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Enabled folders are automatically rescanned on startup; manual Refresh/rescan remains available.
