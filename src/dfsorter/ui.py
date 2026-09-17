@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -435,8 +436,7 @@ class Window(QMainWindow):
         self.export_player = Player()
         self.export_player.previous_button.hide()
         self.export_player.next_button.hide()
-        self.export_player.setMaximumHeight(300)
-        exporting.addWidget(self.export_player)
+        exporting.addWidget(self.export_player, 1)
         self.export_errors = QPlainTextEdit()
         self.export_errors.setReadOnly(True)
         self.export_errors.setMaximumHeight(130)
@@ -444,7 +444,8 @@ class Window(QMainWindow):
         self.format_game = QComboBox()
         self.format_game.currentIndexChanged.connect(self.show_format)
         exporting.addWidget(self.format_game)
-        self.format_box, self.format_layout = page()
+        self.format_box = QWidget()
+        self.format_layout = QGridLayout(self.format_box)
         exporting.addWidget(self.format_box)
         self.formats = {}
         self.export_destination = QLineEdit(str(self.settings.get("export_folder", "")))
@@ -454,7 +455,6 @@ class Window(QMainWindow):
         exporting.addWidget(self.group_rating)
         self.export_button = button("Export project", self.run_export)
         exporting.addWidget(self.export_button)
-        exporting.addStretch()
         configuration = self.pages["Config"][1]
         self.config_status = QPlainTextEdit()
         self.config_status.setReadOnly(True)
@@ -1411,38 +1411,53 @@ class Window(QMainWindow):
         if self.current_panel == "Editing":
             self.render_clip()
 
-    def background(self, function, done):
+    def background(self, function, done, label="Working…"):
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
         self.worker = Worker(function)
-        progress = QProgressDialog("Working…", "Cancel", 0, 0, self)
+        progress = QProgressDialog(label, "Cancel", 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
-        progress.canceled.connect(self.worker.cancelled.set)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+
+        def cancel():
+            self.worker.cancelled.set()
+            progress.setLabelText("Cancelling… Please wait.")
+            progress.setCancelButton(None)
+            progress.show()
+
+        progress.canceled.connect(cancel)
         self.worker.progress.connect(progress.setLabelText)
 
         def succeeded(result):
-            progress.close()
             try:
                 done(result)
             except Exception as error:
                 self.error(error)
 
         def failed(message):
-            progress.close()
             self.error(message)
 
         def finished():
+            progress.canceled.disconnect(cancel)
+            progress.close()
+            progress.deleteLater()
             self.worker.deleteLater()
             self.worker = None
 
         self.worker.succeeded.connect(succeeded)
         self.worker.failed.connect(failed)
         self.worker.finished.connect(finished)
-        self.worker.start()
+        progress.show()
+        progress.repaint()
+        QTimer.singleShot(0, self.worker.start)
 
     def add_folder(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
         directory = QFileDialog.getExistingDirectory(self, "Capture folder")
         if not directory:
             return
@@ -1474,6 +1489,7 @@ class Window(QMainWindow):
                 Path(directory), self.registry, forced_game, cancelled, progress
             ),
             done,
+            label="Inspecting capture folder…",
         )
 
     def remember_media(self, found):
@@ -1599,8 +1615,8 @@ class Window(QMainWindow):
         prefix = QCheckBox("Game code prefix")
         prefix.setChecked(options["prefix"])
         prefix.toggled.connect(lambda checked: options.update(prefix=checked))
-        self.format_layout.addWidget(prefix)
-        for field in game.display_order:
+        self.format_layout.addWidget(prefix, 0, 0)
+        for index, field in enumerate(game.display_order, start=1):
             check = QCheckBox(field)
             check.setChecked(field in options["fields"])
 
@@ -1611,7 +1627,7 @@ class Window(QMainWindow):
                     options["fields"].remove(field)
 
             check.toggled.connect(toggle)
-            self.format_layout.addWidget(check)
+            self.format_layout.addWidget(check, index // 3, index % 3)
 
     def choose_export_folder(self):
         directory = QFileDialog.getExistingDirectory(
@@ -1626,20 +1642,39 @@ class Window(QMainWindow):
         temporary.replace(self.settings_path)
 
     def run_export(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
         destination = self.export_destination.text().strip()
         if not destination:
             self.error("Choose an export folder")
             return
-        clips = self.export_clips()
-        self.export_selection()
-        if validate(clips, self.registry):
+        project_id = self.export_project.currentData()
+        if not project_id:
+            self.error("Choose a project")
             return
-        self.settings["export_folder"] = destination
-        self.save_settings()
-        folders, formats = self.catalogue.folders(), self.formats.copy()
+        formats = self.formats.copy()
         group = self.group_rating.isChecked()
 
+        def export(cancelled, progress):
+            if cancelled():
+                raise InterruptedError("Export cancelled")
+            ids = self.catalogue.member_ids(project_id)
+            clips = [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
+            return export_project(
+                clips,
+                self.registry,
+                destination,
+                self.catalogue.folders(),
+                formats,
+                group,
+                cancelled,
+                progress,
+            )
+
         def done(result):
+            self.settings["export_folder"] = destination
+            self.save_settings()
             QMessageBox.information(
                 self,
                 "Project Export",
@@ -1649,12 +1684,7 @@ class Window(QMainWindow):
                 + "\n".join(result.completed),
             )
 
-        self.background(
-            lambda cancelled, progress: export_project(
-                clips, self.registry, destination, folders, formats, group, cancelled, progress
-            ),
-            done,
-        )
+        self.background(export, done, label="Preparing project export…")
 
     def share(self):
         try:

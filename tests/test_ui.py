@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog
+from PySide6.QtWidgets import QApplication, QInputDialog, QProgressDialog
 
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
@@ -48,6 +49,29 @@ def wait_for(application, predicate, timeout=12):
             return True
         QTest.qWait(20)
     return False
+
+
+def test_export_player_grows_with_window(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    project = window.catalogue.save_project("Export layout")
+    window.catalogue.patch(ids[0], {}, membership=(project, True))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project))
+    window.panel("Export")
+    window.resize(1400, 900)
+    application.processEvents()
+    normal_height = window.export_player.video.height()
+    window.resize(1400, 1200)
+    application.processEvents()
+    assert window.export_player.video.height() >= normal_height + 250
+    assert window.export_button.geometry().bottom() < window.pages["Export"][0].height()
+    artifact = ROOT / "cache/verification/export-layout"
+    artifact.mkdir(parents=True, exist_ok=True)
+    for state, show in [("maximized", window.showMaximized), ("fullscreen", window.showFullScreen)]:
+        show()
+        QTest.qWait(150)
+        assert window.export_player.height() > 300
+        window.grab().save(str(artifact / f"{state}.png"))
 
 
 def test_deletion_confirmation_and_settings(window, application, tmp_path, monkeypatch):
@@ -465,6 +489,51 @@ def test_background_completion(window, application):
     window.background(lambda cancelled, progress: 42, results.append)
     assert wait_for(application, lambda: window.worker is None)
     assert results == [42]
+
+
+def test_background_locks_immediately_until_cancel_finishes(window, application):
+    release = threading.Event()
+    results = []
+
+    def operation(cancelled, progress):
+        release.wait(5)
+        return cancelled()
+
+    window.background(operation, results.append)
+    dialog = QApplication.activeModalWidget()
+    assert isinstance(dialog, QProgressDialog)
+    assert dialog.isVisible()
+    worker = window.worker
+    window.background(lambda cancelled, progress: "duplicate", results.append)
+    assert window.worker is worker
+    dialog.canceled.emit()
+    assert dialog.isVisible()
+    assert dialog.labelText() == "Cancelling… Please wait."
+    release.set()
+    assert wait_for(application, lambda: window.worker is None)
+    assert results == [True]
+    assert QApplication.activeModalWidget() is None
+
+
+def test_export_shows_progress_before_preparation(window, application, tmp_path, monkeypatch):
+    project = window.catalogue.save_project("Immediate progress")
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project))
+    window.export_destination.setText(str(tmp_path / "output"))
+    preparation = []
+
+    def member_ids(project_id):
+        preparation.append(project_id)
+        raise ValueError("Preparation failed")
+
+    monkeypatch.setattr(window.catalogue, "member_ids", member_ids)
+    window.run_export()
+    assert not preparation
+    assert isinstance(QApplication.activeModalWidget(), QProgressDialog)
+    assert QApplication.activeModalWidget().isVisible()
+    assert wait_for(application, lambda: window.worker is None)
+    assert preparation == [project]
+    assert QApplication.activeModalWidget() is None
 
 
 def test_game_change_confirmation_and_undo(window, application, tmp_path, monkeypatch):

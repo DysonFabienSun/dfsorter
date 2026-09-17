@@ -157,7 +157,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
         suffix = 0
         while True:
             target = destination / f"{stem}{f' ({suffix})' if suffix else ''}.mp4"
-            if target.exists() or target.with_suffix(".xmp").exists():
+            if target.exists():
                 suffix += 1
                 continue
             try:

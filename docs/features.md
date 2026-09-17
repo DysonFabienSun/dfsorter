@@ -22,8 +22,10 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 
 - [x] Whole/range H.264 MP4 Share with custom/generated names, selected fields, default destination, and collision suffixes.
 - [x] Full-project validation including unknown game, undefined triage, missing fields, and unavailable kept sources.
-- [x] Per-game filename selection, flat/rating directories, adjacent XMP, and stateless output copies.
+- [x] Export preview grows with window height, including maximized/fullscreen; compact filename-option rows reserve more space for video.
+- [x] Per-game filename selection, flat/rating directories, and stateless video-only output copies.
 - [x] Background operations, cancellation, incomplete-copy cleanup, completed-output reporting, and source preservation.
+- [x] Immediate modal progress before background work and export preparation; duplicate actions blocked, cancellation remains modal until work finishes.
 
 ## Stage 4 — First graphical touchup
 
@@ -55,7 +57,7 @@ Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/for
 - [x] Focused catalogue/parser/output regression suite and real Qt interaction/playback tests.
 - [x] Normal/maximized window visual review with generated media.
 - [ ] Manual acceptance with the user's own capture library and audio devices.
-- [ ] Premiere-specific XMP interpretation (separate from required v1 range preservation).
+- XMP support is deferred; no sidecars are generated. Existing sidecars remain untouched.
 
 Enabled capture folders rescan automatically on startup; manual rescan remains available and periodic polling is not included. Playback tests verify an audio stream and output controls, not subjective audio quality. No standalone installer is provided; launch through uv or `launch.bat`.
 

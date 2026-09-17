@@ -1,5 +1,4 @@
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,28 +48,6 @@ def validate(clips, registry):
     return errors
 
 
-def xmp_bytes(clip):
-    namespaces = {
-        "x": "adobe:ns:meta/",
-        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-        "dfs": "https://dfsorter.local/ns/1.0/",
-    }
-    for prefix, uri in namespaces.items():
-        ET.register_namespace(prefix, uri)
-    root = ET.Element(f"{{{namespaces['x']}}}xmpmeta")
-    rdf = ET.SubElement(root, f"{{{namespaces['rdf']}}}RDF")
-    description = ET.SubElement(
-        rdf, f"{{{namespaces['rdf']}}}Description", {f"{{{namespaces['rdf']}}}about": ""}
-    )
-    for name, value in [
-        ("clipId", clip["clip_id"]),
-        ("inMilliseconds", clip["in_ms"]),
-        ("outMilliseconds", clip["out_ms"]),
-    ]:
-        ET.SubElement(description, f"{{{namespaces['dfs']}}}{name}").text = str(value)
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
 @dataclass
 class CopyResult:
     completed: list[str] = field(default_factory=list)
@@ -86,15 +63,14 @@ def check_destination(destination, folders):
     return destination
 
 
-def copy_one(clip, directory: Path, stem: str, sidecar=False, cancelled=lambda: False):
+def copy_one(clip, directory: Path, stem: str, cancelled=lambda: False):
     source = Path(clip["source_path"])
     directory.mkdir(parents=True, exist_ok=True)
     stem = safe_stem(stem)
     suffix = 0
     while True:
         target = directory / f"{stem}{f' ({suffix})' if suffix else ''}{source.suffix}"
-        xmp = target.with_suffix(".xmp")
-        if target.exists() or xmp.exists():
+        if target.exists():
             suffix += 1
             continue
         try:
@@ -102,19 +78,7 @@ def copy_one(clip, directory: Path, stem: str, sidecar=False, cancelled=lambda: 
         except FileExistsError:
             suffix += 1
             continue
-        created_xmp = False
         try:
-            if sidecar:
-                try:
-                    xmp_output = xmp.open("xb")
-                except FileExistsError:
-                    output.close()
-                    target.unlink()
-                    suffix += 1
-                    continue
-                created_xmp = True
-                with xmp_output:
-                    xmp_output.write(xmp_bytes(clip))
             with output, source.open("rb") as input_file:
                 before = source.stat()
                 count = 0
@@ -136,8 +100,6 @@ def copy_one(clip, directory: Path, stem: str, sidecar=False, cancelled=lambda: 
         except BaseException:
             output.close()
             target.unlink(missing_ok=True)
-            if created_xmp:
-                xmp.unlink(missing_ok=True)
             raise
 
 
@@ -166,9 +128,7 @@ def export_project(
             directory /= f"Rating {clip['rating']}" if clip["rating"] else "Unrated"
         progress(f"Copying {Path(clip['source_path']).name}")
         try:
-            result.completed.append(
-                copy_one(clip, directory, stem, clip["in_ms"] is not None, cancelled)
-            )
+            result.completed.append(copy_one(clip, directory, stem, cancelled=cancelled))
         except (OSError, InterruptedError) as error:
             result.error = str(error)
             result.cancelled = isinstance(error, InterruptedError)

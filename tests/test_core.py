@@ -1,4 +1,3 @@
-import xml.etree.ElementTree as ET
 from copy import deepcopy
 from pathlib import Path
 
@@ -216,10 +215,8 @@ def test_export_validation_and_preservation(catalogue, clips, registry, tmp_path
     )
     assert not result.error and len(result.completed) == 3
     rated = next(Path(path) for path in result.completed if "Rating 4" in path)
-    description = ET.parse(rated.with_suffix(".xmp")).find(
-        ".//{https://dfsorter.local/ns/1.0/}inMilliseconds"
-    )
-    assert description.text == "100"
+    assert rated.read_bytes() == before[clips[0]["source_path"]]
+    assert not list(destination.rglob("*.xmp"))
     assert all(Path(path).read_bytes() == content for path, content in before.items())
     again = export_project(
         catalogue.clips(), registry, destination, catalogue.folders(), group_rating=True
@@ -237,11 +234,12 @@ def test_copy_collision_cancel_and_share(catalogue, clips, registry, tmp_path):
     output.mkdir()
     (output / "clip.xmp").write_bytes(b"previous")
     target = Path(copy_one(clip, output, "clip"))
-    assert target.name == "clip (1).mp4"
+    assert target.name == "clip.mp4"
+    assert Path(copy_one(clip, output, "clip")).name == "clip (1).mp4"
     assert (output / "clip.xmp").read_bytes() == b"previous"
     clip["in_ms"], clip["out_ms"] = 1, 2
     with pytest.raises(InterruptedError):
-        copy_one(clip, output, "cancelled", sidecar=True, cancelled=lambda: True)
+        copy_one(clip, output, "cancelled", cancelled=lambda: True)
     assert not list(output.glob("cancelled*"))
     with pytest.raises(ValueError, match="outside"):
         share_clip(clip, registry, Path(clip["source_path"]).parent, catalogue.folders())

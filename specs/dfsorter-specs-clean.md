@@ -288,7 +288,7 @@ Each clip may store one optional non-destructive In/Out range.
 - The range is stored as source-relative time and shown on the player's progress display.
 - Invalid or incomplete ranges must not silently replace the last valid stored range.
 - In/Out points never trim or rewrite the source video.
-- Project Export may preserve the stored range through an adjacent XMP sidecar.
+- Project Export copies whole videos without exporting In/Out metadata.
 
 ---
 
@@ -791,19 +791,11 @@ An optional **Group by Rating** export mode may instead create one subdirectory 
 
 No general-purpose "group by arbitrary field" directory builder is required in v1.
 
-### 16.4 In/Out XMP Sidecars
+### 16.4 In/Out Ranges and Export
 
 Project Export copies the entire source video. In/Out markers do not trim the exported file.
 
-If a clip has a valid stored In/Out range, export an adjacent `.xmp` sidecar that preserves at least:
-
-- stable clip identity;
-- source-relative In time;
-- source-relative Out time.
-
-The source video must not be rewritten in order to add this metadata.
-
-Adobe/Premiere-specific interpretation may be validated separately; the required v1 behavior is preservation of the range in valid XMP alongside the exported copy.
+XMP support is deferred. Do not generate metadata sidecars or reserve sidecar filenames during Export or Share. Existing sidecars remain untouched. Saved In/Out ranges remain catalogue metadata for playback and range Share.
 
 ### 16.5 Stateless Export Semantics
 
