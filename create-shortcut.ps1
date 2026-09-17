@@ -12,5 +12,6 @@ $shortcut.TargetPath = $pythonwPath
 $shortcut.Arguments = '-m dfsorter.ui'
 $shortcut.WorkingDirectory = $PSScriptRoot
 $shortcut.Description = 'Open DFSorter without a console window'
+$shortcut.IconLocation = (Join-Path $PSScriptRoot 'resources\mascot\dfsorter.ico') + ',0'
 $shortcut.Save()
 Write-Output "Created $shortcutPath"

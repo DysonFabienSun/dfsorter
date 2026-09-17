@@ -11,7 +11,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import yaml
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices
+from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -120,6 +120,7 @@ class Window(QMainWindow):
         self.worker = None
         self.refreshing = False
         self.setWindowTitle("DFSorter")
+        self.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
         self.resize(1400, 900)
         central, outer = page()
         self.setCentralWidget(central)
@@ -1635,7 +1636,12 @@ def main():
         ],
     )
     QCoreApplication.addLibraryPath(str(Path(PySide6.__file__).parent / "plugins"))
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DFSorter.Desktop")
     application = QApplication(sys.argv)
+    application.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
     style_application(application)
     window = Window()
     window.show()
