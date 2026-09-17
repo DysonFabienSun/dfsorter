@@ -146,6 +146,8 @@ Each config should define at least:
 - `display_order`;
 - `required_for_export`.
 
+An optional `command_example` string supplies the command bar's muted placeholder for that game when the input is empty. Update it when switching clips, reassigning games or reloading configurations; never insert it as command text. Unknown games or configurations without an example use a generic metadata hint.
+
 The canonical game name is the authoritative identity. The filename should normally match it for readability but is not the sole source of truth.
 
 ### 7.1 Field Types

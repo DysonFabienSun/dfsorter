@@ -14,6 +14,7 @@ class Game:
     required_for_export: list[str]
     values: dict[str, tuple[str, str]]
     prefixes: dict[str, str]
+    command_example: str = ""
 
 
 class Registry:
@@ -111,7 +112,12 @@ class Registry:
             raise ValueError("Duplicate game name or display code")
         if any(alias.casefold() in self.aliases for alias in aliases):
             raise ValueError("Game alias already used by another game")
-        self.games[name] = Game(name, code, fields, order, required, values, prefixes)
+        command_example = raw.get("command_example", "")
+        if not isinstance(command_example, str):
+            raise ValueError("command_example must be text")
+        self.games[name] = Game(
+            name, code, fields, order, required, values, prefixes, command_example
+        )
         for alias in aliases:
             self.aliases[alias.casefold()] = name
 

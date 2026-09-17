@@ -1,5 +1,6 @@
 name: VALORANT
 code: VAL
+command_example: '1v4 3k jett vandal R4 -- mainline -- description'
 aliases: [val, valorant]
 fields:
   kill: {}

@@ -231,7 +231,7 @@ class Window(QMainWindow):
         self.command = QLineEdit()
         self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
-        self.command.setPlaceholderText("1v4 3k jett vandal R4 -- Mainline -- Description")
+        self.command.setPlaceholderText("Enter clip metadata…")
         command_layout.addWidget(self.command)
         self.field_reminder = QLabel()
         self.field_reminder.setTextFormat(Qt.TextFormat.RichText)
@@ -791,6 +791,9 @@ class Window(QMainWindow):
             return
         clip = self.catalogue.clip(self.current_id)
         game = self.registry.game(clip["game"])
+        self.command.setPlaceholderText(
+            game.command_example if game and game.command_example else "Enter clip metadata…"
+        )
         title_fields = game.display_order if game else ["mainline"]
         has_title = any(
             (clip.get("mainline") if key == "mainline" else clip["metadata"].get(key))
