@@ -48,6 +48,10 @@ Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/for
 
 ## Verification and deliberate limits
 
+- [x] Rejected-original permanent deletion: grouped preview, red delete-button confirmation, file-handle identity checks, cancellation and per-file outcomes; retains catalogue references.
+- [x] Unified top-right Lucide Settings with capture-folder management, project management and General placeholder.
+- [ ] User acceptance of deletion review and Settings with the real capture library. Implementation verified using disposable files and isolated Qt fixtures; representative dialogs visually inspected at 100% scale.
+
 - [x] Focused catalogue/parser/output regression suite and real Qt interaction/playback tests.
 - [x] Normal/maximized window visual review with generated media.
 - [ ] Manual acceptance with the user's own capture library and audio devices.

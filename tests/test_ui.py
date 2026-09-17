@@ -14,6 +14,9 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog
 
+from dfsorter.deletion import preview
+from dfsorter.deletion_dialog import DeletionDialog
+from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.ui import ROOT, Window, style_application
 from dfsorter.widgets import CLIP_ROLE
 
@@ -45,6 +48,37 @@ def wait_for(application, predicate, timeout=12):
             return True
         QTest.qWait(20)
     return False
+
+
+def test_deletion_confirmation_and_settings(window, application, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path)
+    window.catalogue.patch(ids[0], {"triage": "discard"})
+    window.refresh_references()
+    dialog = DeletionDialog(preview(window.catalogue), window)
+    dialog.show()
+    application.processEvents()
+    assert dialog.tree.topLevelItemCount() == 1
+    assert dialog.tree.topLevelItem(0).child(0).text(0).endswith("libx264.mp4")
+    assert dialog.delete_button.isEnabled()
+    dialog.reject()
+    assert Path(window.catalogue.clip(ids[0])["source_path"]).exists()
+    project_id = window.catalogue.save_project("Example")
+    window.refresh_references()
+    settings = SettingsDialog(window)
+    assert settings.folders.count() == 1
+    assert settings.projects.count() == 1
+    settings.projects.setCurrentRow(0)
+    settings.run_action(settings.projects, window.projects, window.activate_project)
+    assert window.catalogue.state("active_project") == project_id
+    settings.folders.setCurrentRow(0)
+    settings.run_action(settings.folders, window.folders, window.toggle_folder)
+    assert not window.catalogue.folders()[0]["enabled"]
+    monkeypatch.setattr(window, "confirm", lambda message: True)
+    settings.run_action(settings.projects, window.projects, window.delete_project)
+    assert not window.catalogue.projects()
+    assert Path(window.catalogue.clip(ids[0])["source_path"]).exists()
+    assert not window.settings_button.icon().isNull()
+    settings.close()
 
 
 def add_clips(window, tmp_path, valid=False, codec="libx264"):

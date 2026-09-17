@@ -41,10 +41,13 @@ from PySide6.QtWidgets import (
 
 from .catalogue import Catalogue
 from .config import Registry, title
+from .deletion import delete_reviewed, preview
+from .deletion_dialog import DeletionDialog
 from .media import discover
 from .output import export_project, share_clip, validate
 from .parsing import parse_command, query_clips, requests_discarded
 from .playback import Player
+from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, role
 from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tool
 
@@ -136,6 +139,8 @@ class Window(QMainWindow):
         self.projects_toggle = tool("panel-right", "Show / hide Projects", self.toggle_projects)
         self.projects_toggle.setCheckable(True)
         navigation.addWidget(self.projects_toggle)
+        self.settings_button = tool("settings", "Settings", self.open_settings)
+        navigation.addWidget(self.settings_button)
         outer.addLayout(navigation)
         self.splitter = QSplitter()
         self.splitter.setHandleWidth(1)
@@ -467,10 +472,12 @@ class Window(QMainWindow):
             ("File", "Add capture folder", self.add_folder, None),
             ("File", "Share selected clip", self.share, None),
             ("File", "Project Export", lambda: self.panel("Export"), None),
+            ("File", "Delete rejected originals…", self.delete_rejected, None),
             ("File", "Exit", self.close, "Ctrl+Q"),
             ("Edit", "Undo", lambda: self.undo(False), "Ctrl+Z"),
             ("Edit", "Redo", lambda: self.undo(True), "Ctrl+Y"),
             ("Edit", "Game configuration files", self.open_configs, None),
+            ("Edit", "Settings", self.open_settings, None),
             ("Clip", "Reset user metadata", self.reset_metadata, None),
             ("Clip", "Change game", self.change_game, None),
             ("Clip", "Edit technical condition…", self.edit_technical, None),
@@ -489,6 +496,72 @@ class Window(QMainWindow):
         logging.error("%s", message)
         self.statusBar().showMessage(str(message), 12000)
         self.command_error.setText(str(message))
+
+    def open_settings(self):
+        dialog = SettingsDialog(self)
+        self.settings_dialog = dialog
+        dialog.exec()
+        self.settings_dialog = None
+        dialog.deleteLater()
+
+    def delete_rejected(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
+        self.background(
+            lambda cancelled, progress: preview(
+                self.catalogue, self.media_info, cancelled, progress
+            ),
+            lambda candidates: QTimer.singleShot(0, lambda: self.review_deletion(candidates)),
+        )
+
+    def review_deletion(self, candidates):
+        if self.worker is not None:
+            QTimer.singleShot(25, lambda: self.review_deletion(candidates))
+            return
+        dialog = DeletionDialog(candidates, self)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        reviewed = dialog.candidates
+        dialog.deleteLater()
+        if not accepted:
+            return
+        self.player.load(None)
+        self.export_player.load(None)
+
+        def done(results):
+            self.refresh_references()
+            self.refresh_library()
+            if self.current_id:
+                self.player.load(self.catalogue.clip(self.current_id))
+                self.render_clip()
+            self.export_selection()
+            report = QDialog(self)
+            report.setWindowTitle("Deletion results")
+            report.resize(850, 500)
+            layout = QVBoxLayout(report)
+            count = sum(status == "Deleted" for path, status in results)
+            layout.addWidget(
+                QLabel(
+                    f"Deleted {count} of {len(results)} reviewed originals. "
+                    "Catalogue records remain."
+                )
+            )
+            details = QPlainTextEdit()
+            details.setReadOnly(True)
+            details.setPlainText("\n".join(f"{status}: {path}" for path, status in results))
+            layout.addWidget(details)
+            close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            close.rejected.connect(report.reject)
+            layout.addWidget(close)
+            report.exec()
+            report.deleteLater()
+
+        self.background(
+            lambda cancelled, progress: delete_reviewed(
+                self.catalogue, reviewed, cancelled=cancelled, progress=progress
+            ),
+            done,
+        )
 
     def confirm(self, message):
         return (
@@ -665,6 +738,8 @@ class Window(QMainWindow):
         self.refreshing = False
 
     def refresh_library(self):
+        if getattr(self, "settings_dialog", None) is not None:
+            self.settings_dialog.refresh()
         if self.refreshing:
             return
         try:

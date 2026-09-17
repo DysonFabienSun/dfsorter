@@ -866,6 +866,18 @@ Destructive catalogue operations outside the normal undo model require explicit 
 
 DFSorter must not silently modify original source media.
 
+### 19.1 Explicit deletion of rejected originals
+
+File → Delete rejected originals is an explicit exception to source preservation. It permanently deletes original video files for all library clips whose triage is `discard`, irrespective of current filters, projects, sessions, or whether their capture folder remains enabled or registered. It bypasses the Windows Recycle Bin.
+
+Before deletion, show a read-only preview grouped by actual parent folder, with full paths, per-folder rejected/to-delete counts, clip dates, individual sizes, folder totals and estimated overall size. Prefer cached media capture dates; label filesystem modification dates when used as fallback. Missing, linked/junction and non-regular sources are excluded with reasons. Logical file size is an estimate of space recovered.
+
+Confirm through a red "Permanently delete originals" button in the preview, enabled when eligible files exist; no typed confirmation is required. Recheck catalogue identity, Discard status, path and file identity/size/timestamps before each deletion. On Windows, delete through a verified file handle that excludes concurrent writers and replacement; locked or changed sources are skipped. Never delete a folder or adjacent sidecar. Preserve catalogue records and project/session references as unavailable media. Cancellation stops subsequent deletions; report each success, skip, failure and cancellation. Deleted originals cannot be restored by metadata Undo. Do not run concurrently with scanning, sharing or export.
+
+### 19.2 Unified settings
+
+A top-right Lucide settings cog (also Edit → Settings) opens one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General is an explicitly labeled placeholder for future preferences. Existing Import and project-pane controls remain available.
+
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 
 The following are outside the initial scope unless separately specified later:
