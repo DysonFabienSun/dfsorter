@@ -9,7 +9,8 @@ from uuid import uuid4
 
 
 def normalized(path) -> str:
-    return os.path.normcase(str(Path(path).resolve()))
+    """Resolve a stored path without discarding its filesystem capitalization."""
+    return str(Path(path).resolve())
 
 
 def now():
@@ -24,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 2:
+            if version > 3:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -60,9 +61,34 @@ class Catalogue:
                     path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
                     duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
                 );
-                PRAGMA user_version = 2;
-                COMMIT;
             """)
+            if version < 3:
+                for table, column in [
+                    ("folders", "path"),
+                    ("clips", "source_path"),
+                    ("media_cache", "path"),
+                ]:
+                    rows = database.execute(f"SELECT {column} FROM {table}").fetchall()
+                    for row in rows:
+                        try:
+                            restored = normalized(row[0])
+                        except (OSError, RuntimeError):
+                            continue
+                        if restored != row[0]:
+                            database.execute(
+                                f"UPDATE {table} SET {column}=? WHERE {column}=?",
+                                (restored, row[0]),
+                            )
+            if os.name == "nt":
+                database.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS clip_path_identity "
+                    "ON clips(source_path COLLATE NOCASE)"
+                )
+                database.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS folder_path_identity "
+                    "ON folders(path COLLATE NOCASE)"
+                )
+            database.execute("PRAGMA user_version = 3")
 
     def media_cache(self):
         return {row["path"]: row for row in self.rows("SELECT * FROM media_cache")}
@@ -118,6 +144,14 @@ class Catalogue:
     def folders(self):
         return self.rows("SELECT * FROM folders ORDER BY path COLLATE NOCASE")
 
+    def session_excluded_ids(self):
+        return {
+            row["clip_id"]
+            for row in self.rows(
+                "SELECT DISTINCT clip_id FROM sources JOIN folders USING(folder_id) WHERE enabled=0"
+            )
+        }
+
     def add_folder(self, path, forced_game=None):
         path = normalized(path)
         if not Path(path).is_dir():
@@ -151,7 +185,9 @@ class Catalogue:
                     (uuid4().hex, path, item["game"], now()),
                 )
                 clip_id = database.execute(
-                    "SELECT clip_id FROM clips WHERE source_path=?", (path,)
+                    "SELECT clip_id FROM clips WHERE source_path=?"
+                    + (" COLLATE NOCASE" if os.name == "nt" else ""),
+                    (path,),
                 ).fetchone()[0]
                 database.execute("INSERT OR IGNORE INTO sources VALUES (?,?)", (folder_id, clip_id))
             if cancelled():
@@ -205,9 +241,9 @@ class Catalogue:
             for row in rows
         ]
         targets = [path for path, clip_id in updates]
-        existing = {clip["source_path"]: clip["clip_id"] for clip in self.clips()}
-        if len(targets) != len(set(targets)) or any(
-            path in existing and existing[path] != clip_id for path, clip_id in updates
+        existing = {Path(clip["source_path"]): clip["clip_id"] for clip in self.clips()}
+        if len(targets) != len({Path(path) for path in targets}) or any(
+            Path(path) in existing and existing[Path(path)] != clip_id for path, clip_id in updates
         ):
             raise ValueError("Migration would collide with an existing source identity")
         with self.connection() as database:
@@ -347,6 +383,8 @@ class Catalogue:
         existing = {clip["clip_id"] for clip in self.clips()}
         if not ids or len(ids) != len(set(ids)) or any(clip_id not in existing for clip_id in ids):
             raise ValueError("Session needs a nonempty unique list of existing clips")
+        if self.session_excluded_ids().intersection(ids):
+            raise ValueError("Clips from disabled capture folders cannot be added to a Session")
         self.set_state("session", {"ids": ids, "index": 0})
 
     def navigate(self, index):

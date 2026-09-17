@@ -11,6 +11,76 @@ from dfsorter.output import copy_one, export_project, safe_stem, share_clip, val
 from dfsorter.parsing import parse_command, query_clips
 
 
+def test_folder_case_and_disabled_sessions(catalogue, tmp_path):
+    root = tmp_path / "MixedCASE"
+    root.mkdir()
+    folder_id = catalogue.add_folder(root)
+    video = root / "VideoCASE.mp4"
+    video.write_bytes(b"test")
+    catalogue.ingest(folder_id, [{"path": str(video), "game": None}])
+    clip = catalogue.clips()[0]
+    assert catalogue.folders()[0]["path"] == str(root.resolve())
+    assert clip["source_path"] == str(video.resolve())
+    catalogue.create_session([clip["clip_id"]])
+    session = catalogue.state("session")
+    catalogue.enable_folder(folder_id, False)
+    with pytest.raises(ValueError, match="disabled capture folders"):
+        catalogue.create_session([clip["clip_id"]], replace=True)
+    assert catalogue.state("session") == session
+    catalogue.enable_folder(folder_id, True)
+    catalogue.create_session([clip["clip_id"]], replace=True)
+    catalogue.enable_folder(folder_id, False)
+    catalogue.remove_folder(folder_id)
+    catalogue.create_session([clip["clip_id"]], replace=True)
+
+
+def test_legacy_path_case_migration(catalogue, tmp_path):
+    import os
+
+    if os.name != "nt":
+        pytest.skip("Windows path casing")
+    root = tmp_path / "MixedCASE"
+    root.mkdir()
+    video = root / "VideoCASE.mp4"
+    video.write_bytes(b"test")
+    folder_id = catalogue.add_folder(root)
+    catalogue.ingest(folder_id, [{"path": str(video), "game": None}])
+    clip_id = catalogue.clips()[0]["clip_id"]
+    catalogue.create_session([clip_id])
+    catalogue.cache_media(
+        [
+            dict(
+                path=str(video.resolve()),
+                size=4,
+                mtime_ns=video.stat().st_mtime_ns,
+                duration=1.5,
+                created=None,
+                error=None,
+                inspected_at=1.0,
+            )
+        ]
+    )
+    missing = root / "MissingCASE.mp4"
+    catalogue.ingest(folder_id, [{"path": str(missing), "game": None}])
+    with catalogue.connection() as database:
+        database.execute("UPDATE folders SET path=lower(path)")
+        database.execute("UPDATE clips SET source_path=lower(source_path)")
+        database.execute("UPDATE media_cache SET path=lower(path)")
+        database.execute("PRAGMA user_version=2")
+    restored = Catalogue(catalogue.path)
+    assert restored.folders()[0]["path"] == str(root.resolve())
+    assert restored.clip(clip_id)["source_path"] == str(video.resolve())
+    assert restored.state("session")["ids"] == [clip_id]
+    assert restored.media_cache()[str(video.resolve())]["duration"] == 1.5
+    assert str(root.resolve() / "missingcase.mp4") in {
+        clip["source_path"] for clip in restored.clips()
+    }
+    restored.ingest(folder_id, [{"path": str(video).lower(), "game": None}])
+    assert len(restored.clips()) == 2
+    with pytest.raises(ValueError, match="overlap"):
+        restored.add_folder(str(root).lower())
+
+
 def test_canonical_patch_and_text(registry):
     patch = parse_command(
         '1V4 3K kj sheriff VANDAL sheriff R4 -- My  "Best" play! --  Notes  ', "VALORANT", registry
@@ -155,6 +225,24 @@ def test_migration_collision_is_atomic(catalogue, clips, tmp_path):
     before = catalogue.clips()
     with pytest.raises(ValueError, match="collide"):
         catalogue.migrate(folder["folder_id"], other)
+    assert catalogue.clips() == before
+    assert catalogue.folders()[0]["path"] == folder["path"]
+
+
+def test_migration_collision_ignores_case_on_windows(catalogue, clips, tmp_path):
+    import os
+
+    if os.name != "nt":
+        pytest.skip("Windows path identity")
+    folder = catalogue.folders()[0]
+    destination = tmp_path / "MixedCASE"
+    destination.mkdir()
+    other_id = catalogue.add_folder(destination)
+    catalogue.ingest(other_id, [{"path": str(destination / "CLIP-0.mp4"), "game": None}])
+    catalogue.remove_folder(other_id)
+    before = catalogue.clips()
+    with pytest.raises(ValueError, match="collide"):
+        catalogue.migrate(folder["folder_id"], destination)
     assert catalogue.clips() == before
     assert catalogue.folders()[0]["path"] == folder["path"]
 

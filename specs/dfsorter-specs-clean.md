@@ -62,7 +62,7 @@ DFSorter uses one SQLite database file as the persistent catalogue.
 
 Each clip has a stable internal ID used by projects, sessions, and other relationships.
 
-The full normalized source path is the determinant of source identity. DFSorter does not need content hashes or lightweight file signatures. If a different video later replaces a file at exactly the same path, DFSorter treats it as the same source identity.
+The full normalized source path is the determinant of source identity. Stored paths preserve capitalization; normalization resolves an absolute path without lowercasing. Windows identity comparisons remain case-insensitive. Existing stored paths recover filesystem capitalization on upgrade where available; missing components retain their stored spelling. DFSorter does not need content hashes or lightweight file signatures. If a different video later replaces a file at exactly the same path, DFSorter treats it as the same source identity.
 
 Path migration tools may update a clip's stored source path while preserving its stable internal ID and all metadata, project memberships, and session references.
 
@@ -299,7 +299,7 @@ Each clip may store one optional non-destructive In/Out range.
 
 Use the application-wide dark design system in §20. A light theme is not required.
 
-Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Reveal the prepared page and video together. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the page with an error instead of leaving it covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls, reset its scroll position, or restart an already selected clip. Keyboard navigation scrolls only enough to reveal its destination. Necessary library rebuilds retain surviving selections and the viewport anchor where possible. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
 ### 9.2 Menu Bar
 
@@ -486,7 +486,7 @@ A Session does **not** snapshot clip metadata. Metadata remains live and editabl
 
 ### 12.1 Creating a Session
 
-The Session panel always shows the full library with normal search, filters, sorting, and selection.
+The Session panel shows the eligible library with normal search, filters, sorting, and selection. Clips associated with disabled capture folders cannot enter new Sessions through Selected, First N or All. Re-enabling restores eligibility. Existing frozen Sessions and project memberships remain unchanged. Clips retained after removing a folder remain eligible.
 
 A new Session may be created from:
 
@@ -525,7 +525,8 @@ The Editing layout provides:
 - Session queue on the left;
 - player and clip information in the center;
 - collapsible projects on the right, following the normal/maximized visibility rules;
-- command bar at the bottom.
+- command bar at the bottom of the center pane, allowing the left clip list to use the full pane height.
+- a compact footer below the Editing clip list shows Kept, Rejected, Undefined and Total counts for the frozen Session, updating immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
 
 ### 13.1 Clip Display
 
@@ -664,7 +665,7 @@ This command history exists only in memory and does not persist across applicati
 - A successful metadata command by itself does **not** change triage.
 - For a non-discarded clip, Shift+Enter requires a configured game and every field in its `required_for_export` list. Missing requirements leave verdict and position unchanged and are listed inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. This is metadata validation; source availability remains an export requirement.
 - An explicitly discarded clip advances while preserving Discard, even with missing fields, no game or an unavailable source. The empty-command-bar requirement still applies.
-- At the final Session clip, apply the legal verdict, remain on that clip and report Session complete without deleting or replacing the Session. Ignore key auto-repeat for advancement.
+- After applying the legal verdict, advance to the next clip with undefined triage later in frozen Session order, skipping Keep and Discard clips. Do not wrap. If none remains ahead, stay on the current clip and report Session complete only if no Session clips remain undefined; otherwise report that earlier clips remain undefined. Do not delete or replace the Session. Ignore key auto-repeat for advancement.
 - Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
 - Backspace does not automatically advance; the user may then use `Shift+Enter` or ordinary navigation to continue.
 - Rating never changes triage.

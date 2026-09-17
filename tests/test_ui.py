@@ -15,6 +15,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog, QProgressDialog
 
+from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
@@ -102,6 +103,17 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
     assert not window.catalogue.projects()
     assert Path(window.catalogue.clip(ids[0])["source_path"]).exists()
     assert not window.settings_button.icon().isNull()
+    settings.close()
+
+
+def test_settings_preserves_capture_folder_case(window, tmp_path):
+    captures = tmp_path / "My Captures 游戏"
+    captures.mkdir()
+    window.catalogue.add_folder(captures)
+    window.catalogue = Catalogue(window.catalogue.path)
+    window.refresh_references()
+    settings = SettingsDialog(window)
+    assert str(captures.resolve()) in settings.folders.item(0).text()
     settings.close()
 
 
@@ -235,6 +247,71 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(next_id)["triage"] == "keep"
     assert "Session complete" in window.statusBar().currentMessage()
+
+
+def test_editing_session_counts_and_list_height(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]
+    window.catalogue.ingest(
+        folder["folder_id"],
+        [{"path": str(tmp_path / "captures" / "outside-session.mp4"), "game": None}],
+    )
+    window.panel("Editing")
+    application.processEvents()
+    assert window.session_counts.text() == "Kept 0 · Rejected 0\nUndefined 1 · Total 1"
+    item = window.library.item(0)
+    window.edit({"triage": "keep"})
+    assert window.session_counts.text() == "Kept 1 · Rejected 0\nUndefined 0 · Total 1"
+    window.edit({"triage": "discard"})
+    assert window.session_counts.text() == "Kept 0 · Rejected 1\nUndefined 0 · Total 1"
+    assert window.library.item(0) is item
+    window.undo()
+    assert "Kept 1" in window.session_counts.text()
+    window.undo()
+    assert "Undefined 1" in window.session_counts.text()
+    assert window.catalogue.state("session")["ids"] == ids
+    application.processEvents()
+    assert window.library_error.isHidden()
+    assert window.library.geometry().top() <= 8
+    assert window.left.height() == window.center_column.height()
+    assert window.session_counts.geometry().bottom() >= window.left.height() - 8
+    artifact = ROOT / "cache/verification/session-counts"
+    artifact.mkdir(parents=True, exist_ok=True)
+    assert wait_for(application, lambda: not window.transition_pending)
+    window.grab().save(str(artifact / "editing.png"))
+    window.panel("Export")
+    assert window.session_counts.isHidden()
+
+
+def test_review_advance_skips_verdicts_without_wrapping(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]
+    window.catalogue.ingest(
+        folder["folder_id"],
+        [
+            {"path": str(tmp_path / "captures" / f"extra-{index}.mp4"), "game": None}
+            for index in range(4)
+        ],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    for index, triage in [(0, "discard"), (1, "keep"), (2, "discard"), (4, "keep")]:
+        window.catalogue.patch(ids[index], {"triage": triage})
+    window.panel("Editing")
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == ids[3]
+    assert window.catalogue.state("session")["index"] == 3
+    assert window.catalogue.clip(ids[0])["triage"] == "discard"
+    window.catalogue.patch(ids[1], {"triage": None})
+    window.edit({"triage": "discard"})
+    window.advance_review()
+    assert window.current_id == ids[3]
+    assert "earlier" in window.statusBar().currentMessage()
+    window.catalogue.patch(ids[1], {"triage": "keep"})
+    window.advance_review()
+    assert window.current_id == ids[3]
+    assert "Session complete" in window.statusBar().currentMessage()
+    assert window.catalogue.state("session")["ids"] == ids
 
 
 def test_startup_rescans_enabled_folders(application, tmp_path):
@@ -497,6 +574,126 @@ def test_page_reveal_waits_and_delays_indicator(window, application):
     assert window.player.status.text() == "Invalid media"
 
 
+@pytest.mark.parametrize("panel", ["Editing", "Export"])
+def test_clip_click_keeps_list_and_scroll(window, application, tmp_path, monkeypatch, panel):
+    root = tmp_path / "LongLibrary"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder,
+        [{"path": str(root / f"clip-{index:03}.mp4"), "game": "VALORANT"} for index in range(80)],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    if panel == "Editing":
+        window.catalogue.create_session(ids)
+    else:
+        project = window.catalogue.save_project("Long project")
+        for clip_id in ids:
+            window.catalogue.patch(clip_id, {}, membership=(project, True))
+        window.refresh_references()
+        window.export_project.setCurrentIndex(window.export_project.findData(project))
+    window.panel(panel)
+    application.processEvents()
+    player = window.active_player()
+    loads = []
+
+    def slow_load(clip):
+        loads.append(clip["clip_id"])
+        player.awaiting_frame = True
+        player.loading_started.emit()
+
+    monkeypatch.setattr(player, "load", slow_load)
+    monkeypatch.setattr(window, "refresh_library", lambda: pytest.fail("Rebuilt clip list"))
+    monkeypatch.setattr(window, "refresh_references", lambda: pytest.fail("Rebuilt references"))
+    item = window.library.item(65)
+    window.library.scrollToItem(item, window.library.ScrollHint.PositionAtCenter)
+    application.processEvents()
+    scroll = window.library.verticalScrollBar().value()
+    for row in (65, 66, 67):
+        target = window.library.item(row)
+        QTest.mouseClick(
+            window.library.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=window.library.visualItemRect(target).center(),
+        )
+        application.processEvents()
+        assert window.library.verticalScrollBar().value() == scroll
+        assert window.library.item(65) is item
+        assert window.transition_scope == "clip"
+        assert not window.transition_cover.geometry().intersects(window.left.geometry())
+        assert window.transition_pending
+    assert loads == ids[65:68]
+    QTest.mouseClick(
+        window.library.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=window.library.visualItemRect(window.library.item(67)).center(),
+    )
+    assert len(loads) == 3
+    old_generation = window.transition_generation - 1
+    player.awaiting_frame = False
+    window.reveal_page(old_generation)
+    assert window.transition_pending
+    player.loading_finished.emit()
+    application.processEvents()
+    assert not window.transition_pending
+    if panel == "Editing":
+        window.navigate(1)
+        assert window.current_id == ids[68]
+        assert window.catalogue.state("session")["index"] == 68
+        assert window.library.item(65) is item
+
+
+def test_library_rebuild_keeps_viewport(window, application, tmp_path):
+    root = tmp_path / "LongLibrary"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder, [{"path": str(root / f"clip-{index:03}.mp4"), "game": None} for index in range(80)]
+    )
+    window.refresh_library()
+    window.library.scrollToItem(window.library.item(65))
+    application.processEvents()
+    scroll = window.library.verticalScrollBar().value()
+    window.refresh_library()
+    application.processEvents()
+    assert window.library.verticalScrollBar().value() == scroll
+
+
+def test_real_clip_switch_reveals_local_preview(window, application, tmp_path):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg required for playback fixtures")
+    ids = add_clips(window, tmp_path, valid=True)
+    source = Path(window.catalogue.clip(ids[0])["source_path"])
+    second = source.with_name("second.mp4")
+    shutil.copyfile(source, second)
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"], [{"path": str(second), "game": "VALORANT"}]
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    project = window.catalogue.save_project("Preview project")
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {}, membership=(project, True))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project))
+    for panel in ("Editing", "Export"):
+        window.panel(panel)
+        assert wait_for(application, lambda: not window.transition_pending)
+        row = 1 - window.library.currentRow()
+        expected = window.catalogue.clip(ids[row])["source_path"]
+        window.library.setCurrentRow(row)
+        assert window.transition_pending
+        assert window.transition_scope == "clip"
+        artifact = ROOT / "cache/verification/clip-navigation"
+        artifact.mkdir(parents=True, exist_ok=True)
+        window.grab().save(str(artifact / f"{panel.lower()}-loading.png"))
+        assert wait_for(application, lambda: not window.transition_pending)
+        assert wait_for(application, lambda: window.active_player().media.duration() > 0)
+        assert window.active_player().video.videoSink().videoFrame().isValid()
+        assert Path(window.active_player().media.source().toLocalFile()) == Path(expected)
+        window.grab().save(str(artifact / f"{panel.lower()}-ready.png"))
+
+
 def test_background_completion(window, application):
     results = []
     window.background(lambda cancelled, progress: 42, results.append)
@@ -614,6 +811,22 @@ def test_rescan_modal_cache_restart(window, application, tmp_path, monkeypatch):
     assert wait_for(application, lambda: restarted.worker is None)
     assert len(calls) == 2
     restarted.close()
+
+
+def test_disabled_folder_session_selection(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    original_session = window.catalogue.state("session")
+    window.panel("Session")
+    assert window.library.count() == 1
+    window.folders.setCurrentRow(0)
+    window.toggle_folder()
+    assert window.library.count() == 0
+    assert window.catalogue.state("session") == original_session
+    window.panel("Editing")
+    assert window.library.count() == len(ids)
+    window.panel("Session")
+    window.toggle_folder()
+    assert window.library.count() == 1
 
 
 def test_all_panel_layouts(window, application, tmp_path):

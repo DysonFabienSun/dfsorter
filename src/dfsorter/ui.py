@@ -10,7 +10,17 @@ from pathlib import Path
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import yaml
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QObject,
+    QPoint,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -147,6 +157,7 @@ class Window(QMainWindow):
         self.splitter.setHandleWidth(1)
         outer.addWidget(self.splitter, 1)
         self.left, left_layout = page()
+        left_layout.setContentsMargins(8, 4, 8, 4)
         role(self.left, "panel")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search or game:VAL agent:Jett kill:>=4")
@@ -170,18 +181,31 @@ class Window(QMainWindow):
         self.library_error = QLabel()
         role(self.library_error, "error")
         self.library_error.setWordWrap(True)
+        self.library_error.hide()
         left_layout.addWidget(self.library_error)
         self.library = QListWidget()
         self.library.setMouseTracking(True)
         self.library.setUniformItemSizes(True)
+        self.library.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.library.setItemDelegate(ClipDelegate(self.library))
         self.library.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.library.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.library.currentItemChanged.connect(self.select_clip)
         left_layout.addWidget(self.library, 1)
+        self.session_counts = QLabel()
+        self.session_counts.setWordWrap(True)
+        self.session_counts.setAccessibleName("Session clip counts")
+        role(self.session_counts, "secondary")
+        self.session_counts.hide()
+        left_layout.addWidget(self.session_counts)
         self.splitter.addWidget(self.left)
+        self.center_column = QWidget()
+        center_layout = QVBoxLayout(self.center_column)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
         self.center = QStackedWidget()
-        self.splitter.addWidget(self.center)
+        center_layout.addWidget(self.center, 1)
+        self.splitter.addWidget(self.center_column)
         self.pages = {}
         self.build_pages()
         self.right, right_layout = page()
@@ -229,7 +253,7 @@ class Window(QMainWindow):
         self.command_history.setWordWrap(True)
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next · ? Shortcuts"
+            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · ? Shortcuts"
         )
         self.shortcut_hint.setObjectName("muted")
         self.shortcut_hint.setWordWrap(True)
@@ -253,9 +277,10 @@ class Window(QMainWindow):
         role(self.command_error, "error")
         self.command_error.setWordWrap(True)
         command_layout.addWidget(self.command_error)
-        outer.addWidget(self.command_area)
+        center_layout.addWidget(self.command_area)
         self.transition_generation = 0
         self.transition_pending = False
+        self.transition_scope = "page"
         self.transition_cover = QWidget(central)
         self.transition_cover.setObjectName("pageLoading")
         self.transition_cover.setStyleSheet(
@@ -273,9 +298,12 @@ class Window(QMainWindow):
         self.loading_indicator_timer.setSingleShot(True)
         self.loading_indicator_timer.setInterval(1000)
         self.loading_indicator_timer.timeout.connect(self.loading_label.show)
+        self.command_cover = QWidget(self.command_area)
+        self.command_cover.setStyleSheet(f"background: {COLORS['bg_app']};")
+        self.command_cover.hide()
         for player in (self.player, self.export_player):
-            player.loading_started.connect(self.begin_page_transition)
-            player.loading_finished.connect(self.queue_page_reveal)
+            player.loading_started.connect(lambda player=player: self.player_loading(player))
+            player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_menus()
         QApplication.instance().installEventFilter(self)
         self.refresh_references()
@@ -575,7 +603,27 @@ class Window(QMainWindow):
         item = listing.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
-    def begin_page_transition(self):
+    def player_loading(self, player):
+        if self.current_panel in {"Editing", "Export"} and player is self.active_player():
+            self.begin_page_transition("clip")
+
+    def player_ready(self, player):
+        if self.current_panel in {"Editing", "Export"} and player is self.active_player():
+            self.queue_page_reveal()
+
+    def position_transition_covers(self):
+        target = self.centralWidget() if self.transition_scope == "page" else self.center
+        self.transition_cover.setGeometry(
+            target.mapTo(self.centralWidget(), QPoint(0, 0)).x(),
+            target.mapTo(self.centralWidget(), QPoint(0, 0)).y(),
+            target.width(),
+            target.height(),
+        )
+        self.command_cover.setGeometry(self.command_area.rect())
+
+    def begin_page_transition(self, scope="page"):
+        if not self.transition_pending or scope == "page":
+            self.transition_scope = scope
         self.transition_generation += 1
         if not self.transition_pending:
             self.transition_pending = True
@@ -586,7 +634,11 @@ class Window(QMainWindow):
             policy.setRetainSizeWhenHidden(True)
             player.video.setSizePolicy(policy)
             player.video.hide()
-        self.transition_cover.setGeometry(self.centralWidget().rect())
+        self.position_transition_covers()
+        self.command_cover.setVisible(
+            self.transition_scope == "clip" and self.current_panel == "Editing"
+        )
+        self.command_cover.raise_()
         self.transition_cover.show()
         self.transition_cover.raise_()
 
@@ -602,15 +654,15 @@ class Window(QMainWindow):
         self.loading_indicator_timer.stop()
         self.transition_pending = False
         self.transition_cover.hide()
+        self.command_cover.hide()
         self.centralWidget().layout().activate()
-        self.centralWidget().repaint()
         for player in (self.player, self.export_player):
             player.video.show()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
-            self.transition_cover.setGeometry(self.centralWidget().rect())
+            self.position_transition_covers()
 
     def panel(self, name):
         if name == "Editing" and not self.catalogue.state("session"):
@@ -717,11 +769,26 @@ class Window(QMainWindow):
             self.folders.addItem(item)
             if folder["folder_id"] == folder_selection:
                 self.folders.setCurrentItem(item)
+        self.refresh_session_status(clips)
+        self.config_status.setPlainText(
+            "\n".join(self.registry.errors)
+            or "Configurations valid:\n" + "\n".join(self.registry.games)
+        )
+        self.refreshing = False
+
+    def refresh_session_status(self, clips=None):
+        if clips is None:
+            clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         session = self.catalogue.state("session")
         self.nav["Editing"].setEnabled(bool(session))
+        self.session_counts.setVisible(bool(session) and self.current_panel == "Editing")
         if session:
             counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
             total = len(session["ids"])
+            self.session_counts.setText(
+                f"Kept {counts['keep']} · Rejected {counts['discard']}\n"
+                f"Undefined {counts['undefined']} · Total {total}"
+            )
             self.session_status.setText(
                 f"Position {session['index'] + 1} / {total}\n"
                 + "\n".join(
@@ -730,14 +797,38 @@ class Window(QMainWindow):
                 )
             )
         else:
+            self.session_counts.clear()
             self.session_status.setText(
                 "No active session. Filter and select clips in the library."
             )
-        self.config_status.setPlainText(
-            "\n".join(self.registry.errors)
-            or "Configurations valid:\n" + "\n".join(self.registry.games)
+
+    def render_card(self, item, clip):
+        available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
+        card_title = title(
+            {**clip, "mainline": (clip.get("mainline") or "").strip()},
+            self.registry,
+            mainline_separator=" | ",
         )
-        self.refreshing = False
+        item.setText(
+            f"{card_title}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
+        )
+        item.setToolTip(item.text() + "\n" + clip["source_path"])
+        item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
+        item.setData(
+            CLIP_ROLE,
+            {
+                "title": card_title,
+                "rich_title": title(
+                    {**clip, "mainline": (clip.get("mainline") or "").strip()},
+                    self.registry,
+                    rich=True,
+                    mainline_separator=" | ",
+                ),
+                "game": clip["game"],
+                "triage": clip["triage"],
+                "unavailable": bool(available),
+            },
+        )
 
     def refresh_library(self):
         if getattr(self, "settings_dialog", None) is not None:
@@ -755,6 +846,9 @@ class Window(QMainWindow):
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
             else:
                 clips = query_clips(clips, self.search.text(), self.registry)
+                if self.current_panel == "Session":
+                    excluded = self.catalogue.session_excluded_ids()
+                    clips = [clip for clip in clips if clip["clip_id"] not in excluded]
                 triage = self.triage_filter.currentText()
                 if triage == "Hide discarded" and not requests_discarded(self.search.text()):
                     clips = [clip for clip in clips if clip["triage"] != "discard"]
@@ -801,56 +895,66 @@ class Window(QMainWindow):
             if self.current_panel == "Editing" and self.catalogue.state("session"):
                 session = self.catalogue.state("session")
                 current = session["ids"][session["index"]]
+            scroll = self.library.verticalScrollBar().value()
+            anchor = self.library.itemAt(1, 1)
+            anchor_id = anchor.data(Qt.ItemDataRole.UserRole) if anchor else None
+            anchor_offset = self.library.visualItemRect(anchor).top() if anchor else 0
             self.library.blockSignals(True)
             self.library.clear()
             for clip in clips:
-                available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
-                card_title = title(
-                    {**clip, "mainline": (clip.get("mainline") or "").strip()},
-                    self.registry,
-                    mainline_separator=" | ",
-                )
-                item = QListWidgetItem(
-                    f"{card_title}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
-                )
-                item.setToolTip(item.text() + "\n" + clip["source_path"])
-                item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
-                item.setData(
-                    CLIP_ROLE,
-                    {
-                        "title": card_title,
-                        "rich_title": title(
-                            {**clip, "mainline": (clip.get("mainline") or "").strip()},
-                            self.registry,
-                            rich=True,
-                            mainline_separator=" | ",
-                        ),
-                        "game": clip["game"],
-                        "triage": clip["triage"],
-                        "unavailable": bool(available),
-                    },
-                )
+                item = QListWidgetItem()
+                self.render_card(item, clip)
                 self.library.addItem(item)
                 if clip["clip_id"] == current:
                     self.library.setCurrentItem(item)
                 item.setSelected(clip["clip_id"] in selected or clip["clip_id"] == current)
+            self.library.doItemsLayout()
+            for index in range(self.library.count()):
+                item = self.library.item(index)
+                if item.data(Qt.ItemDataRole.UserRole) == anchor_id:
+                    scroll = (
+                        self.library.verticalScrollBar().value()
+                        + self.library.visualItemRect(item).top()
+                        - anchor_offset
+                    )
+                    break
+            self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
             self.library_error.clear()
+            self.library_error.hide()
         except ValueError as error:
             self.library_error.setText(str(error))
+            self.library_error.show()
 
     def select_clip(self, item, previous=None):
         if not item:
             return
         clip_id = item.data(Qt.ItemDataRole.UserRole)
         if self.current_panel == "Editing":
-            self.save_description()
-            session = self.catalogue.state("session")
-            self.catalogue.navigate(session["ids"].index(clip_id))
-            self.refresh_library()
-            self.load_clip(clip_id)
+            self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
+
+    def switch_editing_clip(self, clip_id, ensure_visible=False):
+        if clip_id == self.current_id:
+            return
+        self.save_description()
+        session = self.catalogue.state("session")
+        self.catalogue.navigate(session["ids"].index(clip_id))
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            item_id = item.data(Qt.ItemDataRole.UserRole)
+            if item_id in {self.current_id, clip_id}:
+                self.render_card(item, self.catalogue.clip(item_id))
+            if item_id == clip_id:
+                self.library.blockSignals(True)
+                self.library.setCurrentItem(item)
+                self.library.blockSignals(False)
+                if ensure_visible:
+                    self.library.scrollToItem(item)
+        self.refresh_session_status()
+        self.begin_page_transition("clip")
+        self.load_clip(clip_id)
 
     def load_clip(self, clip_id):
         self.cancel_space()
@@ -923,6 +1027,7 @@ class Window(QMainWindow):
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
+        self.refresh_session_status()
 
     def render_field_reminder(self, clip, game):
         self.field_reminder.setVisible(self.current_panel == "Editing" and game is not None)
@@ -1045,13 +1150,30 @@ class Window(QMainWindow):
             if clip["triage"] != "discard":
                 self.catalogue.patch(self.current_id, {"triage": "keep"}, editing=True)
             self.command_error.clear()
-            if session["index"] + 1 < len(session["ids"]):
-                self.navigate(1)
+            clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+            next_id = next(
+                (
+                    clip_id
+                    for clip_id in session["ids"][session["index"] + 1 :]
+                    if clips[clip_id]["triage"] is None
+                ),
+                None,
+            )
+            if next_id is not None:
+                self.switch_editing_clip(next_id, ensure_visible=True)
             else:
                 self.render_clip()
-                self.refresh_references()
-                self.refresh_library()
-                self.statusBar().showMessage("Session complete — this is the final clip.", 12000)
+                self.refresh_session_status(clips)
+                item = self.library.currentItem()
+                if item is not None:
+                    self.render_card(item, clips[self.current_id])
+                unfinished = any(clips[clip_id]["triage"] is None for clip_id in session["ids"])
+                message = (
+                    "No undefined clips ahead — earlier Session clips remain undefined."
+                    if unfinished
+                    else "Session complete — no undefined clips remain."
+                )
+                self.statusBar().showMessage(message, 12000)
             self.review_mode()
         except (ValueError, OSError) as error:
             self.error(error)
@@ -1060,12 +1182,8 @@ class Window(QMainWindow):
         session = self.catalogue.state("session")
         if not session:
             return
-        self.save_description()
-        self.catalogue.navigate(session["index"] + offset)
-        session = self.catalogue.state("session")
-        self.refresh_references()
-        self.refresh_library()
-        self.load_clip(session["ids"][session["index"]])
+        index = max(0, min(len(session["ids"]) - 1, session["index"] + offset))
+        self.switch_editing_clip(session["ids"][index], ensure_visible=True)
 
     def active_player(self):
         return self.export_player if self.current_panel == "Export" else self.player
@@ -1134,10 +1252,16 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next (command bar must be empty)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
+            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
         )
 
     def eventFilter(self, watched: QObject, event):
+        if (
+            event.type() in {QEvent.Type.Resize, QEvent.Type.Move}
+            and watched in (self.center, self.command_area)
+            and self.transition_pending
+        ):
+            self.position_transition_covers()
         if event.type() == QEvent.Type.ShortcutOverride:
             focus = QApplication.focusWidget()
             if (
@@ -1562,6 +1686,7 @@ class Window(QMainWindow):
             if folder["folder_id"] == folder_id:
                 self.catalogue.enable_folder(folder_id, not folder["enabled"])
         self.refresh_references()
+        self.refresh_library()
 
     def migrate(self):
         folder_id = self.selected_id(self.folders)
@@ -1625,7 +1750,14 @@ class Window(QMainWindow):
         self.show_format()
         if self.current_panel == "Export":
             self.refresh_library()
-            self.export_player.load(clips[0] if clips else None)
+            current = self.selected_id(self.library)
+            clip = next((clip for clip in clips if clip["clip_id"] == current), None)
+            if clip is None and clips:
+                clip = clips[0]
+                self.library.blockSignals(True)
+                self.library.setCurrentRow(0)
+                self.library.blockSignals(False)
+            self.export_player.load(clip)
 
     def show_format(self):
         while self.format_layout.count():

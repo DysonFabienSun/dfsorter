@@ -94,3 +94,17 @@ Warm filesystem caches and machine load affect timings. Benchmark helper:
 access to capture media. Automated coverage includes immediate modal startup/manual
 progress, restart metadata, failure expiry, forced inspection, cancellation rollback,
 process cleanup and the existing regression suite.
+
+## Clip navigation and viewport stability
+
+- [x] Editing clicks and previous/next navigation update cards and session status without rebuilding the library or reference controls. Necessary list rebuilds preserve the viewport anchor.
+- [x] Editing and Export clip transitions cover only details/player controls, keeping the list and navigation usable; new details and video reveal together. Page changes retain full-page transitions.
+- [x] Long-list mouse navigation, repeated selections during loading, current-clip clicks, keyboard navigation, viewport restoration, and stale reveal generations have automated regression coverage.
+- [x] Generated H.264 media verifies clip switching and first-frame availability in Editing and Export. Loading/ready screenshots in `cache/verification/clip-navigation` verify cover placement; native video rendering is checked through the video sink rather than widget screenshots.
+- [ ] User acceptance of scrolling and transition smoothness on the capture library.
+
+## Editing session counters and spacing
+
+- [x] Editing list footer shows live Kept, Rejected, Undefined and Total counts for the frozen Session, excluding clips outside it.
+- [x] Empty list errors collapse; reduced list margins and a center-column command area allow the left pane to use the full height.
+- [ ] User acceptance of the revised Editing layout.
