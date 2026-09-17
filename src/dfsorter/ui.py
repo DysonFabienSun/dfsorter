@@ -1,3 +1,4 @@
+import html
 import logging
 import os
 import sys
@@ -231,6 +232,16 @@ class Window(QMainWindow):
         self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("1v4 3k jett vandal R4 -- Mainline -- Description")
         command_layout.addWidget(self.command)
+        self.field_reminder = QLabel()
+        self.field_reminder.setTextFormat(Qt.TextFormat.RichText)
+        self.field_reminder.setWordWrap(True)
+        self.field_reminder.setAccessibleName("Saved metadata field checklist")
+        self.field_reminder.setToolTip(
+            "Saved metadata: ✓ populated · ! required for export · o optional · x invalid for current configuration. "
+            "Unsubmitted commands do not change this checklist."
+        )
+        self.field_reminder.hide()
+        command_layout.addWidget(self.field_reminder)
         self.command_error = QLabel()
         role(self.command_error, "error")
         self.command_error.setWordWrap(True)
@@ -482,6 +493,7 @@ class Window(QMainWindow):
         self.command_area.setVisible(name in {"Home", "Editing"})
         self.command.setEnabled(name == "Editing")
         self.shortcut_hint.setVisible(name == "Editing")
+        self.field_reminder.hide()
         self.search.setVisible(name not in {"Editing", "Export"})
         self.filters.setVisible(name not in {"Editing", "Export"})
         self.library.setSelectionMode(
@@ -705,10 +717,25 @@ class Window(QMainWindow):
         if not self.current_id:
             return
         clip = self.catalogue.clip(self.current_id)
-        rendered = title(clip, self.registry, rich=True)
-        rendered = rendered.replace("<b>", f'<b style="color:{COLORS["text_primary"]}">')
-        rendered = f'<span style="color:{COLORS["text_secondary"]}">{rendered}</span>'
+        game = self.registry.game(clip["game"])
+        title_fields = game.display_order if game else ["mainline"]
+        has_title = any(
+            (clip.get("mainline") if key == "mainline" else clip["metadata"].get(key))
+            not in (None, "", [])
+            for key in title_fields
+        )
+        if has_title:
+            rendered = title(clip, self.registry, rich=True)
+            rendered = rendered.replace("<b>", f'<b style="color:{COLORS["text_primary"]}">')
+        else:
+            rendered = html.escape(Path(clip["source_path"]).name)
+            rendered += (
+                f' <span style="color:{COLORS["text_secondary"]}; font-size:12px; font-weight:400">'
+                "— Working title not set</span>"
+            )
+        rendered = f'<span style="color:{COLORS["text_working_title"]}">{rendered}</span>'
         self.working_title.setText(rendered)
+        self.render_field_reminder(clip, game)
         self.filename.setText(Path(clip["source_path"]).name)
         member_ids = self.catalogue.memberships(self.current_id)
         names = [
@@ -724,7 +751,6 @@ class Window(QMainWindow):
         self.rating.update()
         for state, control in self.triage_buttons.items():
             control.setChecked(clip["triage"] == state)
-        game = self.registry.game(clip["game"])
         self.structured.setText(
             " | ".join(
                 f"{key}: {', '.join(map(str, value)) if isinstance(value, list) else value}"
@@ -744,6 +770,57 @@ class Window(QMainWindow):
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
+
+    def render_field_reminder(self, clip, game):
+        self.field_reminder.setVisible(self.current_panel == "Editing" and game is not None)
+        if game is None:
+            self.field_reminder.clear()
+            return
+        fields = list(
+            dict.fromkeys(
+                [*game.display_order, *game.fields, "mainline", "rating", "technical_condition"]
+            )
+        )
+        entries = []
+        for key in fields:
+            if key == "description":
+                continue
+            value = clip["metadata"].get(key) if key in game.fields else clip.get(key)
+            missing = value in (None, "", [])
+            valid = True
+            if not missing:
+                if key in {"kill", "clutch", "rating"}:
+                    valid = type(value) is int and value >= (0 if key == "kill" else 1)
+                    if key == "rating":
+                        valid = valid and value <= 5
+                elif key in game.fields:
+                    definition = game.fields[key]
+                    multiple = definition.get("multiple", False)
+                    values = value if isinstance(value, list) else [value]
+                    valid = isinstance(value, list) if multiple else isinstance(value, str)
+                    valid = valid and all(
+                        isinstance(entry, str) and bool(entry.strip()) for entry in values
+                    )
+                    if definition.get("type") == "enum":
+                        valid = valid and all(
+                            entry in definition.get("values", []) for entry in values
+                        )
+                else:
+                    valid = isinstance(value, str)
+            if not valid:
+                mark, color = "x", "danger"
+            elif not missing:
+                mark, color = "✓", "success"
+            elif key in game.required_for_export:
+                mark, color = "!", "warning"
+            else:
+                mark, color = "o", "text_muted"
+            entries.append(
+                f'<span style="color:{COLORS[color]}">{mark}&nbsp;{html.escape(key)}</span>'
+            )
+        self.field_reminder.setText(
+            '<span style="font-size:11px">' + " &nbsp; ".join(entries) + "</span>"
+        )
 
     def edit(self, patch, **kwargs):
         if self.current_panel != "Editing" or not self.current_id:
@@ -1516,6 +1593,8 @@ class Window(QMainWindow):
         self.refresh_references()
         self.refresh_library()
         self.formats.clear()
+        if self.current_panel == "Editing" and self.current_id:
+            self.render_clip()
 
     def reset_layout(self):
         self.pane_overrides.clear()

@@ -918,7 +918,7 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 | Toolbar / navigation height | 28 / 34 |
 | Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
 
-Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Working titles use 16 px semibold, with mainline bold and primary-colored and structured portions secondary-colored. Section headings use 20 px semibold. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 16 px semibold, with mainline bold and primary-colored and structured portions in the brighter `text_working_title #C7CDD5` tone. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px, panels 0–3 px. Font metrics take precedence over dimensions where necessary to avoid clipping.
 
