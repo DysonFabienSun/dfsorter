@@ -221,7 +221,7 @@ class Window(QMainWindow):
         self.command_history.setWordWrap(True)
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / Metadata · ? Shortcuts"
+            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next · ? Shortcuts"
         )
         self.shortcut_hint.setObjectName("muted")
         self.shortcut_hint.setWordWrap(True)
@@ -243,6 +243,7 @@ class Window(QMainWindow):
         self.reset_layout()
         if self.registry.errors:
             self.statusBar().showMessage("Configuration errors — see Config panel")
+        QTimer.singleShot(0, self.rescan)
 
     def build_pages(self):
         for name in ["Home", "Import", "Session", "Editing", "Export", "Config"]:
@@ -765,15 +766,13 @@ class Window(QMainWindow):
             self.catalogue.patch(self.current_id, {"technical_condition": self.technical.text()})
             self.technical.setVisible(bool(self.technical.text()))
 
-    def submit(self, advance=False):
+    def submit(self):
         if self.current_panel != "Editing" or not self.current_id:
             return
         text = self.command.text()
         try:
             clip = self.catalogue.clip(self.current_id)
             patch = parse_command(text, clip["game"], self.registry)
-            if advance and clip["triage"] != "discard":
-                patch["triage"] = "keep"
             self.save_description()
             self.catalogue.patch(self.current_id, patch, editing=True)
             if text.strip():
@@ -782,10 +781,49 @@ class Window(QMainWindow):
             self.command.clear()
             self.command_error.clear()
             self.render_clip()
-            if advance:
-                self.navigate(1)
             self.review_mode()
         except ValueError as error:
+            self.error(error)
+
+    def advance_review(self):
+        if self.current_panel != "Editing" or not self.current_id:
+            return
+        if self.command.text():
+            self.error(
+                "Press / or Enter to enter input mode, then Enter to submit existing commands first."
+            )
+            return
+        session = self.catalogue.state("session")
+        if not session or not session["ids"]:
+            return
+        clip = self.catalogue.clip(self.current_id)
+        if clip["triage"] != "discard":
+            game = self.registry.game(clip["game"])
+            if not game:
+                self.error("Assign a configured game before Keep + Next, or explicitly Discard.")
+                return
+            missing = [
+                key
+                for key in game.required_for_export
+                if clip["metadata"].get(key) in (None, "", [])
+            ]
+            if missing:
+                self.error("Cannot Keep + Next: missing required fields: " + ", ".join(missing))
+                return
+        try:
+            self.save_description()
+            if clip["triage"] != "discard":
+                self.catalogue.patch(self.current_id, {"triage": "keep"}, editing=True)
+            self.command_error.clear()
+            if session["index"] + 1 < len(session["ids"]):
+                self.navigate(1)
+            else:
+                self.render_clip()
+                self.refresh_references()
+                self.refresh_library()
+                self.statusBar().showMessage("Session complete — this is the final clip.", 12000)
+            self.review_mode()
+        except (ValueError, OSError) as error:
             self.error(error)
 
     def navigate(self, offset):
@@ -866,7 +904,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\n\nINPUT MODE\nEnter: Submit · Shift+Enter: Submit + Keep + Next\nEscape: Return to review, preserving your draft\n\nWatch, annotate, then give a verdict. Reject does not advance;\nShift+Enter advances without overriding an explicit Discard.\nRatings never change verdicts. Drafts last for this run only.",
+            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next (command bar must be empty)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -911,10 +949,21 @@ class Window(QMainWindow):
             return True
         if focus is self.command:
             if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
-                self.submit(bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+                if modifiers == Qt.KeyboardModifier.NoModifier:
+                    self.submit()
+                elif modifiers == Qt.KeyboardModifier.ShiftModifier:
+                    self.error(
+                        "Shift+Enter is available only in review mode. Press Enter to submit, or Escape to return to review."
+                    )
                 return True
         if text_editing:
             return super().eventFilter(watched, event)
+        if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
+                self.advance_review()
+            elif modifiers == Qt.KeyboardModifier.NoModifier:
+                self.command.setFocus()
+            return True
         if key in {Qt.Key.Key_Left, Qt.Key.Key_Right} and modifiers in {
             Qt.KeyboardModifier.NoModifier,
             Qt.KeyboardModifier.ShiftModifier,
@@ -951,7 +1000,7 @@ class Window(QMainWindow):
                 if key == Qt.Key.Key_R:
                     self.rating_deadline = time.monotonic() + 1
                     return True
-                if key in {Qt.Key.Key_Slash, Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+                if key == Qt.Key.Key_Slash:
                     self.command.setFocus()
                     return True
                 if key == Qt.Key.Key_Backspace:
@@ -1207,6 +1256,8 @@ class Window(QMainWindow):
 
     def rescan(self):
         folders = [folder for folder in self.catalogue.folders() if folder["enabled"]]
+        if not folders:
+            return
 
         def scan(cancelled, progress):
             results, errors = [], []

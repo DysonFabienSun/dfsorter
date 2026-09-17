@@ -53,4 +53,10 @@ Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/for
 - [ ] Manual acceptance with the user's own capture library and audio devices.
 - [ ] Premiere-specific XMP interpretation (separate from required v1 range preservation).
 
-Manual rescan is the implemented ingest trigger; optional polling is not included. Playback tests verify an audio stream and output controls, not subjective audio quality. No standalone installer is provided; launch through uv or `launch.bat`.
+Enabled capture folders rescan automatically on startup; manual rescan remains available and periodic polling is not included. Playback tests verify an audio stream and output controls, not subjective audio quality. No standalone installer is provided; launch through uv or `launch.bat`.
+
+## Stage 6 — Review advancement and startup discovery
+
+- [x] Enter focuses the command bar in review mode and submits in command-input mode; review-mode Shift+Enter separately applies a legal verdict and advances, preserving explicit Discard.
+- [x] Pending commands block advancement; Keep requires a configured game and its required fields; the final clip reports Session complete.
+- [x] Startup background rescan of enabled capture folders preserves existing metadata, missing-source entries and frozen Session membership.

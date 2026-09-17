@@ -123,12 +123,98 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     window.edit({"triage": None})
     window.command.setFocus()
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.clip(ids[0])["triage"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(ids[0])["triage"] == "keep"
     assert window.search.isHidden() and window.filters.isHidden()
     window.panel("Export")
     assert window.right.isHidden() and window.command_area.isHidden()
     window.panel("Session")
     assert not window.filters.isHidden()
+
+
+def test_review_advance_is_separate_from_submission(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    captures = tmp_path / "captures"
+    second = captures / "second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"], [{"path": str(second), "game": "VALORANT"}]
+    )
+    next_id = next(
+        clip["clip_id"] for clip in window.catalogue.clips() if clip["clip_id"] != ids[0]
+    )
+    window.catalogue.create_session([ids[0], next_id], replace=True)
+    window.panel("Editing")
+    QTest.keyClick(window.player, Qt.Key.Key_Return)
+    assert application.focusWidget() is window.command
+    assert window.command.text() == ""
+    assert window.catalogue.clip(ids[0])["triage"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == ids[0]
+    assert "required fields" in window.command_error.text()
+    window.command.setFocus()
+    window.command.setText("jett vandal")
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.clip(ids[0])["metadata"] == {}
+    assert window.command.text() == "jett vandal"
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    window.edit({"triage": "discard"})
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == ids[0]
+    assert "submit existing commands" in window.command_error.text()
+    window.command.clear()
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == next_id
+    assert window.catalogue.clip(ids[0])["triage"] == "discard"
+    window.command.setFocus()
+    window.command.setText("jett vandal")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    assert window.current_id == next_id
+    assert window.catalogue.clip(next_id)["triage"] is None
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.clip(next_id)["triage"] == "keep"
+    assert "Session complete" in window.statusBar().currentMessage()
+
+
+def test_startup_rescans_enabled_folders(application, tmp_path):
+    from dfsorter.catalogue import Catalogue
+
+    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    catalogue = Catalogue(tmp_path / "data/dfsorter.db")
+    enabled = tmp_path / "VALORANT"
+    disabled = tmp_path / "disabled"
+    enabled.mkdir()
+    disabled.mkdir()
+    enabled_id = catalogue.add_folder(enabled)
+    disabled_id = catalogue.add_folder(disabled)
+    catalogue.enable_folder(disabled_id, False)
+    original = enabled / "original.mp4"
+    original.write_bytes(b"test")
+    catalogue.ingest(enabled_id, [{"path": str(original), "game": "VALORANT"}])
+    clip_id = catalogue.clips()[0]["clip_id"]
+    catalogue.patch(clip_id, {"triage": "discard", "mainline": "Preserved"})
+    catalogue.create_session([clip_id])
+    original.unlink()
+    (enabled / "new.mp4").write_bytes(b"test")
+    (disabled / "ignored.mp4").write_bytes(b"test")
+    result = Window(tmp_path)
+    result.show()
+    try:
+        assert wait_for(
+            application, lambda: result.worker is None and len(result.catalogue.clips()) == 2
+        )
+        assert result.catalogue.clip(clip_id)["mainline"] == "Preserved"
+        assert result.catalogue.clip(clip_id)["triage"] == "discard"
+        assert result.catalogue.state("session")["ids"] == [clip_id]
+        assert all(
+            Path(clip["source_path"]).name != "ignored.mp4" for clip in result.catalogue.clips()
+        )
+    finally:
+        result.close()
+        application.processEvents()
 
 
 def test_cards_and_verdict_state(window, application, tmp_path):

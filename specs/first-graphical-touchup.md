@@ -3,7 +3,7 @@
 ## Approved implementation decisions
 
 - The current main specification incorporates this touchup. Its original version is archived under `specs/legacy/` and must not guide implementation.
-- Successful Enter and Shift+Enter return to review. Shift+Enter preserves explicit Discard. Empty-input Backspace only edits text. Escape retains per-clip drafts for the current run.
+- Superseded keyboard workflow: Enter submits only in command-input mode; Shift+Enter is review-only verdict-and-advance and requires an empty command bar. See the main specification §13.6. Empty-input Backspace only edits text. Escape retains per-clip drafts for the current run.
 - R followed by 1–5 within one second rates in review mode. Space has a 200 ms tap/hold threshold.
 - Projects defaults collapsed in normal windows and expanded when maximized, with separate per-run manual overrides.
 - Share defaults to the saved valid range when present, even if a new In point is pending. Every Share outputs H.264 MP4 and mixes all audio tracks into stereo AAC; silent clips remain silent. Whole H.264 video is stream-copied; all trims and other codecs re-encode. Prefer NVIDIA speed with x264 fallback. Project Export remains unchanged.

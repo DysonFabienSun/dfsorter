@@ -17,9 +17,9 @@ On this machine, dependency downloads use the PowerShell profile's proxy helpers
 
 ## Review workflow
 
-1. **Import:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Refresh/rescan is manual.
+1. **Import:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Enabled folders are automatically rescanned on startup; manual Refresh/rescan remains available.
 2. **Session:** search/filter/sort the library and freeze selected clips, the first N, or all results into a session. Editing resumes its saved position after restart.
-3. **Editing:** starts in review mode. Press `/` or Enter to enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. Enter applies a patch; Shift+Enter also keeps and advances unless already discarded. Both return to review. Escape preserves unfinished text; drafts survive clip/panel navigation for this run. Backspace rejects only in review mode.
+3. **Editing:** starts in review mode. Press `/` or Enter to enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. In input mode, Enter submits the command and returns to review without changing triage. In review mode, Shift+Enter keeps and advances when the configured game's required fields are present, or advances an explicitly discarded clip without changing its verdict. Shift+Enter never submits, is unavailable in input mode, and refuses advancement while the command bar contains text. Submit that text with Enter first. Escape preserves unfinished text; drafts survive clip/panel navigation for this run. Backspace rejects only in review mode. At the final clip, a legal verdict is applied and Session complete is reported.
 4. **Projects:** activate a project to receive clips when they transition to Keep. Membership survives later triage changes. Add/remove selected clips explicitly when needed.
 5. **Export:** select a project, resolve every listed blocker, choose filename fields and an output folder, then copy. Share independently offers a whole clip or saved range, defaulting to the range, and produces H.264 MP4 with all audio mixed to stereo AAC.
 

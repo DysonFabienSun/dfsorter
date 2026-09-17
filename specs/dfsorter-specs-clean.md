@@ -395,7 +395,7 @@ Import is exclusively responsible for discovering source media and adding or mai
 
 Capture folders are persisted across application runs.
 
-The application may periodically rescan enabled capture folders for new clips. The exact automatic polling interval is not product-critical; manual Refresh/Rescan must always be available.
+On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, missing-source entries and frozen Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available; periodic polling is not required.
 
 ### 11.1 Capture-Folder Classification
 
@@ -530,9 +530,9 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - Tap Space toggles playback; holding for 200 ms plays at 3× until release, restoring the previous state. Focus loss cancels the hold.
 - Left/Right seek ±5 seconds; Shift+Left/Right seek ±1 second. I/O set markers. Backspace rejects without advancing.
 - R followed by 1–5 within one second rates without submitting or changing triage.
-- `/` or Enter enters metadata input without inserting a slash. Slash commands are not supported.
+- `/` or Enter enters metadata input without inserting text or submitting a retained draft. Slash commands are not supported.
 - Every text field consumes normal editing keys, including Space and Backspace when empty.
-- Successful Enter or Shift+Enter returns to review; invalid commands retain input focus and text. Escape returns to review preserving the draft.
+- Enter submits commands only in command-input mode and returns to review on success; invalid commands retain input focus and text. Shift+Enter never submits and advances only in review mode. Escape returns to review preserving the draft.
 - Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
 - A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
 
@@ -626,10 +626,13 @@ This command history exists only in memory and does not persist across applicati
 
 ### 13.6 Submission, Triage, and Navigation
 
-- `Enter` submits a valid command and remains on the current clip.
-- `Shift+Enter` submits a valid command and then advances to the next Session clip.
+- `Enter` in command-input mode submits a valid command, remains on the current clip and returns to review. Enter in review mode focuses the command bar, like `/`, without submitting.
+- `Shift+Enter` is a review-mode verdict-and-advance action, never a command submission. In command-input mode it leaves text and metadata unchanged and explains that review mode is required. Other text fields retain their normal editing behavior.
+- If the command bar contains any text, including a retained draft, review-mode Shift+Enter refuses advancement and prompts the user to enter input mode and press Enter to submit existing commands first.
 - A successful metadata command by itself does **not** change triage.
-- When `Shift+Enter` succeeds, the clip becomes `keep` unless it is already explicitly `discard`.
+- For a non-discarded clip, Shift+Enter requires a configured game and every field in its `required_for_export` list. Missing requirements leave verdict and position unchanged and are listed inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. This is metadata validation; source availability remains an export requirement.
+- An explicitly discarded clip advances while preserving Discard, even with missing fields, no game or an unavailable source. The empty-command-bar requirement still applies.
+- At the final Session clip, apply the legal verdict, remain on that clip and report Session complete without deleting or replacing the Session. Ignore key auto-repeat for advancement.
 - Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
 - Backspace does not automatically advance; the user may then use `Shift+Enter` or ordinary navigation to continue.
 - Rating never changes triage.
