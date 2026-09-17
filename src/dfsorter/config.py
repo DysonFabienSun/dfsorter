@@ -123,8 +123,14 @@ class Registry:
 
 
 def title(
-    clip: dict, registry: Registry, selected: list[str] | None = None, prefix: bool = True
+    clip: dict,
+    registry: Registry,
+    selected: list[str] | None = None,
+    prefix: bool = True,
+    rich: bool = False,
 ) -> str:
+    import html
+
     game = registry.game(clip.get("game"))
     order = game.display_order if game else ["mainline"]
     parts = []
@@ -140,6 +146,13 @@ def title(
             value = f"1v{value}"
         elif isinstance(value, list):
             value = " ".join(value)
-        parts.append(str(value))
-    result = " ".join(parts) or Path(clip["source_path"]).stem
+        if rich:
+            escaped = html.escape(str(value))
+            parts.append(
+                f'<b style="color:#f1f5f9">{escaped}</b>' if key == "mainline" else escaped
+            )
+        else:
+            parts.append(str(value))
+    fallback = Path(clip["source_path"]).stem
+    result = " ".join(parts) or (html.escape(fallback) if rich else fallback)
     return f"{game.code}_{result}" if game and prefix else result

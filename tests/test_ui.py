@@ -100,6 +100,8 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.catalogue.clip(ids[0])["triage"] is None
     assert window.catalogue.clip(ids[0])["rating"] == 4
+    assert application.focusWidget() is window.player
+    window.command.setFocus()
     window.command.setText("sage jett")
     QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.command.text() == "sage jett"
@@ -109,10 +111,15 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     assert window.command.text() == "ab"
     window.command.clear()
     QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.catalogue.clip(ids[0])["triage"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    QTest.keyClick(window.player, Qt.Key.Key_Backspace)
     assert window.catalogue.clip(ids[0])["triage"] == "discard"
+    window.command.setFocus()
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(ids[0])["triage"] == "discard"
     window.edit({"triage": None})
+    window.command.setFocus()
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(ids[0])["triage"] == "keep"
     assert window.search.isHidden() and window.filters.isHidden()
@@ -131,7 +138,7 @@ def test_real_playback(window, application, tmp_path, codec):
     player = window.player
     assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
     assert player.video.videoSink().videoFrame().isValid()
-    assert not player.video.frame_image.isNull()
+    assert not player.video.videoSink().videoFrame().toImage().isNull()
     assert player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
     window.command.setFocus()
     window.command.setText("jett")
@@ -139,9 +146,13 @@ def test_real_playback(window, application, tmp_path, codec):
     assert window.command.text() == "jett "
     assert player.media.playbackRate() == 1
     window.command.clear()
-    QTest.keyPress(window.command, Qt.Key.Key_Space)
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == " "
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    QTest.keyPress(window.player, Qt.Key.Key_Space)
+    QTest.qWait(250)
     assert player.media.playbackRate() == 3
-    QTest.keyRelease(window.command, Qt.Key.Key_Space)
+    QTest.keyRelease(window.player, Qt.Key.Key_Space)
     assert player.media.playbackRate() == 1
     assert player.media.hasAudio()
     player.media.setPosition(500)
@@ -164,12 +175,92 @@ def test_real_playback(window, application, tmp_path, codec):
     artifact.mkdir(parents=True, exist_ok=True)
     window.grab().save(str(artifact / f"editing-{codec}.png"))
     window.screen().grabWindow(int(window.winId())).save(str(artifact / f"screen-{codec}.png"))
+    player.video.videoSink().videoFrame().toImage().save(
+        str(artifact / f"decoded-video-{codec}.png")
+    )
     left_width, _, right_width = window.splitter.sizes()
     window.showMaximized()
     QTest.qWait(300)
     assert abs(window.splitter.sizes()[0] - left_width) < 10
-    assert abs(window.splitter.sizes()[2] - right_width) < 10
+    assert right_width == 0
+    assert window.right.isVisible()
     window.grab().save(str(artifact / f"maximized-{codec}.png"))
+
+
+def test_review_drafts_rating_and_panes(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    QTest.keyClick(window.player, Qt.Key.Key_R)
+    QTest.keyClick(window.player, Qt.Key.Key_3)
+    assert window.catalogue.clip(ids[0])["rating"] == 3
+    QTest.keyClick(window.player, Qt.Key.Key_R)
+    window.rating_deadline = 0
+    QTest.keyClick(window.player, Qt.Key.Key_5)
+    assert window.catalogue.clip(ids[0])["rating"] == 3
+    QTest.keyClick(window.player, Qt.Key.Key_Slash)
+    assert application.focusWidget() is window.command
+    assert window.command.text() == ""
+    window.command.setText("unfinished")
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    window.panel("Session")
+    window.panel("Editing")
+    assert window.command.text() == "unfinished"
+    assert application.focusWidget() is window.player
+    assert window.right.isHidden()
+
+
+def test_input_undo_and_title_presentation(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.edit(
+        {
+            "mainline": "<great aim> " * 8,
+            "metadata": {"agent": "Chamber", "weapon": ["Operator", "Headhunter"], "kill": 3},
+            "technical_condition": "LOW_FPS",
+            "rating": 4,
+        }
+    )
+    assert "&lt;great aim&gt;" in window.working_title.text()
+    assert window.technical.isVisible()
+    window.command.setFocus()
+    QTest.keyClicks(window.command, "jett")
+    QTest.keyClick(window.command, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert window.command.text() == ""
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    window.refresh_library()
+    application.processEvents()
+    assert window.library.horizontalScrollBar().maximum() == 0
+    artifact = ROOT / "cache/verification"
+    artifact.mkdir(parents=True, exist_ok=True)
+    window.grab().save(str(artifact / "editing-populated.png"))
+    window.toggle_projects()
+    assert window.right.isVisible()
+    window.showMaximized()
+    application.processEvents()
+    window.toggle_projects()
+    assert window.right.isHidden()
+    window.showNormal()
+    application.processEvents()
+    assert window.right.isVisible()
+    window.reset_layout()
+    assert window.right.isHidden()
+
+
+def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch):
+    player = window.player
+    calls = []
+    monkeypatch.setattr(player.media, "setPosition", calls.append)
+    player.seek.setMaximum(10000)
+    player.begin_scrub()
+    for position in range(1000, 1235):
+        player.queue_seek(position)
+    assert calls == []
+    player.preview_seek()
+    assert calls == [1200]
+    player.seek.setSliderPosition(1234)
+    player.end_scrub()
+    assert calls == [1200, 1234]
+    assert not player.seek_timer.isActive()
 
 
 def test_background_completion(window, application):

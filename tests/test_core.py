@@ -232,9 +232,6 @@ def test_copy_collision_cancel_and_share(catalogue, clips, registry, tmp_path):
     with pytest.raises(InterruptedError):
         copy_one(clip, output, "cancelled", sidecar=True, cancelled=lambda: True)
     assert not list(output.glob("cancelled*"))
-    shared = Path(share_clip(clip, registry, output, catalogue.folders(), custom="custom"))
-    assert shared.read_bytes() == Path(clip["source_path"]).read_bytes()
-    assert not shared.with_suffix(".xmp").exists()
     with pytest.raises(ValueError, match="outside"):
         share_clip(clip, registry, Path(clip["source_path"]).parent, catalogue.folders())
     assert safe_stem("CON") == "_CON"

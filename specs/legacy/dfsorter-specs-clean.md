@@ -8,7 +8,7 @@ The application should remain minimalistic and should not behave like a video ed
 
 The two operations that may create video files are:
 
-- **Share**, which creates a whole-clip or selected-range H.264 MP4 with mixed stereo AAC audio in a user-selected sharing folder.
+- **Share**, which copies one selected source clip to a user-selected sharing folder.
 - **Project Export**, which copies the exportable clips referenced by one project into an output directory.
 
 Copied files are no longer managed by DFSorter after the copy completes.
@@ -310,7 +310,7 @@ Resetting clip metadata must never modify or delete the source video. Destructiv
 
 ### 9.3 Panel Navigation
 
-Below the menu bar, provide a restrained six-destination navigation strip with a cyan active underline:
+Below the menu bar, provide six navigation buttons:
 
 1. Home
 2. Import
@@ -326,7 +326,7 @@ The menu bar and panel-navigation row are present on every panel.
 The application uses a Premiere-inspired three-pane layout where relevant.
 
 - The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible toggle controls it; manual visibility overrides are remembered separately for normal/maximized states for the current run. Export and Config always hide it. Reset Layout restores defaults.
+- The right pane defaults to roughly 25%.
 - Both panes are manually resizable using splitters.
 - Resizing/maximizing the window primarily gives additional width to the center pane.
 - User-adjusted pane widths are not persisted across application restarts.
@@ -488,11 +488,11 @@ Clip metadata in the Session list may be refreshed only at stable interaction bo
 
 The Editing panel is disabled until a Session exists.
 
-The Editing layout provides:
+All main panes are present:
 
 - Session queue on the left;
 - player and clip information in the center;
-- collapsible projects on the right, following the normal/maximized visibility rules;
+- projects on the right;
 - command bar at the bottom.
 
 ### 13.1 Clip Display
@@ -517,26 +517,22 @@ VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
 
 The `mainline` portion is visually emphasized in the UI.
 
-Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and a secondary description editor. Technical condition appears only when populated; **Clip → Edit technical condition…** adds or changes it.
-
 The description box is secondary and is never automatically appended to the working title.
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
 ### 13.2 Command-Bar Focus and Playback Keys
 
-Entering Editing or changing clips starts review mode with a non-text surface focused.
+The command bar is visible and receives focus when entering Editing or moving to a new clip.
 
-- Tap Space toggles playback; holding for 200 ms plays at 3× until release, restoring the previous state. Focus loss cancels the hold.
-- Left/Right seek ±5 seconds; Shift+Left/Right seek ±1 second. I/O set markers. Backspace rejects without advancing.
-- R followed by 1–5 within one second rates without submitting or changing triage.
-- `/` or Enter enters metadata input without inserting a slash. Slash commands are not supported.
-- Every text field consumes normal editing keys, including Space and Backspace when empty.
-- Successful Enter or Shift+Enter returns to review; invalid commands retain input focus and text. Escape returns to review preserving the draft.
-- Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
-- A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
+Normal text-editing behavior takes priority while a text field contains input.
 
-Use native Qt video presentation and prefer hardware decoding, allowing logged software fallback. Coalesce drag seeks to at most 20 Hz with approximate previews; perform the final unquantized seek on release and restore playback state. The timeline has a 7 px groove, larger hit target, colored markers, saved-range tint, and a distinct pending In marker. Put transport/audio/time controls directly beneath it.
+To avoid shortcut conflicts:
+
+- when the command bar contains text, Space and Backspace edit the text normally;
+- when the command bar is empty, Backspace marks the current clip `discard`;
+- hold-Space fast-forward is available when a text-editing control is not consuming Space;
+- I/O shortcuts are active only when a text-editing control is not consuming those keys.
 
 ### 13.3 Command Syntax
 
@@ -630,7 +626,7 @@ This command history exists only in memory and does not persist across applicati
 - `Shift+Enter` submits a valid command and then advances to the next Session clip.
 - A successful metadata command by itself does **not** change triage.
 - When `Shift+Enter` succeeds, the clip becomes `keep` unless it is already explicitly `discard`.
-- Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
+- Backspace on an empty command bar marks the current clip `discard`.
 - Backspace does not automatically advance; the user may then use `Shift+Enter` or ordinary navigation to continue.
 - Rating never changes triage.
 - Clicking the visible triage controls may also set Keep/Discard/Undefined directly.
@@ -689,8 +685,6 @@ Deleting a Project removes only the Project and its memberships. It never delete
 
 The right project pane provides access to these operations and shows which Project, if any, is currently active.
 
-Use a compact icon toolbar and project context menu; Delete remains in the context menu with confirmation. Use vendored Lucide SVGs from `resources/icons`, never runtime assets from node_modules. Clip lists use 48 px elided title/metadata rows, status dots, full-text tooltips, and no horizontal scrollbar. Session creation uses Selected / First N / All with one primary Create Session action; enable the count only for First N.
-
 ---
 
 ## 15. Share
@@ -706,12 +700,11 @@ Sharing:
 3. chooses either:
    - a generated filename based on the working-title fields selected for that share; or
    - a user-supplied custom filename;
-4. chooses the whole clip or its saved valid In/Out range, defaulting to the range when available;
-5. creates an H.264 MP4 with one stereo AAC track mixing all audio tracks, or no audio if the source is silent.
+4. copies the whole original video.
 
-Range shares decode and re-encode through the exact source-frame/audio-sample boundaries. A pending In point does not replace the saved range offered for Share. Whole H.264 shares copy the video stream without generation loss; other codecs and all range shares re-encode, preferring NVIDIA H.264 P5/CQ19 with x264 medium/CRF18 fallback. Preserve source resolution and frame timing. Share requires FFmpeg and ffprobe and supports background processing, cancellation, temporary output validation, and cleanup on failure.
+Share never trims the clip to its In/Out range.
 
-Share outputs use `.mp4`. Project Export retains the source extension and original bytes.
+The source extension is preserved.
 
 Filesystem-invalid characters are sanitized only in the copied filename; catalogue text is not altered.
 
@@ -864,7 +857,7 @@ Normal review, metadata editing, session creation, project membership, search, f
 The following are outside the initial scope unless separately specified later:
 
 - nonlinear video editing;
-- transcoding/proxy generation outside the explicitly specified Share operation;
+- transcoding/proxy generation;
 - automatic AI/LLM classification;
 - a general-purpose graphical game-schema editor;
 - arbitrary-field export folder generation;

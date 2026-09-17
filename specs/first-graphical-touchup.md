@@ -1,5 +1,17 @@
 # Feedback
 
+## Approved implementation decisions
+
+- The current main specification incorporates this touchup. Its original version is archived under `specs/legacy/` and must not guide implementation.
+- Successful Enter and Shift+Enter return to review. Shift+Enter preserves explicit Discard. Empty-input Backspace only edits text. Escape retains per-clip drafts for the current run.
+- R followed by 1–5 within one second rates in review mode. Space has a 200 ms tap/hold threshold.
+- Projects defaults collapsed in normal windows and expanded when maximized, with separate per-run manual overrides.
+- Share defaults to the saved valid range when present, even if a new In point is pending. Every Share outputs H.264 MP4 and mixes all audio tracks into stereo AAC; silent clips remain silent. Whole H.264 video is stream-copied; all trims and other codecs re-encode. Prefer NVIDIA speed with x264 fallback. Project Export remains unchanged.
+- Hardware decoding is preferred and verified for supported media; software fallback remains allowed.
+- Empty Technical condition is hidden and can be added through the Clip menu.
+
+The original feedback below records the motivation; the decisions above resolve its ambiguities.
+
 This will be the first visual overhaul of the application. The main functionalities are now mostly solid, and it's the application, and how it's presented, that needs work.
 ## Feature Changes
 

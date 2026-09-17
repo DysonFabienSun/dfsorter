@@ -185,7 +185,12 @@ def share_clip(
     fields=None,
     prefix=True,
     cancelled=lambda: False,
+    *,
+    selected_range=False,
+    progress=lambda text: None,
 ):
+    from .sharing import encode_share
+
     destination = check_destination(destination, folders)
     stem = custom if custom is not None else title(clip, registry, fields, prefix)
-    return copy_one(clip, destination, stem, cancelled=cancelled)
+    return encode_share(clip, destination, safe_stem(stem), selected_range, cancelled, progress)

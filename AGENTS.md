@@ -9,6 +9,7 @@
 ## Specification and Clarification
 
 - Follow `specs/dfsorter-specs-clean.md` for all project work.
+- `specs/legacy/` is archival only. Do not refer to it for implementation guidance or requirements.
 - Ask the user about questions, required clarifications, or technical issues rather than silently making decisions that depart from the specification.
 
 ## Premise Checking and Technical Pushback

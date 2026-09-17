@@ -11,7 +11,7 @@ uv sync --python 3.13
 uv run dfsorter
 ```
 
-After setup, double-click `launch.bat`. The launcher uses its own directory regardless of where it is invoked. Qt's packaged FFmpeg backend decodes H.264 and AV1 MP4 without a separate codec pack. `ffprobe` on PATH enables duration and source-media capture-time inspection; scanning still works without it. `ffmpeg` on PATH is needed only to generate playback test fixtures.
+After setup, double-click `launch.bat`. The launcher uses its own directory regardless of where it is invoked. Qt's packaged FFmpeg backend decodes H.264 and AV1 MP4 without a separate codec pack. `ffprobe` on PATH enables duration and source-media capture-time inspection; scanning still works without it. Share requires both `ffmpeg` and `ffprobe` on PATH. The external tools are also used to generate playback test fixtures.
 
 On this machine, dependency downloads use the PowerShell profile's proxy helpers: enable `proxy_on` / `proxyon` before `uv sync` and disable `proxy_off` / `proxyoff` in `finally` afterward.
 
@@ -19,11 +19,11 @@ On this machine, dependency downloads use the PowerShell profile's proxy helpers
 
 1. **Import:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Refresh/rescan is manual.
 2. **Session:** search/filter/sort the library and freeze selected clips, the first N, or all results into a session. Editing resumes its saved position after restart.
-3. **Editing:** enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. Enter applies a patch; Shift+Enter also keeps and advances unless already discarded. Empty-command Backspace discards without advancing.
+3. **Editing:** starts in review mode. Press `/` or Enter to enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. Enter applies a patch; Shift+Enter also keeps and advances unless already discarded. Both return to review. Escape preserves unfinished text; drafts survive clip/panel navigation for this run. Backspace rejects only in review mode.
 4. **Projects:** activate a project to receive clips when they transition to Keep. Membership survives later triage changes. Add/remove selected clips explicitly when needed.
-5. **Export:** select a project, resolve every listed blocker, choose filename fields and an output folder, then copy. Share copies one whole clip independently of project validation.
+5. **Export:** select a project, resolve every listed blocker, choose filename fields and an output folder, then copy. Share independently offers a whole clip or saved range, defaulting to the range, and produces H.264 MP4 with all audio mixed to stereo AAC.
 
-Space holds playback at 3× when a text field is not consuming the key; releasing restores the previous playback state. The empty command bar allows this shortcut. I/O set range markers outside text controls. In remains pending until a valid Out is set. Stored ranges do not trim video.
+In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until release. Arrows seek ±5 seconds, Shift+arrows ±1 second, I/O set markers, and R then 1–5 rates. Every text field, even when empty, consumes normal typing. Press `?` for the cheatsheet. In remains pending until a valid Out is set; Share continues offering the previous saved range. Source videos are never trimmed or rewritten.
 
 Description saves when leaving its editor or navigating, and has an explicit Save button. Rating and triage are independent. Ctrl+Z/Ctrl+Y undo/redo catalogue edits for the current run. Changing game requires confirmation and clears game-specific metadata; Undo restores it.
 
@@ -46,7 +46,9 @@ These paths are application-local and ignored by Git. Capture paths remain exter
 
 Missing media remains catalogued. Removing a folder only disables its future discovery. The separate confirmed purge removes catalogue records and relationships, never source files. Migration changes paths atomically and rejects identity collisions.
 
-Share/export preserve original bytes and extensions, sanitize only copied names, and never overwrite existing destinations. Capture folders cannot be output destinations. Existing copies are unmanaged. Cancellation removes the current incomplete copy and sidecar; completed copies remain and are reported. Exported XMP preserves clip ID and In/Out milliseconds in a DFSorter namespace; automatic Premiere interpretation is not claimed.
+Project Export preserves original bytes and extensions. Share retains the video stream for whole H.264 clips; all ranges and non-H.264 sources re-encode, preferring NVIDIA P5/CQ19 with x264 medium/CRF18 fallback. Audio tracks are mixed into one stereo AAC track; silent sources remain silent. Range precision follows source video frames and audio samples. Both operations sanitize output names, reject capture-folder destinations, and never overwrite existing files. Cancellation removes operation-owned incomplete files. Outputs remain unmanaged. Exported XMP preserves clip ID and In/Out milliseconds in a DFSorter namespace; automatic Premiere interpretation is not claimed.
+
+Projects defaults collapsed in normal windows and expanded when maximized; use the upper-right toggle. Right-click a project for all actions including Delete. Empty technical notes are hidden; use **Clip → Edit technical condition…**. Icons are vendored under `resources/icons` with their upstream license; Node is not required at runtime.
 
 ## Verification
 
@@ -58,4 +60,6 @@ uv run ruff format --check src tests
 
 GUI tests open temporary windows and use disposable catalogues, never the working catalogue. They generate H.264/AV1 media, check decoded frames/audio/seek behavior, and capture normal/maximized windows. Windows can emit a handled COM exception through Python's faulthandler while creating a Qt window; the command above avoids that misleading diagnostic.
 
-Home and Config are intentionally lightweight. Automatic folder polling, an installer, a graphical schema editor, video editing, and Premiere-specific XMP interpretation are outside this v1 delivery. Source inspection and copying run in a background worker; cancellation waits for the current ffprobe call (up to 20 seconds). Library search currently evaluates catalogue rows in memory.
+Home and Config are intentionally lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and Premiere-specific XMP interpretation are outside this delivery. Source inspection, copying, and sharing run in a background worker. Share cancellation terminates the active subprocess; scanning cancellation waits for the current ffprobe call (up to 20 seconds). Library search currently evaluates catalogue rows in memory.
+
+Playback uses Qt native video rendering with hardware decoding where supported and software fallback. D3D11 decoding of H.264 and AV1 was confirmed on this machine with Qt diagnostics. To inspect decoder selection, set `QT_LOGGING_RULES=qt.multimedia.ffmpeg.hwaccel=true;qt.multimedia.playbackengine.codec=true` before launching. Native video surfaces may be absent from QWidget screenshots; decoded-frame artifacts are captured separately by tests. Subjective smoothness and audio balance still need acceptance with real captures.

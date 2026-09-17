@@ -1,15 +1,15 @@
-import html
 import logging
 import os
 import sys
 import threading
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import yaml
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -44,6 +44,7 @@ from .media import discover
 from .output import export_project, share_clip, validate
 from .parsing import parse_command, query_clips, requests_discarded
 from .playback import Player
+from .widgets import ClipDelegate, Rating, icon, tool
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,6 +70,7 @@ class Worker(QThread):
 def button(text, callback):
     result = QPushButton(text)
     result.clicked.connect(callback)
+    result.setMaximumWidth(260)
     return result
 
 
@@ -97,6 +99,14 @@ class Window(QMainWindow):
         self.current_id = None
         self.current_panel = "Home"
         self.history = defaultdict(list)
+        self.drafts = {}
+        self.pane_overrides = {}
+        self.rating_deadline = 0
+        self.space_down = False
+        self.space_timer = QTimer(self)
+        self.space_timer.setSingleShot(True)
+        self.space_timer.setInterval(200)
+        self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
         self.media_info = {}
         self.pending_in = None
         self.worker = None
@@ -109,7 +119,14 @@ class Window(QMainWindow):
         self.nav = {}
         for name in ["Home", "Import", "Session", "Editing", "Export", "Config"]:
             self.nav[name] = button(name, lambda checked=False, name=name: self.panel(name))
+            self.nav[name].setObjectName("navigation")
+            self.nav[name].setCheckable(True)
+            self.nav[name].setFocusPolicy(Qt.FocusPolicy.NoFocus)
             navigation.addWidget(self.nav[name])
+        navigation.addStretch()
+        self.projects_toggle = tool("panel-right", "Show / hide Projects", self.toggle_projects)
+        self.projects_toggle.setCheckable(True)
+        navigation.addWidget(self.projects_toggle)
         outer.addLayout(navigation)
         self.splitter = QSplitter()
         outer.addWidget(self.splitter, 1)
@@ -137,6 +154,8 @@ class Window(QMainWindow):
         self.library_error.setWordWrap(True)
         left_layout.addWidget(self.library_error)
         self.library = QListWidget()
+        self.library.setItemDelegate(ClipDelegate(self.library))
+        self.library.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.library.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.library.currentItemChanged.connect(self.select_clip)
         left_layout.addWidget(self.library, 1)
@@ -151,6 +170,8 @@ class Window(QMainWindow):
         right_layout.addWidget(self.active_label)
         self.projects = QListWidget()
         right_layout.addWidget(self.projects)
+        project_tools = QHBoxLayout()
+        self.projects.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         for text, callback in [
             ("New project", self.new_project),
             ("Rename", self.rename_project),
@@ -160,16 +181,38 @@ class Window(QMainWindow):
             ("Remove selected clips", lambda: self.membership(False)),
             ("Delete project", self.delete_project),
         ]:
-            right_layout.addWidget(button(text, callback))
+            action = QAction(text, self.projects)
+            action.triggered.connect(callback)
+            self.projects.addAction(action)
+            names = {
+                "New project": "plus",
+                "Rename": "pencil",
+                "Activate": "check",
+                "Deactivate": "power",
+                "Add selected clips": "plus",
+                "Remove selected clips": "minus",
+            }
+            if text in names:
+                project_tools.addWidget(tool(names[text], text, callback))
+        project_tools.addStretch()
+        right_layout.addLayout(project_tools)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
+        self.splitter.splitterMoved.connect(self.panes_resized)
         self.command_area, command_layout = page()
         self.command_history = QLabel()
         self.command_history.setWordWrap(True)
         command_layout.addWidget(self.command_history)
+        self.shortcut_hint = QLabel(
+            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / Metadata · ? Shortcuts"
+        )
+        self.shortcut_hint.setObjectName("muted")
+        self.shortcut_hint.setWordWrap(True)
+        command_layout.addWidget(self.shortcut_hint)
         self.command = QLineEdit()
+        self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("1v4 3k jett vandal R4 -- Mainline -- Description")
         command_layout.addWidget(self.command)
         self.command_error = QLabel()
@@ -210,7 +253,20 @@ class Window(QMainWindow):
             ("Remove folder", self.remove_folder),
             ("Purge folder catalogue entries", self.purge),
         ]:
-            importing.addWidget(button(text, callback))
+            control = button(text, callback)
+            control.setIcon(
+                icon(
+                    {
+                        "Add folder / preview": "folder-plus",
+                        "Refresh / rescan": "refresh-cw",
+                        "Enable / disable": "power",
+                        "Migrate source folder": "folder-input",
+                        "Remove folder": "folder-x",
+                        "Purge folder catalogue entries": "trash-2",
+                    }[text]
+                )
+            )
+            importing.addWidget(control)
         session = self.pages["Session"][1]
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)
@@ -218,24 +274,38 @@ class Window(QMainWindow):
         self.session_count = QSpinBox()
         self.session_count.setRange(1, 1000000)
         self.session_count.setValue(50)
-        session.addWidget(self.session_count)
+        session_choices = QHBoxLayout()
+        self.session_mode = "first"
+        self.session_choices = {}
         for text, mode in [
             ("Session from selected", "selected"),
             ("Session from first N", "first"),
             ("Session from all results", "all"),
         ]:
-            session.addWidget(
-                button(text, lambda checked=False, mode=mode: self.create_session(mode))
+            control = button(
+                {"selected": "Selected", "first": "First N", "all": "All"}[mode],
+                lambda checked=False, mode=mode: self.choose_session_mode(mode),
             )
+            control.setCheckable(True)
+            control.setChecked(mode == "first")
+            self.session_choices[mode] = control
+            session_choices.addWidget(control)
+        session_choices.addWidget(self.session_count)
+        session_choices.addStretch()
+        session.addLayout(session_choices)
+        session.addWidget(button("Create Session", lambda: self.create_session(self.session_mode)))
         session.addWidget(button("Resume session", lambda: self.panel("Editing")))
         session.addWidget(button("End session", self.end_session))
         session.addStretch()
         editing = self.pages["Editing"][1]
         self.player = Player()
+        self.player.previous.connect(lambda: self.navigate(-1))
+        self.player.next.connect(lambda: self.navigate(1))
         editing.addWidget(self.player, 1)
         self.working_title = QLabel()
         self.working_title.setWordWrap(True)
         self.working_title.setTextFormat(Qt.TextFormat.RichText)
+        self.working_title.setObjectName("workingTitle")
         editing.addWidget(self.working_title)
         self.filename = QLabel()
         self.filename.setStyleSheet("color: #9aa4af;")
@@ -250,16 +320,18 @@ class Window(QMainWindow):
                 button(text, lambda checked=False, state=state: self.edit({"triage": state}))
             )
         triage.addWidget(button("Change game", self.change_game))
+        triage.addStretch()
         editing.addLayout(triage)
         stars = QHBoxLayout()
-        self.star_buttons = []
-        for rating in range(1, 6):
-            star = button("☆", lambda checked=False, rating=rating: self.edit({"rating": rating}))
-            self.star_buttons.append(star)
-            stars.addWidget(star)
-        stars.addWidget(button("Clear rating", lambda: self.edit({"rating": None})))
+        self.rating = Rating()
+        self.rating.changed.connect(lambda value: self.edit({"rating": value}))
+        stars.addWidget(self.rating)
+        stars.addWidget(tool("x", "Clear rating", lambda: self.edit({"rating": None})))
+        stars.addStretch()
+        stars.addWidget(tool("circle-help", "Review shortcuts · ?", self.show_shortcuts))
         editing.addLayout(stars)
         self.structured = QLabel()
+        self.structured.setObjectName("muted")
         self.structured.setWordWrap(True)
         editing.addWidget(self.structured)
         self.description = QPlainTextEdit()
@@ -277,20 +349,27 @@ class Window(QMainWindow):
         editing.addWidget(self.range_label)
         controls = QHBoxLayout()
         for text, callback in [
-            ("Previous", lambda: self.navigate(-1)),
-            ("Next", lambda: self.navigate(1)),
             ("Set In", self.mark_in),
             ("Set Out", self.mark_out),
             ("Clear range", self.clear_range),
             ("Share", self.share),
         ]:
-            controls.addWidget(button(text, callback))
+            names = {
+                "Set In": "list-start",
+                "Set Out": "list-end",
+                "Clear range": "brackets",
+                "Share": "share-2",
+            }
+            controls.addWidget(tool(names[text], text, callback))
+        controls.addStretch()
         editing.addLayout(controls)
         exporting = self.pages["Export"][1]
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
         exporting.addWidget(self.export_project)
         self.export_player = Player()
+        self.export_player.previous_button.hide()
+        self.export_player.next_button.hide()
         self.export_player.setMaximumHeight(300)
         exporting.addWidget(self.export_player)
         self.export_errors = QPlainTextEdit()
@@ -334,6 +413,7 @@ class Window(QMainWindow):
             ("Edit", "Game configuration files", self.open_configs, None),
             ("Clip", "Reset user metadata", self.reset_metadata, None),
             ("Clip", "Change game", self.change_game, None),
+            ("Clip", "Edit technical condition…", self.edit_technical, None),
             ("View", "Play / pause", lambda: self.active_player().toggle(), None),
             ("View", "Mute / unmute", lambda: self.active_player().mute.toggle(), None),
             ("Window", "Reset window and panes", self.reset_layout, None),
@@ -365,14 +445,17 @@ class Window(QMainWindow):
             self.error("Create a session before entering Editing")
             return
         self.save_description()
-        self.player.fast(False)
+        self.cancel_space()
         self.player.media.pause()
         self.export_player.media.pause()
         self.current_panel = name
         self.center.setCurrentWidget(self.pages[name][0])
-        self.right.setVisible(name not in {"Export", "Config"})
+        self.update_projects_visibility()
+        for destination, control in self.nav.items():
+            control.setChecked(destination == name)
         self.command_area.setVisible(name in {"Home", "Editing"})
         self.command.setEnabled(name == "Editing")
+        self.shortcut_hint.setVisible(name == "Editing")
         self.search.setVisible(name not in {"Editing", "Export"})
         self.filters.setVisible(name not in {"Editing", "Export"})
         self.library.setSelectionMode(
@@ -385,7 +468,7 @@ class Window(QMainWindow):
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
-            self.command.setFocus()
+            self.review_mode()
         elif name == "Export":
             self.export_selection()
 
@@ -543,8 +626,9 @@ class Window(QMainWindow):
             for clip in clips:
                 available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
                 item = QListWidgetItem(
-                    f"{title(clip, self.registry)}\n{clip['triage'] or 'undefined'}{available}"
+                    f"{title(clip, self.registry)}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
                 )
+                item.setToolTip(item.text() + "\n" + clip["source_path"])
                 item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
                 self.library.addItem(item)
                 if clip["clip_id"] == current:
@@ -569,23 +653,22 @@ class Window(QMainWindow):
             self.export_player.load(self.catalogue.clip(clip_id))
 
     def load_clip(self, clip_id):
+        self.cancel_space()
+        self.rating_deadline = 0
         self.current_id = clip_id
         self.pending_in = None
-        self.command.clear()
+        self.command.setText(self.drafts.get(clip_id, ""))
         self.command_error.clear()
         self.player.load(self.catalogue.clip(clip_id))
         self.render_clip()
-        self.command.setFocus()
+        self.review_mode()
 
     def render_clip(self):
         if not self.current_id:
             return
         clip = self.catalogue.clip(self.current_id)
-        rendered = html.escape(title(clip, self.registry))
-        if clip["mainline"]:
-            rendered = rendered.replace(
-                html.escape(clip["mainline"]), "<b>" + html.escape(clip["mainline"]) + "</b>"
-            )
+        rendered = title(clip, self.registry, rich=True)
+        rendered = f'<span style="color:#9caebb">{rendered}</span>'
         self.working_title.setText(rendered)
         self.filename.setText(Path(clip["source_path"]).name)
         member_ids = self.catalogue.memberships(self.current_id)
@@ -597,8 +680,8 @@ class Window(QMainWindow):
         self.clip_status.setText(
             f"{clip['triage'] or 'Undefined'} | {clip['game'] or 'No game'} | Projects: {', '.join(names) or 'None'}"
         )
-        for rating, star in enumerate(self.star_buttons, 1):
-            star.setText("★" if rating <= (clip["rating"] or 0) else "☆")
+        self.rating.value = clip["rating"]
+        self.rating.update()
         game = self.registry.game(clip["game"])
         self.structured.setText(
             " | ".join(
@@ -610,6 +693,7 @@ class Window(QMainWindow):
         )
         self.description.setPlainText(clip["description"] or "")
         self.technical.setText(clip["technical_condition"] or "")
+        self.technical.setVisible(bool(clip["technical_condition"]))
         self.range_label.setText(
             f"In {clip['in_ms'] / 1000:.3f}s → Out {clip['out_ms'] / 1000:.3f}s"
             if clip["in_ms"] is not None
@@ -638,6 +722,7 @@ class Window(QMainWindow):
     def save_technical(self):
         if self.current_panel == "Editing" and self.current_id:
             self.catalogue.patch(self.current_id, {"technical_condition": self.technical.text()})
+            self.technical.setVisible(bool(self.technical.text()))
 
     def submit(self, advance=False):
         if self.current_panel != "Editing" or not self.current_id:
@@ -658,6 +743,7 @@ class Window(QMainWindow):
             self.render_clip()
             if advance:
                 self.navigate(1)
+            self.review_mode()
         except ValueError as error:
             self.error(error)
 
@@ -675,36 +761,161 @@ class Window(QMainWindow):
     def active_player(self):
         return self.export_player if self.current_panel == "Export" else self.player
 
-    def eventFilter(self, watched: QObject, event):
-        if event.type() == QEvent.Type.ApplicationDeactivate:
+    def remember_draft(self, text):
+        if self.current_id:
+            self.drafts[self.current_id] = text
+
+    def review_mode(self):
+        self.rating_deadline = 0
+        self.player.setFocus()
+
+    def cancel_space(self):
+        self.space_timer.stop()
+        self.space_down = False
+        if hasattr(self, "player"):
             self.active_player().fast(False)
+
+    def choose_session_mode(self, mode):
+        self.session_mode = mode
+        self.session_count.setEnabled(mode == "first")
+        for name, control in self.session_choices.items():
+            control.setChecked(name == mode)
+
+    def toggle_projects(self):
+        self.pane_overrides[self.isMaximized()] = not self.right.isVisible()
+        self.update_projects_visibility()
+
+    def panes_resized(self, position, index):
+        if self.right.isVisible() and self.splitter.sizes()[2] == 0:
+            self.pane_overrides[self.isMaximized()] = False
+            self.update_projects_visibility()
+
+    def update_projects_visibility(self):
+        allowed = self.current_panel not in {"Export", "Config"}
+        visible = allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
+        self.right.setVisible(visible)
+        self.projects_toggle.setEnabled(allowed)
+        self.projects_toggle.setChecked(visible)
+        if visible and self.splitter.sizes()[2] == 0:
+            self.splitter.setSizes([420, max(400, self.width() - 770), 350])
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "right"):
+            self.update_projects_visibility()
+
+    def edit_technical(self):
+        try:
+            clip = self.selected_clip()
+        except ValueError as error:
+            self.error(error)
+            return
+        value, accepted = QInputDialog.getText(
+            self,
+            "Technical condition",
+            "Optional technical note",
+            text=clip["technical_condition"] or "",
+        )
+        if accepted:
+            self.catalogue.patch(clip["clip_id"], {"technical_condition": value or None})
+            if self.current_panel == "Editing":
+                self.render_clip()
+
+    def show_shortcuts(self):
+        QMessageBox.information(
+            self,
+            "Review shortcuts",
+            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\n\nINPUT MODE\nEnter: Submit · Shift+Enter: Submit + Keep + Next\nEscape: Return to review, preserving your draft\n\nWatch, annotate, then give a verdict. Reject does not advance;\nShift+Enter advances without overriding an explicit Discard.\nRatings never change verdicts. Drafts last for this run only.",
+        )
+
+    def eventFilter(self, watched: QObject, event):
+        if event.type() == QEvent.Type.ShortcutOverride:
+            focus = QApplication.focusWidget()
+            if (
+                isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and event.key() in {Qt.Key.Key_Z, Qt.Key.Key_Y}
+            ):
+                event.accept()
+                return True
+        if event.type() == QEvent.Type.MouseButtonPress:
+            self.rating_deadline = 0
+            self.cancel_space()
+        if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
+            self.cancel_space()
+            self.rating_deadline = 0
         if event.type() == QEvent.Type.FocusOut and watched is self.description:
             self.save_description()
-        if event.type() == QEvent.Type.FocusOut:
-            self.active_player().fast(False)
         if event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Space:
-            if not event.isAutoRepeat():
-                self.active_player().fast(False)
-        if event.type() != QEvent.Type.KeyPress or QApplication.activeModalWidget():
+            if not event.isAutoRepeat() and self.space_down:
+                held = not self.space_timer.isActive()
+                self.cancel_space()
+                if not held:
+                    self.active_player().toggle()
+                return True
+        if (
+            event.type() != QEvent.Type.KeyPress
+            or QApplication.activeModalWidget()
+            or QApplication.activePopupWidget()
+        ):
             return super().eventFilter(watched, event)
         if self.current_panel not in {"Editing", "Export"}:
             return super().eventFilter(watched, event)
         focus = QApplication.focusWidget()
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
+        key = event.key()
+        modifiers = event.modifiers()
+        if key == Qt.Key.Key_Escape and self.current_panel == "Editing":
+            self.review_mode()
+            return True
         if focus is self.command:
             if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
                 self.submit(bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
                 return True
-            if event.key() == Qt.Key.Key_Backspace and not self.command.text():
-                self.edit({"triage": "discard"})
-                return True
-            if event.key() == Qt.Key.Key_Space and not self.command.text():
-                text_editing = False
-        if not text_editing and not event.modifiers():
+        if text_editing:
+            return super().eventFilter(watched, event)
+        if key in {Qt.Key.Key_Left, Qt.Key.Key_Right} and modifiers in {
+            Qt.KeyboardModifier.NoModifier,
+            Qt.KeyboardModifier.ShiftModifier,
+        }:
+            delta = 1000 if modifiers else 5000
+            player = self.active_player()
+            player.media.setPosition(
+                max(
+                    0,
+                    min(
+                        player.media.duration(),
+                        player.media.position() + (delta if key == Qt.Key.Key_Right else -delta),
+                    ),
+                )
+            )
+            self.rating_deadline = 0
+            return True
+        if self.current_panel == "Editing" and key == Qt.Key.Key_Question:
+            self.show_shortcuts()
+            return True
+        if not modifiers:
             if event.key() == Qt.Key.Key_Space:
-                if not event.isAutoRepeat():
-                    self.active_player().fast(True)
+                if not event.isAutoRepeat() and not self.space_down:
+                    self.space_down = True
+                    self.space_timer.start()
+                self.rating_deadline = 0
                 return True
+            if self.current_panel == "Editing":
+                rating_pending = time.monotonic() < self.rating_deadline
+                self.rating_deadline = 0
+                if rating_pending and Qt.Key.Key_1 <= key <= Qt.Key.Key_5:
+                    self.edit({"rating": key - Qt.Key.Key_0})
+                    return True
+                if key == Qt.Key.Key_R:
+                    self.rating_deadline = time.monotonic() + 1
+                    return True
+                if key in {Qt.Key.Key_Slash, Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+                    self.command.setFocus()
+                    return True
+                if key == Qt.Key.Key_Backspace:
+                    self.edit({"triage": "discard"})
+                    return True
             if self.current_panel == "Editing" and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
                 (self.mark_in if event.key() == Qt.Key.Key_I else self.mark_out)()
                 return True
@@ -713,6 +924,8 @@ class Window(QMainWindow):
     def mark_in(self):
         if self.current_panel == "Editing" and self.current_id:
             self.pending_in = self.player.media.position()
+            self.player.seek.pending_in = self.pending_in
+            self.player.seek.update()
             self.range_label.setText(
                 f"Pending In {self.pending_in / 1000:.3f}s — set Out to save; stored range unchanged"
             )
@@ -728,9 +941,12 @@ class Window(QMainWindow):
             return
         self.edit({"in_ms": start, "out_ms": end})
         self.pending_in = None
+        self.player.seek.pending_in = None
+        self.player.seek.update()
 
     def clear_range(self):
         self.pending_in = None
+        self.player.seek.pending_in = None
         self.edit({"in_ms": None, "out_ms": None})
 
     def new_project(self):
@@ -1126,8 +1342,20 @@ class Window(QMainWindow):
             self.error(error)
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle("Share whole source clip")
+        dialog.setWindowTitle("Share clip")
         layout = QFormLayout(dialog)
+        mode = QComboBox()
+        valid_range = clip["in_ms"] is not None and clip["out_ms"] is not None
+        if valid_range:
+            mode.addItem(
+                f"Selected range · {clip['in_ms'] / 1000:.3f}–{clip['out_ms'] / 1000:.3f}s · {(clip['out_ms'] - clip['in_ms']) / 1000:.3f}s",
+                True,
+            )
+        mode.addItem("Whole clip", False)
+        layout.addRow("Share", mode)
+        layout.addRow(QLabel("H.264 MP4 · All audio tracks mixed to stereo AAC"))
+        if self.current_panel == "Editing" and self.pending_in is not None:
+            layout.addRow(QLabel("New In point is pending; selected range uses the saved markers."))
         destination = QLineEdit(self.settings.get("share_folder", ""))
         layout.addRow("Output folder", destination)
 
@@ -1138,7 +1366,7 @@ class Window(QMainWindow):
 
         layout.addRow(button("Browse", browse))
         custom = QLineEdit()
-        custom.setPlaceholderText("Leave empty to generate; source extension is appended")
+        custom.setPlaceholderText("Leave empty to generate; .mp4 is appended")
         layout.addRow("Custom filename stem", custom)
         prefix = QCheckBox("Game code prefix")
         prefix.setChecked(True)
@@ -1168,12 +1396,22 @@ class Window(QMainWindow):
         custom_name = custom.text() or None
         folders = self.catalogue.folders()
         include_prefix = prefix.isChecked()
+        selected_range = mode.currentData()
         self.background(
             lambda cancelled, progress: share_clip(
-                clip, self.registry, folder, folders, custom_name, fields, include_prefix, cancelled
+                clip,
+                self.registry,
+                folder,
+                folders,
+                custom_name,
+                fields,
+                include_prefix,
+                cancelled,
+                selected_range=selected_range,
+                progress=progress,
             ),
             lambda target: QMessageBox.information(
-                self, "Shared", f"Copied whole source to:\n{target}"
+                self, "Shared", f"Shared H.264 MP4 to:\n{target}"
             ),
         )
 
@@ -1187,9 +1425,11 @@ class Window(QMainWindow):
         self.formats.clear()
 
     def reset_layout(self):
+        self.pane_overrides.clear()
         self.showNormal()
         self.resize(1400, 900)
         self.splitter.setSizes([420, 630, 350])
+        self.update_projects_visibility()
 
     def closeEvent(self, event):
         if self.worker:
@@ -1211,9 +1451,18 @@ def style_application(application):
         QLineEdit, QPlainTextEdit, QListWidget, QComboBox { background: #15191f; padding: 6px; }
         QPushButton { background: #323a45; border: 1px solid #495361; padding: 7px; border-radius: 3px; }
         QPushButton:hover { background: #435568; }
+        QPushButton:checked { background: #294e60; border-color: #63cdd4; }
         QPushButton:disabled { color: #75808d; }
         QListWidget::item:selected { background: #35586c; }
         QSplitter::handle { background: #424b55; }
+        QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; color: #90a0af; padding: 10px 18px; }
+        QPushButton#navigation:checked { color: #f0f5f8; border-bottom: 2px solid #63cdd4; }
+        QToolButton { background: transparent; border: none; padding: 6px; border-radius: 4px; }
+        QToolButton:hover, QToolButton:checked { background: #354655; }
+        QLabel#muted { color: #93a3b3; }
+        QLabel#workingTitle { font-size: 19px; }
+        QSlider::groove:horizontal { height: 7px; background: #3b4652; border-radius: 3px; }
+        QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: #d4e5ee; border-radius: 5px; }
     """)
 
 
