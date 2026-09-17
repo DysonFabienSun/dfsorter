@@ -9,7 +9,7 @@ fields:
     prefixes: [wpn]
   map:
     type: enum
-    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab, Woods]
-    aliases: {streets: Streets of Tarkov, labs: The Lab}
+    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab, Woods, Terminal, Labyrinth]
+    aliases: {streets: Streets of Tarkov, labs: The Lab, labrys: Labyrinth}
 display_order: [kill, map, weapon, mainline]
 required_for_export: []
