@@ -85,7 +85,7 @@ Core clip data includes:
 - `game` (optional): canonical game name.
 - `triage` (optional): `keep`, `discard`, or unset.
 - `rating` (optional integer): 1 through 5.
-- `technical_condition` (optional string): a deliberate free-form technical note such as `LOW_FPS`.
+- `tag` (optional string): a deliberate free-form tag such as `LOW_FPS`.
 - `mainline` (optional string): the primary free-form human note used in the working title, such as `clutch of the century`.
 - `description` (optional string): secondary triage/editorial notes. Description is not part of the working title.
 - `catalogue_modified_at`: timestamp of the most recent catalogue metadata modification.
@@ -363,7 +363,7 @@ Examples of structured queries include:
 game:VALORANT agent:Jett
 triage:keep kill:>=4
 clutch:>=3 weapon:Vandal
-technical_condition:LOW_FPS
+tag:LOW_FPS
 ```
 
 Plain terms search human-facing text such as source filename, `mainline`, and `description`.

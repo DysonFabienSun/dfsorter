@@ -8,7 +8,7 @@
 - Projects defaults collapsed in normal windows and expanded when maximized, with separate per-run manual overrides.
 - Share defaults to the saved valid range when present, even if a new In point is pending. Every Share outputs H.264 MP4 and mixes all audio tracks into stereo AAC; silent clips remain silent. Whole H.264 video is stream-copied; all trims and other codecs re-encode. Prefer NVIDIA speed with x264 fallback. Project Export remains unchanged.
 - Hardware decoding is preferred and verified for supported media; software fallback remains allowed.
-- Empty Technical condition is hidden and can be added through the Clip menu.
+- Empty Tag is hidden and can be added through the Clip menu.
 
 The original feedback below records the motivation; the decisions above resolve its ambiguities.
 
@@ -84,11 +84,11 @@ In general, a lot of buttons are too full-width. The Home, Import and Session pa
 
 ### Working title format
 
-**Use typography much more aggressively.** On Editing, the working title should be a genuine focal element. `VAL_3K Chamber Operator Headhunter quickdraw and good aim` is currently approximately the same visual importance as everything around it. Make structured metadata slightly muted and the mainline brighter/bolder. Description and technical condition should recede.
+**Use typography much more aggressively.** On Editing, the working title should be a genuine focal element. `VAL_3K Chamber Operator Headhunter quickdraw and good aim` is currently approximately the same visual importance as everything around it. Make structured metadata slightly muted and the mainline brighter/bolder. Description and tag should recede.
 
 ### Visual changes for rare trinkets
 
-**Make rare things rare visually.** `Technical condition` probably doesn't deserve a permanently prominent row. It should only appear when populated.
+**Make rare things rare visually.** `Tag` probably doesn't deserve a permanently prominent row. It should only appear when populated.
 
 ### Timeline thickness
 

@@ -22,6 +22,7 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QAction, QDesktopServices, QIcon
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -63,7 +64,7 @@ from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, role
-from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tool
+from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tag_prefix, tool
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,6 +129,8 @@ class Window(QMainWindow):
         self.pane_overrides = {}
         self.rating_deadline = 0
         self.space_down = False
+        self.submit_resume = False
+        self.consume_resume_space = False
         self.space_timer = QTimer(self)
         self.space_timer.setSingleShot(True)
         self.space_timer.setInterval(200)
@@ -300,7 +303,7 @@ class Window(QMainWindow):
         self.command_history.hide()
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · Ctrl+Enter Add to project + Next · ? Shortcuts"
+            "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · Ctrl+Enter Add to project + Next · ? Shortcuts"
         )
         self.shortcut_hint.setObjectName("muted")
         self.shortcut_hint.setWordWrap(True)
@@ -313,6 +316,8 @@ class Window(QMainWindow):
         self.field_reminder = QLabel()
         self.field_reminder.setTextFormat(Qt.TextFormat.RichText)
         self.field_reminder.setWordWrap(True)
+        # Keep the command baseline stable when checklist glyphs change font metrics.
+        self.field_reminder.setMinimumHeight(self.field_reminder.fontMetrics().height())
         self.field_reminder.setAccessibleName("Saved metadata field checklist")
         self.field_reminder.setToolTip(
             "Saved metadata: ✓ populated · ! required for export · o optional · x invalid for current configuration. "
@@ -354,6 +359,9 @@ class Window(QMainWindow):
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_settings_menu()
         QApplication.instance().installEventFilter(self)
+        QApplication.instance().focusChanged.connect(self.command_focus_changed)
+        self.player.media.playbackStateChanged.connect(self.command_playback_changed)
+        self.player.loading_finished.connect(self.update_command_state)
         self.refresh_references()
         self.panel("Home")
         self.reset_layout()
@@ -484,10 +492,6 @@ class Window(QMainWindow):
         self.description.setAccessibleName("Description")
         self.description.hide()
         editing.addWidget(self.description)
-        self.technical = QLineEdit()
-        self.technical.setPlaceholderText("Technical condition (optional)")
-        self.technical.editingFinished.connect(self.save_technical)
-        editing.addWidget(self.technical)
         controls = self.player.controls
         for text, callback in [
             ("Set In", self.mark_in),
@@ -553,7 +557,7 @@ class Window(QMainWindow):
             ("Settings…", self.open_settings, None),
             None,
             ("Reset clip metadata…", self.reset_metadata, None),
-            ("Edit technical condition…", self.edit_technical, None),
+            ("Edit tag…", self.edit_tag, None),
             None,
             ("Delete rejected originals…", self.delete_rejected, None),
             ("Reset window and panes", self.reset_layout, None),
@@ -729,6 +733,7 @@ class Window(QMainWindow):
             self.position_transition_covers()
 
     def panel(self, name):
+        self.submit_resume = False
         if name == "Editing" and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
@@ -869,7 +874,7 @@ class Window(QMainWindow):
 
     def render_card(self, item, clip):
         available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
-        card_title = title(
+        card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
             self.registry,
             mainline_separator=" | ",
@@ -883,7 +888,8 @@ class Window(QMainWindow):
             CLIP_ROLE,
             {
                 "title": card_title,
-                "rich_title": title(
+                "rich_title": tag_prefix(clip, rich=True)
+                + title(
                     {**clip, "mainline": (clip.get("mainline") or "").strip()},
                     self.registry,
                     rich=True,
@@ -1021,6 +1027,7 @@ class Window(QMainWindow):
         self.load_clip(clip_id)
 
     def load_clip(self, clip_id):
+        self.submit_resume = False
         self.cancel_space()
         self.rating_deadline = 0
         self.current_id = clip_id
@@ -1037,6 +1044,11 @@ class Window(QMainWindow):
             return
         clip = self.catalogue.clip(self.current_id)
         game = self.registry.game(clip["game"])
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) == self.current_id:
+                self.render_card(item, clip)
+                break
         self.command.setPlaceholderText(
             game.command_example if game and game.command_example else "Enter clip metadata…"
         )
@@ -1056,7 +1068,7 @@ class Window(QMainWindow):
                 "— Working title not set</span>"
             )
         rendered = f'<span style="color:{COLORS["text_working_title"]}">{rendered}</span>'
-        self.working_title.setText(rendered)
+        self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
         self.render_field_reminder(clip, game)
         self.filename.setText(Path(clip["source_path"]).name)
         member_ids = self.catalogue.memberships(self.current_id)
@@ -1083,8 +1095,6 @@ class Window(QMainWindow):
         )
         self.description.setText(clip["description"] or "")
         self.description.setVisible(bool((clip["description"] or "").strip()))
-        self.technical.setText(clip["technical_condition"] or "")
-        self.technical.setVisible(bool(clip["technical_condition"]))
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
@@ -1098,7 +1108,7 @@ class Window(QMainWindow):
             return
         fields = list(
             dict.fromkeys(
-                [*game.display_order, *game.fields, "mainline", "rating", "technical_condition"]
+                [*game.display_order, *game.fields, "mainline", "rating", "tag"]
             )
         )
         entries = []
@@ -1151,11 +1161,6 @@ class Window(QMainWindow):
         except (ValueError, OSError) as error:
             self.error(error)
 
-    def save_technical(self):
-        if self.current_panel == "Editing" and self.current_id:
-            self.catalogue.patch(self.current_id, {"technical_condition": self.technical.text()})
-            self.technical.setVisible(bool(self.technical.text()))
-
     def submit(self):
         if self.current_panel != "Editing" or not self.current_id:
             return
@@ -1171,8 +1176,12 @@ class Window(QMainWindow):
             self.command_error.clear()
             self.command_error.hide()
             self.render_clip()
-            self.review_mode()
+            self.command.setFocus()
+            self.submit_resume = self.editing_paused()
+            self.update_command_state()
         except ValueError as error:
+            self.submit_resume = False
+            self.update_command_state()
             self.error(error)
 
     def add_to_project_next(self):
@@ -1278,12 +1287,56 @@ class Window(QMainWindow):
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
+        if text:
+            self.submit_resume = False
+            self.update_command_state()
         if self.current_id:
             self.drafts[self.current_id] = text
 
+    def editing_paused(self):
+        return (
+            self.current_panel == "Editing"
+            and self.current_id is not None
+            and not self.player.awaiting_frame
+            and self.player.media.duration() > 0
+            and self.player.media.mediaStatus() != QMediaPlayer.MediaStatus.InvalidMedia
+            and self.player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        )
+
+    def command_focus_changed(self, old, new):
+        if old is self.command and new is not self.command:
+            self.submit_resume = False
+        self.update_command_state()
+
+    def command_playback_changed(self, state):
+        self.submit_resume = False
+        self.update_command_state()
+
+    def update_command_state(self):
+        focus = QApplication.focusWidget()
+        state = "review"
+        if self.current_panel == "Editing":
+            if focus is self.command:
+                state = "resume" if self.submit_resume and self.editing_paused() else "input"
+            elif (
+                self.editing_paused()
+                and self.settings.get("paused_typing_enabled", True)
+                and not isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
+                and not QApplication.activeModalWidget()
+                and not QApplication.activePopupWidget()
+            ):
+                state = "paused"
+        if self.command.property("commandState") != state:
+            self.command.setProperty("commandState", state)
+            self.command.style().unpolish(self.command)
+            self.command.style().polish(self.command)
+            self.command.update()
+
     def review_mode(self):
+        self.submit_resume = False
         self.rating_deadline = 0
         self.player.setFocus()
+        self.update_command_state()
 
     def cancel_space(self):
         self.space_timer.stop()
@@ -1320,7 +1373,7 @@ class Window(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "right"):
             self.update_projects_visibility()
 
-    def edit_technical(self):
+    def edit_tag(self):
         try:
             clip = self.selected_clip()
         except ValueError as error:
@@ -1328,20 +1381,22 @@ class Window(QMainWindow):
             return
         value, accepted = QInputDialog.getText(
             self,
-            "Technical condition",
-            "Optional technical note",
-            text=clip["technical_condition"] or "",
+            "Tag",
+            "Optional tag",
+            text=clip["tag"] or "",
         )
         if accepted:
-            self.catalogue.patch(clip["clip_id"], {"technical_condition": value or None})
+            self.catalogue.patch(clip["clip_id"], {"tag": value or None})
             if self.current_panel == "Editing":
                 self.render_clip()
+            else:
+                self.refresh_library()
 
     def show_shortcuts(self):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter / Ctrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter / Ctrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nYellow: type while paused to enter input (Settings → General).\nBlue: input mode. Violet: first Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Escape and Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -1361,12 +1416,22 @@ class Window(QMainWindow):
                 event.accept()
                 return True
         if event.type() == QEvent.Type.MouseButtonPress:
+            self.submit_resume = False
+            self.update_command_state()
             self.rating_deadline = 0
             self.cancel_space()
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
+            if event.type() == QEvent.Type.ApplicationDeactivate:
+                self.submit_resume = False
+                self.consume_resume_space = False
+                self.update_command_state()
             self.cancel_space()
             self.rating_deadline = 0
         if event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Space:
+            if self.consume_resume_space:
+                if not event.isAutoRepeat():
+                    self.consume_resume_space = False
+                return True
             if not event.isAutoRepeat() and self.space_down:
                 held = not self.space_timer.isActive()
                 self.cancel_space()
@@ -1385,10 +1450,31 @@ class Window(QMainWindow):
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
+        if key == Qt.Key.Key_Space and self.consume_resume_space:
+            return True
         if key == Qt.Key.Key_Escape and self.current_panel == "Editing":
             self.review_mode()
             return True
         if focus is self.command:
+            if self.submit_resume and key not in {
+                Qt.Key.Key_Shift,
+                Qt.Key.Key_Control,
+                Qt.Key.Key_Alt,
+                Qt.Key.Key_Meta,
+            }:
+                resume = (
+                    key == Qt.Key.Key_Space
+                    and modifiers == Qt.KeyboardModifier.NoModifier
+                    and self.editing_paused()
+                )
+                self.submit_resume = False
+                self.update_command_state()
+                if resume:
+                    self.consume_resume_space = True
+                    self.review_mode()
+                    self.player.media.setPlaybackRate(1)
+                    self.player.media.play()
+                    return True
             if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
                 if modifiers == Qt.KeyboardModifier.NoModifier:
                     self.submit()
@@ -1413,13 +1499,20 @@ class Window(QMainWindow):
             elif modifiers == Qt.KeyboardModifier.NoModifier:
                 self.command.setFocus()
             return True
+        if (
+            self.current_panel == "Editing"
+            and key in {Qt.Key.Key_Up, Qt.Key.Key_Down}
+            and modifiers == Qt.KeyboardModifier.NoModifier
+        ):
+            self.navigate(-1 if key == Qt.Key.Key_Up else 1)
+            return True
         if key in {Qt.Key.Key_Left, Qt.Key.Key_Right} and modifiers in {
             Qt.KeyboardModifier.NoModifier,
             Qt.KeyboardModifier.ShiftModifier,
         }:
             delta = 1000 if modifiers else 5000
             player = self.active_player()
-            player.media.setPosition(
+            player.seek_to(
                 max(
                     0,
                     min(
@@ -1458,6 +1551,16 @@ class Window(QMainWindow):
             if self.current_panel == "Editing" and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
                 (self.mark_in if event.key() == Qt.Key.Key_I else self.mark_out)()
                 return True
+        if (
+            self.editing_paused()
+            and self.settings.get("paused_typing_enabled", True)
+            and modifiers in {Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier}
+            and event.text()
+            and event.text().isprintable()
+        ):
+            self.command.setFocus()
+            self.command.insert(event.text())
+            return True
         return super().eventFilter(watched, event)
 
     def mark_in(self):
@@ -1607,7 +1710,7 @@ class Window(QMainWindow):
                         "metadata": {},
                         "mainline": None,
                         "description": None,
-                        "technical_condition": None,
+                        "tag": None,
                         "triage": None,
                         "rating": None,
                         "in_ms": None,

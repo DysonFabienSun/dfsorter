@@ -25,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 3:
+            if version > 4:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -33,7 +33,7 @@ class Catalogue:
                     clip_id TEXT PRIMARY KEY, source_path TEXT UNIQUE NOT NULL,
                     game TEXT, triage TEXT CHECK(triage IN ('keep','discard')),
                     rating INTEGER CHECK(rating BETWEEN 1 AND 5),
-                    technical_condition TEXT, mainline TEXT, description TEXT,
+                    tag TEXT, mainline TEXT, description TEXT,
                     metadata TEXT NOT NULL DEFAULT '{}', in_ms INTEGER, out_ms INTEGER,
                     catalogue_modified_at TEXT NOT NULL,
                     CHECK((in_ms IS NULL AND out_ms IS NULL) OR
@@ -62,6 +62,10 @@ class Catalogue:
                     duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
                 );
             """)
+            if version < 4:
+                columns = {row["name"] for row in database.execute("PRAGMA table_info(clips)")}
+                if "technical_condition" in columns:
+                    database.execute("ALTER TABLE clips RENAME COLUMN technical_condition TO tag")
             if version < 3:
                 for table, column in [
                     ("folders", "path"),
@@ -88,7 +92,7 @@ class Catalogue:
                     "CREATE UNIQUE INDEX IF NOT EXISTS folder_path_identity "
                     "ON folders(path COLLATE NOCASE)"
                 )
-            database.execute("PRAGMA user_version = 3")
+            database.execute("PRAGMA user_version = 4")
 
     def media_cache(self):
         return {row["path"]: row for row in self.rows("SELECT * FROM media_cache")}
@@ -298,7 +302,7 @@ class Catalogue:
             "game",
             "triage",
             "rating",
-            "technical_condition",
+            "tag",
             "mainline",
             "description",
             "metadata",
@@ -327,7 +331,7 @@ class Catalogue:
             "game",
             "triage",
             "rating",
-            "technical_condition",
+            "tag",
             "mainline",
             "description",
             "metadata",

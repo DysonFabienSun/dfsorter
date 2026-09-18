@@ -49,7 +49,7 @@ class Registry:
             "triage",
             "mainline",
             "description",
-            "technical_condition",
+            "tag",
             "clip_id",
             "source_path",
             "in_ms",

@@ -85,12 +85,14 @@ Core clip data includes:
 - `game` (optional): canonical game name.
 - `triage` (optional): `keep`, `discard`, or unset.
 - `rating` (optional integer): 1 through 5.
-- `technical_condition` (optional string): a deliberate free-form technical note such as `LOW_FPS`.
+- `tag` (optional string): a short free-form label for any purpose, such as `FAVORITE` or `LOW_FPS`.
 - `mainline` (optional string): the primary free-form human note used in the working title, such as `clutch of the century`.
 - `description` (optional string): secondary triage/editorial notes. Description is not part of the working title.
 - `catalogue_modified_at`: timestamp of the most recent catalogue metadata modification.
 - one optional persisted **In/Out range** for the clip.
 - game-specific metadata defined by the active game configuration.
+
+Existing catalogues automatically migrate their saved tag values to the `tag` column (schema version 4), preserving clip IDs, other metadata, sessions and project memberships.
 
 The source video's creation/capture time should be read from the source/media metadata when needed rather than duplicated as a user-editable catalogue field.
 
@@ -303,7 +305,7 @@ Page and clip transitions keep the native video surface hidden until the surroun
 
 ### 9.2 Settings and Actions
 
-There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Reset clip metadata…, Edit technical condition…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Projects and the settings cog use matching 28 px heights and are vertically centered in the strip. Undo, Redo and settings icon artwork is optically offset 1 px downward within its button.
+There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Projects and the settings cog use matching 28 px heights and are vertically centered in the strip. Undo, Redo and settings icon artwork is optically offset 1 px downward within its button.
 
 Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations retain explicit confirmation.
 
@@ -362,7 +364,7 @@ Examples of structured queries include:
 game:VALORANT agent:Jett
 triage:keep kill:>=4
 clutch:>=3 weapon:Vandal
-technical_condition:LOW_FPS
+tag:LOW_FPS
 ```
 
 Plain terms search human-facing text such as source filename, `mainline`, and `description`.
@@ -544,7 +546,7 @@ VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
 
 The `mainline` portion is visually emphasized in the UI.
 
-Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. Technical condition appears only when populated; **Settings cog → Edit technical condition…** adds or changes it.
+Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. The tag appears only when populated, as a bold bright-yellow bracketed prefix before the game-code title in clip cards and before the Editing working title (including filename fallbacks). There is no dedicated tag textbox. Commands or **Settings cog → Edit tag…** add, change, or clear it. Escape rich text, retain title elision and full tooltips; generated Share/Export filenames do not include this UI prefix. Unset ratings show red empty star outlines with no background highlight; hover previews remain gold and selecting a rating removes the red treatment. Ratings remain optional, never zero.
 
 Description text is secondary and is never automatically appended to the working title. There is no dedicated description editor or Save description button. Set In, Set Out, Clear range and Share icon actions sit on the right of the playback-controls row immediately beneath the video timeline. A vertical divider separates them from the icon-only Add to project + Next action, whose tooltip includes Ctrl+Enter. In/Out state is shown on the timeline without a separate range text display.
 
@@ -558,17 +560,22 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - Left/Right seek ±5 seconds; Shift+Left/Right seek ±1 second. I/O set markers. Backspace rejects without advancing.
 - R followed by 1–5 within one second rates without submitting or changing triage.
 - `/` or Enter enters metadata input without inserting text or submitting a retained draft. Slash commands are not supported.
-- Every text field consumes normal editing keys, including Space and Backspace when empty.
-- Enter submits commands only in command-input mode and returns to review on success; invalid commands retain input focus and text. Shift+Enter never submits and advances only in review mode. Escape returns to review preserving the draft.
+- Every text field consumes normal editing keys, including Space and Backspace when empty, except for the one-shot post-submit Space behavior below.
+- Enter submits commands only in command-input mode and remains in input on success; invalid commands retain input focus and text. Shift+Enter never submits and advances only in review mode. Escape returns to review preserving the draft.
 - Ctrl+Enter in review mode adds the current clip to the active project and advances one position in frozen Session order regardless of triage. It requires an active project, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible icon-only **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without an active project. The Projects menu retains **Add to project** for the current selection (one clip in Editing, potentially multiple in other library views).
+- Unmodified Up/Down in Editing review mode navigates every clip in frozen Session order, including kept/rejected clips, without wrapping. Text fields retain their normal keys. Preserve drafts and scroll only enough to reveal the destination.
+- While a usable Editing video is paused, ordinary typing enters command input and inserts the triggering text once at its retained cursor. Existing review/video shortcuts take priority, including I/O, R then 1–5, Space, arrows, Backspace, / and Enter. Other text fields, menus, dialogs and modifier-only keys are excluded. Settings → General → **Type to enter commands while video is paused** defaults on and persists immediately.
+- The command bar is dull yellow when paused typing is available, blue during ordinary input, and dull violet immediately after a successful submission while paused. In that violet state only, the first unmodified Space resumes normal-speed playback and enters review without inserting text; consume its repeats and release. Other non-modifier keys consume the opportunity and behave normally. Mouse interaction, focus loss, playback changes, paste and clip/panel changes cancel it. Failed commands do not arm it. This post-submit behavior is independent of the paused-typing setting.
 - Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
 - A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
 
-Use native Qt video presentation and prefer hardware decoding, allowing logged software fallback. Coalesce drag seeks to at most 20 Hz with approximate previews; perform the final unquantized seek on release and restore playback state. The timeline has a 7 px groove, larger hit target, colored markers, saved-range tint, and a distinct pending In marker. Put transport/audio/time controls directly beneath it.
+Use native Qt video presentation and prefer hardware decoding, allowing logged software fallback. Coalesce drag seeks to at most 20 Hz with approximate previews; perform the final unquantized seek on release and restore playback state. Exception: after natural media completion, seeking backward resumes playback automatically; dragging previews while held and resumes on release. Apply this recovery in Editing and Export. Ordinary paused seeking remains paused; missing/failed media is not treated as completed playback. The timeline has a 7 px groove, larger hit target, colored markers, saved-range tint, and a distinct pending In marker. Put transport/audio/time controls directly beneath it.
 
 ### 13.3 Command Syntax
 
 The command bar receives one complete string.
+
+`tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `tag:LOW_FPS` or `tag:"audio issue"`; consume one token or quoted value, preserving capitalization and trimming outer whitespace. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
 
 General syntax:
 
@@ -654,7 +661,7 @@ This command history exists only in memory and does not persist across applicati
 
 ### 13.6 Submission, Triage, and Navigation
 
-- `Enter` in command-input mode submits a valid command, remains on the current clip and returns to review. Enter in review mode focuses the command bar, like `/`, without submitting.
+- `Enter` in command-input mode submits a valid command, remains on the current clip and stays in input mode. Enter in review mode focuses the command bar, like `/`, without submitting.
 - `Shift+Enter` is a review-mode verdict-and-advance action, never a command submission. In command-input mode it leaves text and metadata unchanged and explains that review mode is required. Other text fields retain their normal editing behavior.
 - If the command bar contains any text, including a retained draft, review-mode Shift+Enter refuses advancement and prompts the user to enter input mode and press Enter to submit existing commands first.
 - A successful metadata command by itself does **not** change triage.
@@ -973,7 +980,7 @@ Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cya
 - Rating uses 18 px SVG stars with 4 px spacing, gray empty stars, gold filled stars and lighter gold hover preview. The small `x` clear action and right-click clear remain available. Rating never changes triage.
 - Video is black. Retain the approved **7 px timeline groove** and larger hit area, overriding the original token sheet's 4–6 px suggestion. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In has a distinct shape/label. Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
-- Tooltips use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata and technical notes recede; technical condition remains hidden when empty.
+- Tooltips use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use bold `#F0D16F` and remain hidden when empty. Command states use blue background/border `#172B40`/`#6AA9E9`, dull yellow `#332F20`/`#A99A5B`, and dull violet `#2C253B`/`#9B85BC`. Unset rating uses the existing danger color for star outlines only, with no background highlight.
 
 ### 20.6 Acceptance
 

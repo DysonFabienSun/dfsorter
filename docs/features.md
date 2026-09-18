@@ -31,7 +31,7 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 ## Stage 4 — First graphical touchup
 
 - [x] Review/input separation, Space tap/hold, seek/rating shortcuts, per-run drafts, and shortcut help.
-- [x] Restrained navigation, elided clip rows, compact Lucide controls, star rating, title emphasis, and conditional technical notes.
+- [x] Restrained navigation, elided clip rows, compact Lucide controls, star rating, title emphasis, and conditional tags.
 - [x] Collapsible Projects with normal/maximized defaults and per-run overrides; compact project and session actions.
 - [x] Native Qt video presentation, 20 Hz coalesced scrubbing, release seek, and colored range timeline.
 - [x] D3D11 hardware decoder selection verified for H.264 and AV1 on this machine; software fallback allowed.
@@ -155,3 +155,20 @@ process cleanup and the existing regression suite.
 - [x] Projects and the cog share a centered 28 px height. Inspected the regenerated Editing screenshot.
 - [x] Focused checks pass for menu removal, retained actions, keyboard/button undo/redo and utility alignment. Final full UI run: 30 passed, one playback text-focus assertion failed; both playback tests passed on isolated rerun. Earlier runs also showed intermittent startup/focus failures. Ruff and diff checks pass.
 - [ ] User acceptance of the simplified navigation and cog menu.
+
+## Tags and paused command workflow
+
+- [x] Bold bright-yellow bracketed tag prefixes appear in clip cards and Editing titles, including filename fallbacks. Metadata edits update the current card without rebuilding the list. Removed the tag textbox; retained the cog editor.
+- [x] Global `tag:` commands accept one token or a quoted value, with `tag:""` clearing; search accepts the same prefix. Added `brim` as an input alias for canonical Brimstone. Share/Export filename generation remains unchanged.
+- [x] Unset ratings show red empty star outlines with no background highlight; existing gold hover previews, selection and clearing remain available.
+- [x] Up/Down navigates all frozen-session clips in Editing review mode, including kept/rejected clips, preserving drafts and stopping at the ends.
+- [x] Paused ordinary typing enters blue command input; dull yellow indicates availability. The default-on General setting persists immediately. Successful submissions retain input focus; dull violet indicates the one-shot Space-to-resume action. Existing review shortcuts take priority, and input/focus/playback cancellation is covered.
+- [x] End-of-media backward seeking resumes playback in both players; dragging previews while held and resumes on release. Real H.264/AV1 fixtures exercise completion and recovery. Ordinary paused seeking stays paused.
+- [x] Full regression run: 81 passed (`uv run pytest -v -p no:faulthandler`); Ruff checks pass. An earlier native playback run stalled and was interrupted; the final complete run passed. Inspected yellow/blue/violet command-state screenshots, unrated stars and tags under `cache/verification/command-states`. Stabilized checklist height to preserve command-bar position.
+- [ ] User acceptance of colors/workflow with the capture library and full multi-DPI visual review.
+
+## General-purpose tag naming
+
+- [x] Renamed the field, settings action, command/search prefix, checklist, helpers and documentation to `tag`. Use `tag:FAVORITE`, `tag:"needs review"`, or `tag:""` to clear. Display and all other behavior stay identical.
+- [x] Schema version 4 renames the existing column on startup without changing saved values, clip IDs, other metadata, project memberships or sessions. Migration coverage includes versions 1–3, reopening, tag edits, clearing and undo/redo.
+- [x] Full regression run: 84 passed; Ruff and diff checks pass.

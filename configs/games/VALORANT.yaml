@@ -8,7 +8,7 @@ fields:
   agent:
     type: enum
     values: [Astra, Breach, Brimstone, Chamber, Clove, Cypher, Deadlock, Fade, Gekko, Harbor, Iso, Jett, Kayo, Killjoy, Miks, Neon, Omen, Phoenix, Raze, Reyna, Sage, Skye, Sova, Tejo, Viper, Veto, Vyse, Waylay, Yoru]
-    aliases: {kj: Killjoy, ch: Chamber}
+    aliases: {kj: Killjoy, ch: Chamber, brim: Brimstone}
   map:
     type: enum
     values: [Abyss, Ascent, Bind, Breeze, Corrode, Fracture, Haven, Icebox, Lotus, Pearl, Split, Summit, Sunset]

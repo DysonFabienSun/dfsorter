@@ -121,6 +121,8 @@ def test_playback_preferences_persist(window, application):
     settings = SettingsDialog(window)
     assert settings.start_near_end.isChecked()
     assert settings.start_offset.value() == 40
+    assert settings.paused_typing.isChecked()
+    settings.paused_typing.setChecked(False)
     settings.start_offset.setValue(17)
     settings.start_near_end.setChecked(False)
     assert not settings.start_offset.isEnabled()
@@ -130,6 +132,7 @@ def test_playback_preferences_persist(window, application):
         restored = SettingsDialog(restarted)
         assert restored.start_offset.value() == 17
         assert not restored.start_near_end.isChecked()
+        assert not restored.paused_typing.isChecked()
         assert restarted.player.settings["start_near_end_seconds"] == 17
         assert restarted.export_player.settings["start_near_end_enabled"] is False
         restored.close()
@@ -193,7 +196,7 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.catalogue.clip(ids[0])["triage"] is None
     assert window.catalogue.clip(ids[0])["rating"] == 4
-    assert application.focusWidget() is window.player
+    assert application.focusWidget() is window.command
     window.command.setFocus()
     window.command.setText("sage jett")
     QTest.keyClick(window.command, Qt.Key.Key_Return)
@@ -265,6 +268,7 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.current_id == next_id
     assert window.catalogue.clip(next_id)["triage"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(next_id)["triage"] == "keep"
     assert "Session complete" in window.statusBar().currentMessage()
@@ -474,6 +478,33 @@ def test_real_playback(window, application, tmp_path, codec):
         preview_player.load({**clip, "in_ms": None, "out_ms": None})
         assert wait_for(application, lambda: not preview_player.awaiting_frame)
         assert preview_player.media.position() == 0
+        # Natural completion must not leave either player unable to seek/resume.
+        for drag in (False, True):
+            preview_player.media.setPosition(preview_player.media.duration() - 200)
+            preview_player.media.play()
+            assert wait_for(application, lambda: preview_player.ended)
+            if drag:
+                preview_player.begin_scrub()
+                preview_player.queue_seek(700)
+                preview_player.preview_seek()
+                assert (
+                    preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+                )
+                preview_player.seek.setSliderPosition(700)
+                preview_player.end_scrub()
+            else:
+                preview_player.seek_to(700)
+            assert wait_for(
+                application,
+                lambda: (
+                    preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+                    and 700 < preview_player.media.position() < 2000
+                    and preview_player.video.videoSink().videoFrame().isValid()
+                ),
+            )
+            preview_player.media.pause()
+        preview_player.seek_to(500)
+        assert preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
         settings.start_offset.setValue(40)
         settings.start_near_end.setChecked(True)
         settings.close()
@@ -525,6 +556,116 @@ def test_real_playback(window, application, tmp_path, codec):
     window.grab().save(str(artifact / f"maximized-{codec}.png"))
 
 
+def test_paused_typing_and_submit_resume(window, application, tmp_path):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg required for playback fixtures")
+    ids = add_clips(window, tmp_path, valid=True)
+    window.panel("Editing")
+    assert wait_for(application, window.editing_paused)
+    window.review_mode()
+    assert window.command.property("commandState") == "paused"
+    artifact = ROOT / "cache/verification/command-states"
+    artifact.mkdir(parents=True, exist_ok=True)
+    window.grab().save(str(artifact / "paused.png"))
+    QTest.keyClick(window.player, Qt.Key.Key_I)
+    assert application.focusWidget() is window.player
+    QTest.keyClick(window.player, Qt.Key.Key_R)
+    QTest.keyClick(window.player, Qt.Key.Key_4)
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    QTest.keyClick(window.player, Qt.Key.Key_B)
+    assert window.command.text() == "b"
+    assert window.command.property("commandState") == "input"
+    window.grab().save(str(artifact / "input.png"))
+    QTest.keyClicks(window.command, "rim tag:LOW_FPS")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    assert application.focusWidget() is window.command
+    assert window.command.property("commandState") == "resume"
+    window.grab().save(str(artifact / "resume.png"))
+    assert window.library.item(0).data(CLIP_ROLE)["title"].startswith("[LOW_FPS] VAL_")
+    assert window.catalogue.clip(ids[0])["metadata"]["agent"] == "Brimstone"
+    QTest.keyPress(window.command, Qt.Key.Key_Space)
+    QTest.qWait(250)
+    QTest.keyRelease(window.player, Qt.Key.Key_Space)
+    assert window.command.text() == ""
+    assert application.focusWidget() is window.player
+    assert window.player.media.playbackRate() == 1
+    assert window.player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+    window.player.media.pause()
+    QTest.keyClick(window.player, Qt.Key.Key_J)
+    QTest.keyClicks(window.command, "ett")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    QTest.keyClick(window.command, Qt.Key.Key_V)
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == "v "
+    assert window.command.property("commandState") == "input"
+    assert window.editing_paused()
+    window.command.setText("invalid command")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    assert not window.submit_resume
+    assert window.command.text() == "invalid command"
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    window.settings["paused_typing_enabled"] = False
+    window.update_command_state()
+    assert window.command.property("commandState") == "review"
+    QTest.keyClick(window.player, Qt.Key.Key_B)
+    assert application.focusWidget() is window.player
+    window.settings["paused_typing_enabled"] = True
+    window.command.setCursorPosition(0)
+    QTest.keyClick(window.player, Qt.Key.Key_B)
+    assert window.command.text() == "binvalid command"
+    for cancel in ("mouse", "focus", "playback", "paste"):
+        window.command.setText("R3")
+        window.command.setFocus()
+        QTest.keyClick(window.command, Qt.Key.Key_Return)
+        assert window.submit_resume
+        if cancel == "mouse":
+            QTest.mouseClick(window.command, Qt.MouseButton.LeftButton)
+        elif cancel == "focus":
+            window.player.setFocus()
+            window.command.setFocus()
+        elif cancel == "playback":
+            window.player.media.play()
+            window.player.media.pause()
+        else:
+            # Exercise the same insertion path as paste without changing the system clipboard.
+            window.command.insert("jett")
+        assert not window.submit_resume
+        QTest.keyClick(window.command, Qt.Key.Key_Space)
+        assert window.command.text().endswith(" ")
+        assert window.editing_paused()
+
+
+def test_session_arrow_navigation_and_tag_display(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]["folder_id"]
+    for name in ("kept", "rejected"):
+        path = tmp_path / "captures" / f"{name}.mp4"
+        path.write_bytes(b"test")
+        window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    ids += [clip["clip_id"] for clip in window.catalogue.clips() if clip["clip_id"] not in ids]
+    window.catalogue.patch(ids[1], {"triage": "keep"})
+    window.catalogue.patch(ids[2], {"triage": "discard"})
+    window.catalogue.patch(ids[0], {"tag": "<bad>"})
+    window.catalogue.create_session(ids, replace=True)
+    window.panel("Editing")
+    data = window.library.item(0).data(CLIP_ROLE)
+    assert data["title"].startswith("[<bad>] VAL_")
+    assert "[&lt;bad&gt;]" in data["rich_title"]
+    assert "[&lt;bad&gt;]" in window.working_title.text()
+    window.command.setFocus()
+    window.command.setText("draft")
+    QTest.keyClick(window.command, Qt.Key.Key_Down)
+    assert window.current_id == ids[0]
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    for target in (ids[1], ids[2], ids[2]):
+        QTest.keyClick(window.player, Qt.Key.Key_Down)
+        assert window.current_id == target
+    for target in (ids[1], ids[0], ids[0]):
+        QTest.keyClick(window.player, Qt.Key.Key_Up)
+        assert window.current_id == target
+    assert window.command.text() == "draft"
+
+
 def test_review_drafts_rating_and_panes(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
@@ -554,12 +695,13 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
         {
             "mainline": "<great aim> " * 8,
             "metadata": {"agent": "Chamber", "weapon": ["Operator", "Headhunter"], "kill": 3},
-            "technical_condition": "LOW_FPS",
+            "tag": "LOW_FPS",
             "rating": 4,
         }
     )
     assert "&lt;great aim&gt;" in window.working_title.text()
-    assert window.technical.isVisible()
+    assert "[LOW_FPS]" in window.working_title.text()
+    assert not hasattr(window, "tag")
     window.command.setFocus()
     QTest.keyClicks(window.command, "jett")
     QTest.keyClick(window.command, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
@@ -594,6 +736,7 @@ def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch):
     player = window.player
     calls = []
     monkeypatch.setattr(player.media, "setPosition", calls.append)
+    monkeypatch.setattr(player.media, "duration", lambda: 10000)
     player.seek.setMaximum(10000)
     player.begin_scrub()
     for position in range(1000, 1235):
@@ -984,7 +1127,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     assert {
         "Settings…",
         "Reset clip metadata…",
-        "Edit technical condition…",
+        "Edit tag…",
         "Delete rejected originals…",
         "Reset window and panes",
         "Exit",

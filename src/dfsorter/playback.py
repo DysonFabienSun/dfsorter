@@ -116,6 +116,8 @@ class Player(QWidget):
         self.seek_timer.timeout.connect(self.preview_seek)
         self.pending_seek = None
         self.scrub_playing = False
+        self.ended = False
+        self.media.mediaStatusChanged.connect(self.media_status_changed)
         layout.addWidget(self.seek)
         self.controls = controls = QHBoxLayout()
         self.previous_button = tool("skip-back", "Previous clip", self.previous.emit)
@@ -153,6 +155,7 @@ class Player(QWidget):
                 icon("pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play")
             )
         )
+        self.media.playbackStateChanged.connect(self.playback_state_changed)
         self.media.errorOccurred.connect(self.load_error)
         self.video.videoSink().videoFrameChanged.connect(self.first_frame)
         self.awaiting_frame = False
@@ -164,7 +167,9 @@ class Player(QWidget):
 
     def begin_scrub(self):
         self.awaiting_frame = False
-        self.scrub_playing = self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        self.scrub_playing = self.ended or (
+            self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        )
         self.media.pause()
         self.seek_timer.start()
 
@@ -173,17 +178,39 @@ class Player(QWidget):
 
     def preview_seek(self):
         if self.pending_seek is not None:
-            self.media.setPosition((self.pending_seek // 100) * 100)
+            self.seek_to((self.pending_seek // 100) * 100, preview=True)
             self.pending_seek = None
 
     def end_scrub(self):
         self.seek_timer.stop()
         self.pending_seek = None
-        self.media.setPosition(self.seek.sliderPosition())
+        self.seek_to(self.seek.sliderPosition(), preview=True)
         if self.scrub_playing:
             self.media.play()
 
+    def media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.ended = True
+        elif status in {QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia}:
+            self.ended = False
+
+    def playback_state_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self.ended = False
+
+    def seek_to(self, position, preview=False):
+        position = max(0, min(self.media.duration(), position))
+        recover = self.ended and position < self.media.duration()
+        if recover:
+            # Qt stops the backend at EOF. Re-enter paused playback before seeking.
+            self.media.pause()
+            self.ended = False
+        self.media.setPosition(position)
+        if recover and not preview:
+            self.media.play()
+
     def load(self, clip):
+        self.ended = False
         self.load_timeout.stop()
         self.awaiting_frame = False
         self.loading_started.emit()

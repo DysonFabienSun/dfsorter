@@ -78,7 +78,7 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
     tokens = tokenize(parts[0])
 
     def assign(key, value):
-        if key == "rating":
+        if key in {"rating", "tag"}:
             target = patch
             multiple = False
         else:
@@ -99,6 +99,7 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
             return False
         return bool(
             re.fullmatch(r"(\d+k|1v\d+|r\d+)", lowered)
+            or lowered.startswith("tag:")
             or (game and lowered.split(":", 1)[0] in game.prefixes and ":" in lowered)
         )
 
@@ -106,7 +107,12 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
     while index < len(tokens):
         token = tokens[index].value.strip()
         folded = token.casefold()
-        if re.fullmatch(r"r\d+", folded):
+        if folded.startswith("tag:"):
+            value = token.split(":", 1)[1].strip()
+            if not value and not tokens[index].quoted:
+                raise ValueError('tag needs a value; use tag:"" to clear')
+            assign("tag", value or None)
+        elif re.fullmatch(r"r\d+", folded):
             rating = int(folded[1:])
             if rating not in range(1, 6):
                 raise ValueError("Rating must be R1 through R5")
@@ -183,7 +189,7 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
         key = key.casefold()
         if key == "rating":
             raise ValueError("Rating is not searchable or filterable")
-        if key not in known_fields | {"game", "triage", "technical_condition"}:
+        if key not in known_fields | {"game", "triage", "tag"}:
             raise ValueError(f"Unknown query field: {key}")
         if not value:
             raise ValueError(f"{key} needs a query value")
@@ -213,7 +219,7 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
                 if key == "game":
                     actual = clip["game"]
                     expected = (registry.resolve(value) or value).casefold()
-                elif key in {"triage", "technical_condition"}:
+                elif key in {"triage", "tag"}:
                     actual = clip[key] or ("undefined" if key == "triage" else "")
                 else:
                     game = registry.game(clip["game"])

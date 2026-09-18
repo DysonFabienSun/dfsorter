@@ -35,7 +35,7 @@ Opening a clip in Editing or Export starts paused at its saved In point when its
 
 Edit `configs/games/*.yaml`, then use **Config → Reload configurations**. Enum aliases resolve to canonical capitalization. Free-form prefixes support quoted values, for example `wpn:"M4A1 SOPMOD"`. Multiword enum names may be quoted or entered directly. Mainline and description retain the exact text between separators, including spaces. Removing YAML fields hides their stored values; restoring the stable field key restores access.
 
-Queries include `game:val agent:jett`, `triage:keep kill:>=4`, and `technical_condition:LOW_FPS`. Quote multiword query values: `game:"Escape from Tarkov"`. Plain words search filename, mainline, and description. Rating queries are deliberately rejected. Use the triage dropdown to include discarded clips, which are otherwise hidden.
+Queries include `game:val agent:jett`, `triage:keep kill:>=4`, and `tag:LOW_FPS`. Quote multiword query values: `game:"Escape from Tarkov"`. Plain words search filename, mainline, and description. Rating queries are deliberately rejected. Use the triage dropdown to include discarded clips, which are otherwise hidden.
 
 New game definitions receive a reserved scalar `kill` field by default. Ordinary fields are `enum` or `freeform`, optionally `multiple: true`. VALORANT requires agent and weapon for export; Battlefield 6 and Escape from Tarkov have no default required fields. Kept clips with no configured game block export.
 
@@ -58,7 +58,7 @@ eligibility. Existing frozen Sessions and project memberships remain unchanged.
 
 Project Export preserves original bytes and extensions. Share retains the video stream for whole H.264 clips; all ranges and non-H.264 sources re-encode, preferring NVIDIA P5/CQ19 with x264 medium/CRF18 fallback. Audio tracks are mixed into one stereo AAC track; silent sources remain silent. Range precision follows source video frames and audio samples. Both operations sanitize output names, reject capture-folder destinations, and never overwrite existing files. Cancellation removes operation-owned incomplete files. Outputs remain unmanaged. XMP support is deferred: no sidecars are generated, and existing sidecars remain untouched. Saved In/Out ranges remain available for review and range Share.
 
-Projects defaults collapsed in normal windows and expanded when maximized; use the upper-right toggle. Right-click a project for all actions including Delete. Empty technical notes are hidden; use **Clip → Edit technical condition…**. Icons are vendored under `resources/icons` with their upstream license; Node is not required at runtime.
+Projects defaults collapsed in normal windows and expanded when maximized; use the upper-right toggle. Right-click a project for all actions including Delete. Use `tag:FAVORITE`, `tag:"needs review"`, or `tag:""` to set or clear the tag. Empty tags are hidden; use **Settings cog → Edit tag…**. Icons are vendored under `resources/icons` with their upstream license; Node is not required at runtime.
 
 ## Verification
 

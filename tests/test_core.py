@@ -81,6 +81,36 @@ def test_legacy_path_case_migration(catalogue, tmp_path):
         restored.add_folder(str(root).lower())
 
 
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_tag_column_migration_preserves_catalogue(catalogue, clips, version):
+    clip_id = clips[0]["clip_id"]
+    project = catalogue.save_project("Saved project")
+    catalogue.patch(
+        clip_id,
+        {"tag": "Favorite 精选", "rating": 4, "metadata": {"agent": "Jett"}},
+        membership=(project, True),
+    )
+    catalogue.create_session([clip["clip_id"] for clip in clips])
+    before = catalogue.clips()
+    session = catalogue.state("session")
+    with catalogue.connection() as database:
+        database.execute("ALTER TABLE clips RENAME COLUMN tag TO technical_condition")
+        database.execute(f"PRAGMA user_version = {version}")
+    migrated = Catalogue(catalogue.path)
+    assert migrated.clips() == before
+    assert migrated.state("session") == session
+    assert migrated.member_ids(project) == {clip_id}
+    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 4
+    assert Catalogue(catalogue.path).clips() == before
+    migrated.patch(clip_id, {"tag": "Highlight"})
+    migrated.undo()
+    assert migrated.clip(clip_id)["tag"] == "Favorite 精选"
+    migrated.undo(redo=True)
+    assert migrated.clip(clip_id)["tag"] == "Highlight"
+    migrated.patch(clip_id, {"tag": None})
+    assert migrated.clip(clip_id)["tag"] is None
+
+
 def test_canonical_patch_and_text(registry):
     patch = parse_command(
         '1V4 3K kj sheriff VANDAL sheriff R4 -- My  "Best" play! --  Notes  ', "VALORANT", registry
@@ -109,6 +139,35 @@ def test_canonical_patch_and_text(registry):
 def test_invalid_command(text, registry):
     with pytest.raises(ValueError):
         parse_command(text, "VALORANT", registry)
+
+
+def test_tag_commands_and_brim_alias(registry, catalogue, clips):
+    patch = parse_command('tag:"Audio <issue>" brim R3 -- title', "VALORANT", registry)
+    assert patch == {
+        "tag": "Audio <issue>",
+        "metadata": {"agent": "Brimstone"},
+        "rating": 3,
+        "mainline": "title",
+    }
+    assert parse_command("TAG:LOW_FPS R2", None, registry) == {
+        "tag": "LOW_FPS",
+        "rating": 2,
+    }
+    assert parse_command('tag:""', None, registry) == {"tag": None}
+    assert parse_command("wpn:M4 tag:LOW_FPS", "Battlefield 6", registry) == {
+        "metadata": {"weapon": ["M4"]},
+        "tag": "LOW_FPS",
+    }
+    for text in ["tag:", "tag:A tag:B", 'tag:"" tag:A', 'tag:"unclosed']:
+        with pytest.raises(ValueError):
+            parse_command(text, "VALORANT", registry)
+    catalogue.patch(clips[0]["clip_id"], patch)
+    assert (
+        query_clips(catalogue.clips(), 'tag:"audio <issue>"', registry)[0]["clip_id"]
+        == clips[0]["clip_id"]
+    )
+    with pytest.raises(ValueError):
+        query_clips(catalogue.clips(), "tag:", registry)
 
 
 def test_freeform_and_quoted_boundaries(registry):
@@ -260,7 +319,7 @@ def test_queries(catalogue, clips, registry):
         clips[0]["clip_id"],
         {
             "triage": "keep",
-            "technical_condition": "LOW_FPS",
+            "tag": "LOW_FPS",
             "metadata": {"agent": "Jett", "weapon": ["Operator"], "kill": 4},
         },
     )
@@ -268,7 +327,7 @@ def test_queries(catalogue, clips, registry):
         len(query_clips(catalogue.clips(), "game:val agent:jett weapon:op kill:>=4", registry)) == 1
     )
     assert (
-        len(query_clips(catalogue.clips(), "technical_condition:low_fps triage:keep", registry))
+        len(query_clips(catalogue.clips(), "tag:low_fps triage:keep", registry))
         == 1
     )
     assert len(query_clips(catalogue.clips(), "clip-0", registry)) == 1

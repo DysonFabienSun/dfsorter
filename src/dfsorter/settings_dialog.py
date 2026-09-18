@@ -104,6 +104,10 @@ class SettingsDialog(QDialog):
         )
         explanation.setWordWrap(True)
         preferences.addWidget(explanation)
+        self.paused_typing = QCheckBox("Type to enter commands while video is paused")
+        self.paused_typing.setChecked(window.settings.get("paused_typing_enabled", True))
+        self.paused_typing.toggled.connect(self.save_command_preferences)
+        preferences.addWidget(self.paused_typing)
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
@@ -118,6 +122,11 @@ class SettingsDialog(QDialog):
         self.window.settings["start_near_end_enabled"] = self.start_near_end.isChecked()
         self.window.settings["start_near_end_seconds"] = self.start_offset.value()
         self.window.save_settings()
+
+    def save_command_preferences(self):
+        self.window.settings["paused_typing_enabled"] = self.paused_typing.isChecked()
+        self.window.save_settings()
+        self.window.update_command_state()
 
     def refresh(self):
         for listing, source in [

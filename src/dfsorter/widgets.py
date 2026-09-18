@@ -1,3 +1,4 @@
+import html
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +11,16 @@ from .theme import COLORS, SIZES, font
 
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
+def tag_prefix(clip, rich=False):
+    value = (clip.get("tag") or "").strip()
+    if not value:
+        return ""
+    text = f"[{value}]"
+    if rich:
+        return f'<b style="color:{COLORS["tag_color"]}">{html.escape(text)}</b> '
+    return text + " "
 
 
 @lru_cache(maxsize=128)
@@ -175,12 +186,13 @@ class Rating(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        unrated = self.value is None and self.preview is None
         value = self.preview if self.preview is not None else (self.value or 0)
         for position in range(5):
             color = "rating_hover" if self.preview is not None else "rating_filled"
             icon(
                 "star",
-                COLORS[color if position < value else "rating_empty"],
+                COLORS[color if position < value else "danger" if unrated else "rating_empty"],
                 fill=position < value,
                 size=SIZES["rating"],
             ).paint(painter, QRect(position * self.step + 2, 5, SIZES["rating"], SIZES["rating"]))
