@@ -130,6 +130,7 @@ def stylesheet():
         QListWidget::item:hover { background: %(bg_surface_hover)s; }
         QComboBox QAbstractItemView { background: %(bg_panel)s; selection-background-color: %(accent_selection)s; }
         QMenuBar, QMenu { background: %(bg_panel)s; }
+        QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }
         QMenu { border: 1px solid %(border_default)s; }
         QMenu::item { padding: 6px 24px; }
         QMenu::item:selected, QMenuBar::item:selected { background: %(accent_selection)s; }
