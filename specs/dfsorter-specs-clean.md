@@ -566,6 +566,7 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - `/` or Enter enters metadata input without inserting text or submitting a retained draft. Slash commands are not supported.
 - Every text field consumes normal editing keys, including Space and Backspace when empty.
 - Enter submits commands only in command-input mode and returns to review on success; invalid commands retain input focus and text. Shift+Enter never submits and advances only in review mode. Escape returns to review preserving the draft.
+- Ctrl+Enter in review mode adds the current clip to the active project and advances one position in frozen Session order regardless of triage. It requires an active project, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without an active project. The Projects menu retains **Add to project** for the current selection (one clip in Editing, potentially multiple in other library views).
 - Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
 - A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
 

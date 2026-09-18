@@ -901,3 +901,42 @@ def test_all_panel_layouts(window, application, tmp_path):
             assert not window.export_button.isEnabled()
         application.processEvents()
         window.grab().save(str(artifact / f"{name.lower()}.png"))
+
+
+def test_add_project_next_requires_active_and_preserves_triage(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]
+    window.catalogue.ingest(
+        folder["folder_id"], [{"path": str(tmp_path / "captures" / "extra.mp4"), "game": None}]
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    window.catalogue.patch(ids[0], {"triage": "keep"})
+    window.catalogue.patch(ids[1], {"triage": "discard"})
+    window.panel("Editing")
+    project = window.catalogue.save_project("Shortlist")
+    window.refresh_references()
+    assert not window.add_project_next.isEnabled()
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert window.current_id == ids[0]
+    assert not window.catalogue.member_ids(project)
+    window.catalogue.set_state("active_project", project)
+    window.refresh_references()
+    assert window.add_project_next.isEnabled()
+    window.command.setFocus()
+    window.command.setText("unfinished note")
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert not window.catalogue.member_ids(project)
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert window.current_id == ids[1]
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    window.add_project_next.click()
+    window.add_project_next.click()
+    assert window.current_id == ids[1]
+    assert window.catalogue.member_ids(project) == set(ids)
+    assert [window.catalogue.clip(i)["triage"] for i in ids] == ["keep", "discard"]
+    window.navigate(-1)
+    assert window.command.text() == "unfinished note"
+    window.deactivate()
+    assert not window.add_project_next.isEnabled()

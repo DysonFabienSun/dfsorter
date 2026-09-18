@@ -224,7 +224,7 @@ class Window(QMainWindow):
             ("Rename", self.rename_project),
             ("Activate", self.activate_project),
             ("Deactivate", self.deactivate),
-            ("Add selected clips", lambda: self.membership(True)),
+            ("Add to project", lambda: self.membership(True)),
             ("Remove selected clips", lambda: self.membership(False)),
             ("Delete project", self.delete_project),
         ]:
@@ -236,7 +236,7 @@ class Window(QMainWindow):
                 "Rename": "pencil",
                 "Activate": "check",
                 "Deactivate": "power",
-                "Add selected clips": "folder-plus",
+                "Add to project": "folder-plus",
                 "Remove selected clips": "folder-x",
             }
             if text in names:
@@ -258,7 +258,7 @@ class Window(QMainWindow):
         self.command_history.hide()
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · ? Shortcuts"
+            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · Ctrl+Enter Add to project + Next · ? Shortcuts"
         )
         self.shortcut_hint.setObjectName("muted")
         self.shortcut_hint.setWordWrap(True)
@@ -464,6 +464,10 @@ class Window(QMainWindow):
             }
             label = {"Set In": "Set In · I", "Set Out": "Set Out · O"}.get(text, text)
             controls.addWidget(tool(names[text], label, callback))
+        self.add_project_next = button("Add to project + Next", self.add_to_project_next)
+        self.add_project_next.setToolTip("Add to active project + Next · Ctrl+Enter (review mode)")
+        self.add_project_next.setEnabled(False)
+        controls.addWidget(self.add_project_next)
         exporting = self.pages["Export"][1]
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
@@ -708,6 +712,7 @@ class Window(QMainWindow):
         self.refreshing = True
         projects = self.catalogue.projects()
         active = self.catalogue.state("active_project")
+        self.add_project_next.setEnabled(bool(active))
         project_selection = self.selected_id(self.projects)
         self.projects.clear()
         for project in projects:
@@ -1120,6 +1125,22 @@ class Window(QMainWindow):
         except ValueError as error:
             self.error(error)
 
+    def add_to_project_next(self):
+        project_id = self.catalogue.state("active_project")
+        session = self.catalogue.state("session")
+        if self.current_panel != "Editing" or not self.current_id or not project_id or not session:
+            return
+        try:
+            self.catalogue.patch(self.current_id, {}, membership=(project_id, True))
+            if session["index"] + 1 < len(session["ids"]):
+                self.navigate(1)
+            else:
+                self.render_clip()
+                self.statusBar().showMessage("Added to active project — end of session.", 12000)
+            self.review_mode()
+        except (ValueError, OSError) as error:
+            self.error(error)
+
     def advance_review(self):
         if self.current_panel != "Editing" or not self.current_id:
             return
@@ -1252,7 +1273,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
+            "REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command, then return to review\nShift+Enter / Ctrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nSubmit metadata with Enter, then Shift+Enter in review.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.",
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -1313,6 +1334,8 @@ class Window(QMainWindow):
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
                 self.advance_review()
+            elif modifiers == Qt.KeyboardModifier.ControlModifier and not event.isAutoRepeat():
+                self.add_to_project_next()
             elif modifiers == Qt.KeyboardModifier.NoModifier:
                 self.command.setFocus()
             return True

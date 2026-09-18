@@ -114,3 +114,10 @@ process cleanup and the existing regression suite.
 - [x] Settings → General enables a start offset before the end for clips without a valid I/O range, defaulting to 40 seconds. Both players share the persisted preference; saved In points take priority and short clips start at zero.
 - [x] All 28 UI tests pass, including generated H.264/AV1 playback in both players, configurable offset, disabling, short clips, valid/invalid ranges and settings persistence. Ruff checks pass. Windows emitted a COM diagnostic during window setup; the test run completed successfully.
 - [ ] User acceptance of the playback preference and starting position.
+
+## Project selection during review
+
+- [x] Editing player includes a bottom-right Add to project + Next button, enabled only with an active project. Ctrl+Enter invokes it in review mode; both preserve triage and drafts, advance sequentially, and stop at the end of the session.
+- [x] Renamed Add selected clips to Add to project; updated shortcut hint, help and specification.
+- [x] All 29 UI tests and Ruff checks pass, including active-project gating, input-mode isolation, existing Keep/Discard clips, duplicate membership, final-clip behavior and draft preservation. Windows emitted the previously observed COM diagnostic during setup; the suite completed successfully.
+- [ ] User acceptance of the player button layout.
