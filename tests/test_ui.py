@@ -243,7 +243,7 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     window.edit({"triage": None})
     window.command.setFocus()
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
-    assert window.catalogue.clip(ids[0])["triage"] is None
+    assert window.catalogue.clip(ids[0])["triage"] == "keep"
     QTest.keyClick(window.command, Qt.Key.Key_Escape)
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(ids[0])["triage"] == "keep"
@@ -271,6 +271,10 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     assert application.focusWidget() is window.command
     assert window.command.text() == ""
     assert window.catalogue.clip(ids[0])["triage"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == ids[0]
+    assert application.focusWidget() is window.command
+    assert "required fields" in window.command_error.text()
     QTest.keyClick(window.command, Qt.Key.Key_Escape)
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.current_id == ids[0]
@@ -286,7 +290,13 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     assert window.current_id == ids[0]
     assert "submit existing commands" in window.command_error.text()
     window.command.clear()
-    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    window.command.setFocus()
+    window.command.setText(" ")
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_id == ids[0]
+    assert window.command.text() == " "
+    window.command.clear()
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.current_id == next_id
     assert window.catalogue.clip(ids[0])["triage"] == "discard"
     window.command.setFocus()
@@ -294,8 +304,7 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.current_id == next_id
     assert window.catalogue.clip(next_id)["triage"] is None
-    QTest.keyClick(window.command, Qt.Key.Key_Escape)
-    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.catalogue.clip(next_id)["triage"] == "keep"
     assert "Session complete" in window.statusBar().currentMessage()
 

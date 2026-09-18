@@ -1241,7 +1241,7 @@ class Window(QMainWindow):
             return
         if self.command.text():
             self.error(
-                "Press / or Enter to enter input mode, then Enter to submit existing commands first."
+                "Enter input mode if needed, then press Enter to submit existing commands first."
             )
             return
         session = self.catalogue.state("session")
@@ -1432,7 +1432,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter / Ctrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nYellow: type while paused to enter input (Settings → General).\nBlue: input mode. Violet: first Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Escape and Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nYellow: type while paused to enter input (Settings → General).\nBlue: input mode. Violet: first Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -1515,9 +1515,8 @@ class Window(QMainWindow):
                 if modifiers == Qt.KeyboardModifier.NoModifier:
                     self.submit()
                 elif modifiers == Qt.KeyboardModifier.ShiftModifier:
-                    self.error(
-                        "Shift+Enter is available only in review mode. Press Enter to submit, or Escape to return to review."
-                    )
+                    if not event.isAutoRepeat():
+                        self.advance_review()
                 return True
         if text_editing:
             if key == Qt.Key.Key_Z and modifiers == (

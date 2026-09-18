@@ -4,9 +4,9 @@ from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
-from .theme import COLORS, SIZES, role
+from .theme import COLORS, SIZES, font, role
 from .widgets import icon, tool
 
 
@@ -119,7 +119,21 @@ class Player(QWidget):
         self.ended = False
         self.media.mediaStatusChanged.connect(self.media_status_changed)
         layout.addWidget(self.seek)
-        self.controls = controls = QHBoxLayout()
+        self.fast_indicator = QLabel(">>>")
+        self.fast_indicator.setTextFormat(Qt.TextFormat.RichText)
+        self.fast_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fast_indicator.setFont(font("sm", "bold"))
+        self.fast_indicator.setStyleSheet(f"color: {COLORS['accent']}; background: transparent;")
+        self.fast_indicator.setAccessibleName("Fast-forward 3×")
+        indicator_policy = self.fast_indicator.sizePolicy()
+        indicator_policy.setRetainSizeWhenHidden(True)
+        self.fast_indicator.setSizePolicy(indicator_policy)
+        self.fast_indicator.hide()
+        self.fast_indicator_phase = 0
+        self.fast_indicator_timer = QTimer(self)
+        self.fast_indicator_timer.setInterval(120)
+        self.fast_indicator_timer.timeout.connect(self.animate_fast_indicator)
+        controls = QHBoxLayout()
         self.previous_button = tool("skip-back", "Previous clip", self.previous.emit)
         controls.addWidget(self.previous_button)
         self.play = tool("play", "Play / Pause · Space", self.toggle)
@@ -143,7 +157,15 @@ class Player(QWidget):
         self.time = QLabel("0:00 / 0:00")
         controls.addWidget(self.time)
         controls.addStretch()
-        layout.addLayout(controls)
+        self.controls = QHBoxLayout()
+        self.controls.addStretch()
+        controls_row = QGridLayout()
+        controls_row.addLayout(controls, 0, 0)
+        controls_row.addWidget(self.fast_indicator, 0, 1)
+        controls_row.addLayout(self.controls, 0, 2)
+        controls_row.setColumnStretch(0, 1)
+        controls_row.setColumnStretch(2, 1)
+        layout.addLayout(controls_row)
         self.status = QLabel()
         role(self.status, "warning")
         self.status.setWordWrap(True)
@@ -282,6 +304,16 @@ class Player(QWidget):
         else:
             self.media.play()
 
+    def animate_fast_indicator(self):
+        colors = [COLORS["accent_focus"], COLORS["accent"], COLORS["text_disabled"]]
+        self.fast_indicator.setText(
+            "".join(
+                f'<span style="color:{colors[(self.fast_indicator_phase - index) % 3]}">&gt;</span>'
+                for index in range(3)
+            )
+        )
+        self.fast_indicator_phase = (self.fast_indicator_phase + 1) % 3
+
     def fast(self, enabled):
         if enabled and self.fast_state is None:
             self.awaiting_frame = False
@@ -294,3 +326,10 @@ class Player(QWidget):
             self.media.setPlaybackRate(rate)
             if state != QMediaPlayer.PlaybackState.PlayingState:
                 self.media.pause()
+        self.fast_indicator.setVisible(self.fast_state is not None)
+        if self.fast_state is not None and not self.fast_indicator_timer.isActive():
+            self.animate_fast_indicator()
+            self.fast_indicator_timer.start()
+        elif self.fast_state is None:
+            self.fast_indicator_timer.stop()
+            self.fast_indicator_phase = 0

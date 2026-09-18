@@ -181,3 +181,13 @@ process cleanup and the existing regression suite.
 - [x] Nine focused checks passed in 2.69 seconds, covering Home/settings navigation, removal/cancellation/backup, retained source files, session position, disabled folders, migration collisions and scan caching. Ruff passes. Inspected the Home screenshot; no full-suite or codec playback reruns.
 - [x] With DFSorter closed, backed up the live catalogue as `data/backups/catalogue-20260918-195153-534975.db` and removed exactly the eight approved SORTER-TEST entries. Catalogue: 327 → 319; session: 50 → 43; no unlinked entries remain. Verified retained clip data, registered folders and project memberships unchanged, foreign keys valid, and seven existing source files unchanged (one source was already missing). A matching `.cleanup.json` records the operation.
 - [ ] User acceptance of the simplified Home layout.
+
+## Empty-input verdict shortcut
+
+- [x] Shift+Enter also applies the existing verdict-and-advance action from command input when the bar is completely empty. Text, including whitespace, blocks advancement; required-field validation, explicit Discard, review-mode behavior and auto-repeat protection remain intact. Successful actions enter review mode.
+- [x] Two focused keyboard/session checks passed in 1.66 seconds; Ruff passes. Updated shortcut help, README and specification.
+
+## Hold-Space feedback
+
+- [x] Both players show a centered `>>>` on the existing transport/volume/range-controls row during hold-Space fast-forward, with a left-to-right accent highlight every 120 ms. Only the indicator’s horizontal space is retained while hidden; no extra row is added; release and existing hold cancellation stop/reset the animation.
+- [x] Lightweight widget checks verified animation, centering, stable layout and stopping on release. Ruff passes; no playback-suite rerun.
