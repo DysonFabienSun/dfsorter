@@ -31,7 +31,9 @@ def test_folder_case_and_disabled_sessions(catalogue, tmp_path):
     catalogue.create_session([clip["clip_id"]], replace=True)
     catalogue.enable_folder(folder_id, False)
     catalogue.remove_folder(folder_id)
-    catalogue.create_session([clip["clip_id"]], replace=True)
+    assert not catalogue.clips()
+    assert catalogue.state("session") is None
+    assert video.exists()
 
 
 def test_legacy_path_case_migration(catalogue, tmp_path):
@@ -280,7 +282,7 @@ def test_migration_collision_is_atomic(catalogue, clips, tmp_path):
     other.mkdir()
     other_id = catalogue.add_folder(other)
     catalogue.ingest(other_id, [{"path": str(other / "clip-0.mp4"), "game": None}])
-    catalogue.remove_folder(other_id)
+    catalogue.remove_folder(other_id, purge=False)
     before = catalogue.clips()
     with pytest.raises(ValueError, match="collide"):
         catalogue.migrate(folder["folder_id"], other)
@@ -298,7 +300,7 @@ def test_migration_collision_ignores_case_on_windows(catalogue, clips, tmp_path)
     destination.mkdir()
     other_id = catalogue.add_folder(destination)
     catalogue.ingest(other_id, [{"path": str(destination / "CLIP-0.mp4"), "game": None}])
-    catalogue.remove_folder(other_id)
+    catalogue.remove_folder(other_id, purge=False)
     before = catalogue.clips()
     with pytest.raises(ValueError, match="collide"):
         catalogue.migrate(folder["folder_id"], destination)
@@ -326,10 +328,7 @@ def test_queries(catalogue, clips, registry):
     assert (
         len(query_clips(catalogue.clips(), "game:val agent:jett weapon:op kill:>=4", registry)) == 1
     )
-    assert (
-        len(query_clips(catalogue.clips(), "tag:low_fps triage:keep", registry))
-        == 1
-    )
+    assert len(query_clips(catalogue.clips(), "tag:low_fps triage:keep", registry)) == 1
     assert len(query_clips(catalogue.clips(), "clip-0", registry)) == 1
     with pytest.raises(ValueError, match="Rating"):
         query_clips(catalogue.clips(), "rating:5", registry)
@@ -428,6 +427,31 @@ def test_purge_only_catalogue(catalogue, clips):
     assert not catalogue.clips() and catalogue.state("session") is None
     assert not catalogue.member_ids(project)
     assert source.read_bytes() == before
+
+
+def test_remove_unlinked_preserves_surviving_session_position(catalogue, clips, tmp_path):
+    folder = catalogue.folders()[0]
+    ids = [clip["clip_id"] for clip in clips]
+    catalogue.remove_folder(folder["folder_id"], purge=False)
+    other = tmp_path / "other"
+    other.mkdir()
+    source = other / "kept.mp4"
+    source.write_bytes(b"untouched")
+    registered = catalogue.add_folder(other)
+    catalogue.ingest(registered, [{"path": str(source), "game": None}])
+    current = next(clip["clip_id"] for clip in catalogue.clips() if clip["clip_id"] not in ids)
+    catalogue.create_session([ids[0], current, ids[1]], replace=True)
+    catalogue.navigate(1)
+    backup = catalogue.backup()
+    catalogue.remove_unlinked(ids)
+    assert catalogue.state("session") == {"ids": [current], "index": 0}
+    assert catalogue.clip(current)["source_path"] == str(source.resolve())
+    assert not catalogue.unlinked_clips()
+    assert len(Catalogue(backup).clips()) == 4
+    assert all(Path(clip["source_path"]).exists() for clip in clips)
+    with pytest.raises(ValueError, match="linked"):
+        catalogue.remove_unlinked([current])
+    assert source.read_bytes() == b"untouched"
 
 
 def test_unquoted_multiword_enum(registry):

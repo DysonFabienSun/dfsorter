@@ -172,3 +172,12 @@ process cleanup and the existing regression suite.
 - [x] Renamed the field, settings action, command/search prefix, checklist, helpers and documentation to `tag`. Use `tag:FAVORITE`, `tag:"needs review"`, or `tag:""` to clear. Display and all other behavior stay identical.
 - [x] Schema version 4 renames the existing column on startup without changing saved values, clip IDs, other metadata, project memberships or sessions. Migration coverage includes versions 1–3, reopening, tag edits, clearing and undo/redo.
 - [x] Full regression run: 84 passed; Ruff and diff checks pass.
+
+## Capture-folder management on Home
+
+- [x] Home owns capture folders with Add folder, Rescan and More controls. The cog retains its menu: Capture folders opens Home; Settings retains General and Projects, opening on General. Import links to Home instead of duplicating the controls. Home no longer shows an inactive command bar.
+- [x] More contains Pause/Resume scanning, Relink folder, Remove folder and advanced Rebuild media information. Rescan reuses valid cached inspections; rebuilding forces inspection for all enabled folders. Folder descriptions and tooltips explain scope and session behavior.
+- [x] Relink validates destination/collisions and previews found/unavailable file counts. Remove uses one confirmation, backs up SQLite first, and deletes only catalogue data and references. Legacy unlinked entries remain discoverable for reviewed cleanup. Session cleanup is transactional and preserves a surviving current clip.
+- [x] Nine focused checks passed in 2.69 seconds, covering Home/settings navigation, removal/cancellation/backup, retained source files, session position, disabled folders, migration collisions and scan caching. Ruff passes. Inspected the Home screenshot; no full-suite or codec playback reruns.
+- [x] With DFSorter closed, backed up the live catalogue as `data/backups/catalogue-20260918-195153-534975.db` and removed exactly the eight approved SORTER-TEST entries. Catalogue: 327 → 319; session: 50 → 43; no unlinked entries remain. Verified retained clip data, registered folders and project memberships unchanged, foreign keys valid, and seven existing source files unchanged (one source was already missing). A matching `.cleanup.json` records the operation.
+- [ ] User acceptance of the simplified Home layout.

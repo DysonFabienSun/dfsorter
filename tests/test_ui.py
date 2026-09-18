@@ -90,13 +90,14 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
     project_id = window.catalogue.save_project("Example")
     window.refresh_references()
     settings = SettingsDialog(window)
-    assert settings.folders.count() == 1
+    assert not hasattr(settings, "folders")
+    assert window.pages["Home"][0].isAncestorOf(window.folders)
     assert settings.projects.count() == 1
     settings.projects.setCurrentRow(0)
     settings.run_action(settings.projects, window.projects, window.activate_project)
     assert window.catalogue.state("active_project") == project_id
-    settings.folders.setCurrentRow(0)
-    settings.run_action(settings.folders, window.folders, window.toggle_folder)
+    window.folders.setCurrentRow(0)
+    window.toggle_folder()
     assert not window.catalogue.folders()[0]["enabled"]
     monkeypatch.setattr(window, "confirm", lambda message: True)
     settings.run_action(settings.projects, window.projects, window.delete_project)
@@ -106,6 +107,31 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
     settings.close()
 
 
+def test_home_removes_folder_entries_after_confirmation(window, application, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path)
+    source = Path(window.catalogue.clip(ids[0])["source_path"])
+    window.panel("Home")
+    window.folders.setCurrentRow(0)
+    window.update_folder_actions()
+    assert window.folder_toggle_action.text() == "Pause scanning"
+    assert window.folder_remove_action.isEnabled()
+    monkeypatch.setattr(window, "confirm_folder_removal", lambda folder, clips: False)
+    window.remove_folder()
+    assert len(window.catalogue.clips()) == 1
+    monkeypatch.setattr(window, "confirm_folder_removal", lambda folder, clips: True)
+    window.remove_folder()
+    assert not window.catalogue.clips() and not window.catalogue.folders()
+    assert window.catalogue.state("session") is None
+    assert not window.nav["Editing"].isEnabled()
+    assert source.read_bytes() == b"test"
+    backup = next((window.root / "data/backups").glob("*.db"))
+    assert Catalogue(backup).clip(ids[0])["source_path"] == str(source.resolve())
+    artifact = ROOT / "cache/verification/home-folders"
+    artifact.mkdir(parents=True, exist_ok=True)
+    application.processEvents()
+    window.grab().save(str(artifact / "home.png"))
+
+
 def test_settings_preserves_capture_folder_case(window, tmp_path):
     captures = tmp_path / "My Captures 游戏"
     captures.mkdir()
@@ -113,7 +139,7 @@ def test_settings_preserves_capture_folder_case(window, tmp_path):
     window.catalogue = Catalogue(window.catalogue.path)
     window.refresh_references()
     settings = SettingsDialog(window)
-    assert str(captures.resolve()) in settings.folders.item(0).text()
+    assert str(captures.resolve()) in window.folders.item(0).text()
     settings.close()
 
 
@@ -1126,12 +1152,17 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     actions = {action.text(): action for action in window.settings_menu.actions()}
     assert {
         "Settings…",
+        "Capture folders…",
         "Reset clip metadata…",
         "Edit tag…",
         "Delete rejected originals…",
         "Reset window and panes",
         "Exit",
     } <= actions.keys()
+    window.panel("Import")
+    actions["Capture folders…"].trigger()
+    assert window.current_panel == "Home"
+    assert window.folders.isVisible()
     assert actions["Exit"].shortcut().toString() == "Ctrl+Q"
     ids = add_clips(window, tmp_path)
     window.panel("Editing")

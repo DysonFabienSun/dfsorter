@@ -27,23 +27,8 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
         layout.addWidget(tabs)
-        self.folders = QListWidget()
         self.projects = QListWidget()
         for title, listing, source, actions in [
-            (
-                "Capture folders",
-                self.folders,
-                window.folders,
-                [
-                    ("Add / preview", window.add_folder),
-                    ("Rescan", window.rescan),
-                    ("Reinspect all media…", window.reinspect),
-                    ("Enable / disable", window.toggle_folder),
-                    ("Migrate", window.migrate),
-                    ("Remove", window.remove_folder),
-                    ("Purge entries", window.purge),
-                ],
-            ),
             (
                 "Projects",
                 self.projects,
@@ -61,16 +46,14 @@ class SettingsDialog(QDialog):
             body = QVBoxLayout(page)
             body.addWidget(
                 QLabel(
-                    "Capture folders contain your original videos. Removing a folder keeps its files."
-                    if title == "Capture folders"
-                    else "Projects reference library clips. Deleting a project keeps its clips and files."
+                    "Projects reference library clips. Deleting a project keeps its clips and files."
                 )
             )
             body.addWidget(listing)
             controls = QHBoxLayout()
             for label, callback in actions:
                 control = QPushButton(label)
-                if label in {"Delete", "Purge entries"}:
+                if label == "Delete":
                     role(control, "danger")
                 control.clicked.connect(
                     lambda checked=False, listing=listing, source=source, callback=callback: (
@@ -111,7 +94,8 @@ class SettingsDialog(QDialog):
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
-        tabs.addTab(general, "General")
+        tabs.insertTab(0, general, "General")
+        tabs.setCurrentIndex(0)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
         layout.addWidget(close)
@@ -130,7 +114,6 @@ class SettingsDialog(QDialog):
 
     def refresh(self):
         for listing, source in [
-            (self.folders, self.window.folders),
             (self.projects, self.window.projects),
         ]:
             selected = self.window.selected_id(listing)

@@ -198,6 +198,7 @@ class Window(QMainWindow):
         self.triage_filter.addItems(
             ["Hide discarded", "All triage", "Undefined", "Keep", "Discard"]
         )
+        self.triage_filter.setCurrentText("Undefined")
         self.game_filter = QComboBox()
         self.project_filter = QComboBox()
         self.sort = QComboBox()
@@ -375,45 +376,62 @@ class Window(QMainWindow):
             self.pages[name] = (widget, layout)
             self.center.addWidget(widget)
         home = self.pages["Home"][1]
-        home_title = QLabel("DFSorter")
+        home_title = QLabel("Capture folders")
         role(home_title, "heading")
         home.addWidget(home_title)
-        home.addWidget(QLabel("Review clips. Keep your originals untouched."))
-        for name in ["Import", "Session", "Editing"]:
-            home.addWidget(
-                button(f"Open {name}", lambda checked=False, name=name: self.panel(name))
-            )
-        home.addStretch()
-        importing = self.pages["Import"][1]
-        folder_heading = QLabel("Capture folders")
-        role(folder_heading, "heading")
-        importing.addWidget(folder_heading)
+        explanation = QLabel(
+            "Add folders containing your recordings. Rescan finds new clips; your original files stay untouched."
+        )
+        explanation.setWordWrap(True)
+        role(explanation, "secondary")
+        home.addWidget(explanation)
+        folder_controls = QHBoxLayout()
+        self.add_folder_button = button("Add folder…", self.add_folder)
+        self.add_folder_button.setIcon(icon("folder-plus"))
+        folder_controls.addWidget(self.add_folder_button)
+        self.rescan_button = button("Rescan", self.rescan)
+        self.rescan_button.setIcon(icon("refresh-cw"))
+        self.rescan_button.setToolTip(
+            "Find new files in all enabled folders. Reuse cached media information for unchanged files."
+        )
+        folder_controls.addWidget(self.rescan_button)
+        self.folder_more = QToolButton()
+        self.folder_more.setText("More…")
+        self.folder_menu = QMenu(self.folder_more)
+        self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
+        self.folder_toggle_action.setToolTip(
+            "Pause scanning and exclude this folder from new sessions. Existing clips and sessions remain."
+        )
+        self.folder_migrate_action = self.folder_menu.addAction("Relink folder…", self.migrate)
+        self.folder_migrate_action.setToolTip("Find an already moved folder; no files are moved.")
+        self.folder_remove_action = self.folder_menu.addAction("Remove folder…", self.remove_folder)
+        self.folder_menu.addSeparator()
+        rebuild = self.folder_menu.addAction("Rebuild media information…", self.reinspect)
+        rebuild.setToolTip(
+            "Rescan all enabled folders and reread every file’s media information, ignoring the cache."
+        )
+        self.folder_menu.setToolTipsVisible(True)
+        self.folder_menu.aboutToShow.connect(self.update_folder_actions)
+        self.folder_more.setMenu(self.folder_menu)
+        self.folder_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        folder_controls.addWidget(self.folder_more)
+        folder_controls.addStretch()
+        home.addLayout(folder_controls)
         self.folders = QListWidget()
-        importing.addWidget(self.folders)
-        for text, callback in [
-            ("Add folder / preview", self.add_folder),
-            ("Refresh / rescan", self.rescan),
-            ("Reinspect all media…", self.reinspect),
-            ("Enable / disable", self.toggle_folder),
-            ("Migrate source folder", self.migrate),
-            ("Remove folder", self.remove_folder),
-            ("Purge folder catalogue entries", self.purge),
-        ]:
-            control = button(text, callback)
-            control.setIcon(
-                icon(
-                    {
-                        "Add folder / preview": "folder-plus",
-                        "Refresh / rescan": "refresh-cw",
-                        "Reinspect all media…": "refresh-cw",
-                        "Enable / disable": "power",
-                        "Migrate source folder": "folder-input",
-                        "Remove folder": "folder-x",
-                        "Purge folder catalogue entries": "trash-2",
-                    }[text]
-                )
-            )
-            importing.addWidget(control)
+        self.folders.setMinimumHeight(120)
+        self.folders.setWordWrap(True)
+        home.addWidget(self.folders, 1)
+        note = QLabel(
+            "Select a folder for More actions. Paused folders stay in the library but are excluded "
+            "from new sessions. Unlinked clips are saved entries from folders you stopped tracking."
+        )
+        note.setWordWrap(True)
+        role(note, "secondary")
+        home.addWidget(note)
+        importing = self.pages["Import"][1]
+        importing.addWidget(QLabel("Capture folders are managed on Home."))
+        importing.addWidget(button("Manage capture folders", lambda: self.panel("Home")))
+        importing.addStretch()
         session = self.pages["Session"][1]
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)
@@ -555,6 +573,7 @@ class Window(QMainWindow):
         self.settings_menu = QMenu(self)
         actions = [
             ("Settings…", self.open_settings, None),
+            ("Capture folders…", lambda: self.panel("Home"), None),
             None,
             ("Reset clip metadata…", self.reset_metadata, None),
             ("Edit tag…", self.edit_tag, None),
@@ -746,7 +765,7 @@ class Window(QMainWindow):
         self.update_projects_visibility()
         for destination, control in self.nav.items():
             control.setChecked(destination == name)
-        self.command_area.setVisible(name in {"Home", "Editing"})
+        self.command_area.setVisible(name == "Editing")
         self.command.setEnabled(name == "Editing")
         self.shortcut_hint.setVisible(name == "Editing")
         self.field_reminder.hide()
@@ -832,13 +851,32 @@ class Window(QMainWindow):
                 if durations
                 else "unavailable until scanned"
             )
-            text = f"{'Enabled' if folder['enabled'] else 'Disabled'} | {folder['path']}\n"
-            text += f"{len(ids)} clips | {dict(counts)} | Avg {average}"
+            text = f"{folder['path']}\n"
+            games = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+            text += (
+                f"{'Scanning on' if folder['enabled'] else 'Scanning paused'} · {len(ids)} clips"
+            )
+            text += f" · {games} · Average {average}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
             self.folders.addItem(item)
             if folder["folder_id"] == folder_selection:
                 self.folders.setCurrentItem(item)
+        unlinked = self.catalogue.unlinked_clips()
+        if unlinked:
+            item = QListWidgetItem(
+                f"Unlinked catalogue clips\n{len(unlinked)} clips from removed folders · "
+                "Select More → Remove saved entries… to review"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, "__unlinked__")
+            item.setToolTip(
+                "\n".join(sorted({str(Path(clip["source_path"]).parent) for clip in unlinked}))
+            )
+            self.folders.addItem(item)
+            if folder_selection == "__unlinked__":
+                self.folders.setCurrentItem(item)
+        if self.folders.count() == 1 and self.folders.currentRow() < 0:
+            self.folders.setCurrentRow(0)
         self.refresh_session_status(clips)
         self.config_status.setPlainText(
             "\n".join(self.registry.errors)
@@ -1107,9 +1145,7 @@ class Window(QMainWindow):
             self.field_reminder.clear()
             return
         fields = list(
-            dict.fromkeys(
-                [*game.display_order, *game.fields, "mainline", "rating", "tag"]
-            )
+            dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
         )
         entries = []
         for key in fields:
@@ -1812,7 +1848,7 @@ class Window(QMainWindow):
                     try:
                         self.catalogue.ingest(folder_id, found, cancelled)
                     except Exception:
-                        self.catalogue.remove_folder(folder_id)
+                        self.catalogue.remove_folder(folder_id, purge=False)
                         raise
                     return found
 
@@ -1874,7 +1910,31 @@ class Window(QMainWindow):
 
         self.background(scan, done, label="Discovering files…")
 
+    def update_folder_actions(self):
+        folder_id = self.selected_id(self.folders)
+        folder = next(
+            (folder for folder in self.catalogue.folders() if folder["folder_id"] == folder_id),
+            None,
+        )
+        for action in (
+            self.folder_toggle_action,
+            self.folder_migrate_action,
+            self.folder_remove_action,
+        ):
+            action.setEnabled(folder is not None and self.worker is None)
+        self.folder_toggle_action.setText(
+            "Pause scanning" if not folder or folder["enabled"] else "Resume scanning"
+        )
+        if folder_id == "__unlinked__":
+            self.folder_remove_action.setEnabled(self.worker is None)
+        self.folder_remove_action.setText(
+            "Remove saved entries…" if folder_id == "__unlinked__" else "Remove folder…"
+        )
+
     def toggle_folder(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
         folder_id = self.selected_id(self.folders)
         for folder in self.catalogue.folders():
             if folder["folder_id"] == folder_id:
@@ -1883,14 +1943,23 @@ class Window(QMainWindow):
         self.refresh_library()
 
     def migrate(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
         folder_id = self.selected_id(self.folders)
         if not folder_id:
             return
         destination = QFileDialog.getExistingDirectory(self, "New location of this capture folder")
-        if destination and self.confirm(
-            "Update catalogue source paths to this folder? No source files will be moved."
-        ):
+        if destination:
             try:
+                new, rows, updates = self.catalogue.migration_plan(folder_id, destination)
+                found = sum(Path(path).is_file() for path, clip_id in updates)
+                if not self.confirm(
+                    f"Relink {len(rows)} catalogue clips to:\n{new}\n\n"
+                    f"{found} files found; {len(rows) - found} will be unavailable.\n"
+                    "Keep clip metadata, projects and session references. No files will be moved."
+                ):
+                    return
                 self.catalogue.migrate(folder_id, destination)
                 self.media_info = self.catalogue.media_cache()
                 self.refresh_references()
@@ -1898,27 +1967,75 @@ class Window(QMainWindow):
             except (ValueError, OSError) as error:
                 self.error(error)
 
-    def remove_folder(self):
-        folder_id = self.selected_id(self.folders)
-        if folder_id and self.confirm(
-            "Stop scanning this folder? Catalogue entries and files remain."
-        ):
-            self.catalogue.remove_folder(folder_id)
-            self.refresh_references()
+    def confirm_folder_removal(self, folder, clips):
+        ids = {clip["clip_id"] for clip in clips}
+        session = self.catalogue.state("session")
+        in_session = len(ids.intersection(session["ids"])) if session else 0
+        in_projects = len(
+            ids.intersection(
+                row["clip_id"]
+                for row in self.catalogue.rows("SELECT DISTINCT clip_id FROM members")
+            )
+        )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Remove capture folder" if folder else "Remove unlinked entries")
+        dialog.setText(folder["path"] if folder else "Unlinked catalogue clips")
+        dialog.setInformativeText(
+            f"{len(clips)} saved clips · {in_session} in the current session · {in_projects} in projects.\n\n"
+            "Remove entries from the catalogue, including their metadata and project/session references? "
+            "A database backup will be saved first. Original files will stay untouched."
+        )
+        dialog.setDetailedText("\n".join(clip["source_path"] for clip in clips))
+        remove = dialog.addButton("Remove from catalogue", QMessageBox.ButtonRole.DestructiveRole)
+        role(remove, "danger")
+        cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(cancel)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        dialog.deleteLater()
+        return clicked is remove
 
-    def purge(self):
+    def remove_folder(self):
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
         folder_id = self.selected_id(self.folders)
-        if folder_id and self.confirm(
-            "Permanently purge this folder’s catalogue entries, memberships and session references? Source files remain. This cannot be undone."
-        ):
-            self.catalogue.remove_folder(folder_id, purge=True)
+        folder = next(
+            (row for row in self.catalogue.folders() if row["folder_id"] == folder_id), None
+        )
+        if folder_id == "__unlinked__":
+            clips = self.catalogue.unlinked_clips()
+        elif folder:
+            ids = {
+                row["clip_id"]
+                for row in self.catalogue.rows(
+                    "SELECT clip_id FROM sources WHERE folder_id=?", (folder_id,)
+                )
+            }
+            clips = [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
+        else:
+            return
+        if not self.confirm_folder_removal(folder, clips):
+            return
+        try:
+            backup = self.catalogue.backup()
+            if folder:
+                self.catalogue.remove_folder(folder_id)
+            else:
+                self.catalogue.remove_unlinked([clip["clip_id"] for clip in clips])
             self.media_info = self.catalogue.media_cache()
-            if self.current_id and not any(
-                clip["clip_id"] == self.current_id for clip in self.catalogue.clips()
-            ):
+            for clip in clips:
+                self.drafts.pop(clip["clip_id"], None)
+                self.history.pop(clip["clip_id"], None)
+            if self.current_id in {clip["clip_id"] for clip in clips}:
                 self.current_id = None
+                self.player.load(None)
             self.refresh_references()
             self.refresh_library()
+            if backup:
+                self.statusBar().showMessage(f"Catalogue entries removed. Backup: {backup}", 20000)
+        except (ValueError, OSError) as error:
+            self.error(error)
 
     def export_clips(self):
         ids = self.catalogue.member_ids(self.export_project.currentData())

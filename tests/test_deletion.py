@@ -16,7 +16,7 @@ def test_preview_whole_library_and_retains_references(catalogue, clips):
     catalogue.patch(clips[2]["clip_id"], {"triage": "keep"})
     catalogue.create_session([clip["clip_id"] for clip in clips])
     folder = catalogue.folders()[0]
-    catalogue.remove_folder(folder["folder_id"])
+    catalogue.remove_folder(folder["folder_id"], purge=False)
     snapshot = catalogue.clips()
     session = catalogue.state("session")
     reviewed = preview(catalogue)

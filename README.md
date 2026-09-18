@@ -19,7 +19,7 @@ To open without a console window, run `pwsh -File .\create-shortcut.ps1` after s
 
 ## Review workflow
 
-1. **Import:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Enabled folders are automatically rescanned on startup; manual Refresh/rescan remains available.
+1. **Home:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Enabled folders are automatically rescanned on startup; manual Refresh/rescan remains available.
 2. **Session:** search/filter/sort the library and freeze selected clips, the first N, or all results into a session. Editing resumes its saved position after restart.
 3. **Editing:** starts in review mode. Press `/` or Enter to enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. In input mode, Enter submits the command and returns to review without changing triage. In review mode, Shift+Enter keeps and advances when the configured game's required fields are present, or advances an explicitly discarded clip without changing its verdict. Shift+Enter never submits, is unavailable in input mode, and refuses advancement while the command bar contains text. Submit that text with Enter first. Escape preserves unfinished text; drafts survive clip/panel navigation for this run. Backspace rejects only in review mode. Advancement skips Keep/Discard clips to the next undefined clip in Session order, without wrapping. If none remains ahead, stay on the current clip; report Session complete only when all Session clips have a verdict.
 4. **Projects:** activate a project to receive clips when they transition to Keep. Membership survives later triage changes. Add/remove selected clips explicitly when needed.
@@ -46,9 +46,9 @@ New game definitions receive a reserved scalar `kill` field by default. Ordinary
 - `data/dfsorter.log`: rotating operational error log.
 - `cache/verification/`: screenshots produced by GUI tests.
 
-These paths are application-local and ignored by Git. Capture paths remain external references. To back up, close DFSorter and copy `data/` and `configs/`. Restore with the application closed; never replace an open database. Moving the application directory preserves its state; moving footage requires **Import → Migrate source folder**.
+These paths are application-local and ignored by Git. Capture paths remain external references. To back up, close DFSorter and copy `data/` and `configs/`. Restore with the application closed; never replace an open database. Moving the application directory preserves its state; moving footage requires **Home → More → Relink folder…**.
 
-Missing media remains catalogued. Removing a folder only disables its future discovery. The separate confirmed purge removes catalogue records and relationships, never source files. Migration changes paths atomically and rejects identity collisions.
+Missing media remains catalogued. **Pause scanning** retains the folder and its clips, skips scans, and excludes those clips from new sessions. **Remove folder…** shows a confirmation and backs up the database before removing catalogue records and relationships; source files stay untouched. Legacy unlinked entries are visible on Home for reviewed cleanup. **Relink folder…** previews how many files exist at the new location, changes paths atomically, and rejects identity collisions. The cog’s **Capture folders…** opens Home; **Settings…** retains General and Projects.
 
 Stored paths preserve capitalization, including capture folders, clips and media-cache paths.
 On upgrade, existing paths recover filesystem casing where available; casing of missing
@@ -70,13 +70,12 @@ uv run ruff format --check src tests
 
 GUI tests open temporary windows and use disposable catalogues, never the working catalogue. They generate H.264/AV1 media, check decoded frames/audio/seek behavior, and capture normal/maximized windows. Windows can emit a handled COM exception through Python's faulthandler while creating a Qt window; the command above avoids that misleading diagnostic.
 
-Home and Config are intentionally lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
+Home manages capture folders; Config remains lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
 
 Scans persist duration, capture date and inspection failures in SQLite. Unchanged paths,
 sizes and nanosecond modification times reuse results across restarts with zero probes.
 Changed/new files use at most two concurrent probes; file failures retry after 24 hours
-or a change. Missing ffprobe is not cached as a file failure. **Reinspect all media…**
-in Import or Settings bypasses the cache for enabled folders, including replacements
+or a change. Missing ffprobe is not cached as a file failure. **Home → More → Rebuild media information…** bypasses the cache for enabled folders, including replacements
 that preserve size and mtime. The first scan after upgrading populates the cache.
 Immediate modal progress stays open through cancellation cleanup. Completed folders
 remain committed; the interrupted folder is not ingested. Source files stay untouched.

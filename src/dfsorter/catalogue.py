@@ -197,34 +197,77 @@ class Catalogue:
             if cancelled():
                 raise InterruptedError("Scan cancelled")
 
-    def remove_folder(self, folder_id, purge=False):
+    def unlinked_clips(self):
+        linked = {row["clip_id"] for row in self.rows("SELECT DISTINCT clip_id FROM sources")}
+        return [clip for clip in self.clips() if clip["clip_id"] not in linked]
+
+    def backup(self):
+        directory = self.path.parent / "backups"
+        directory.mkdir(exist_ok=True)
+        target = directory / f"catalogue-{datetime.now():%Y%m%d-%H%M%S-%f}.db"
+        with self.connection() as source, sqlite3.connect(target) as destination:
+            source.backup(destination)
+        return target
+
+    def _purge_clips(self, database, clip_ids):
+        clip_ids = set(clip_ids)
+        database.executemany(
+            "DELETE FROM media_cache WHERE path=(SELECT source_path FROM clips WHERE clip_id=?)",
+            [(clip_id,) for clip_id in clip_ids],
+        )
+        database.executemany(
+            "DELETE FROM clips WHERE clip_id=?", [(clip_id,) for clip_id in clip_ids]
+        )
+        row = database.execute("SELECT value FROM state WHERE key='session'").fetchone()
+        session = json.loads(row[0]) if row else None
+        if session:
+            previous = session["ids"]
+            ids = [clip_id for clip_id in previous if clip_id not in clip_ids]
+            current = next(
+                (clip_id for clip_id in previous[session["index"] :] if clip_id not in clip_ids),
+                ids[-1] if ids else None,
+            )
+            session = {"ids": ids, "index": ids.index(current)} if ids else None
+            database.execute("UPDATE state SET value=? WHERE key='session'", (json.dumps(session),))
+
+    def remove_unlinked(self, clip_ids):
         with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            unlinked = {
+                row[0]
+                for row in database.execute(
+                    "SELECT clip_id FROM clips WHERE NOT EXISTS "
+                    "(SELECT 1 FROM sources WHERE sources.clip_id=clips.clip_id)"
+                )
+            }
+            if not set(clip_ids) <= unlinked:
+                raise ValueError(
+                    "Some clips are linked to a folder now. Review the selection again."
+                )
+            self._purge_clips(database, clip_ids)
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+    def remove_folder(self, folder_id, purge=True):
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
             if purge:
-                database.execute(
-                    "DELETE FROM media_cache WHERE path IN (SELECT source_path FROM clips "
-                    "JOIN sources USING(clip_id) WHERE folder_id=?)",
-                    (folder_id,),
-                )
-                database.execute(
-                    "DELETE FROM clips WHERE clip_id IN "
-                    "(SELECT clip_id FROM sources WHERE folder_id=?)",
-                    (folder_id,),
-                )
+                ids = [
+                    row[0]
+                    for row in database.execute(
+                        "SELECT clip_id FROM sources WHERE folder_id=?", (folder_id,)
+                    )
+                ]
+                self._purge_clips(database, ids)
             database.execute("DELETE FROM folders WHERE folder_id=?", (folder_id,))
         if purge:
             self.undo_stack.clear()
             self.redo_stack.clear()
-            session = self.state("session")
-            if session:
-                existing = {clip["clip_id"] for clip in self.clips()}
-                ids = [clip_id for clip_id in session["ids"] if clip_id in existing]
-                self.set_state(
-                    "session",
-                    {"ids": ids, "index": min(session["index"], len(ids) - 1)} if ids else None,
-                )
 
-    def migrate(self, folder_id, destination):
+    def migration_plan(self, folder_id, destination):
         folders = {folder["folder_id"]: folder for folder in self.folders()}
+        if folder_id not in folders:
+            raise ValueError("Capture folder no longer exists")
         old = Path(folders[folder_id]["path"])
         new = Path(normalized(destination))
         if not new.is_dir():
@@ -250,13 +293,18 @@ class Catalogue:
             Path(path) in existing and existing[Path(path)] != clip_id for path, clip_id in updates
         ):
             raise ValueError("Migration would collide with an existing source identity")
+        return str(new), rows, updates
+
+    def migrate(self, folder_id, destination):
+        new, rows, updates = self.migration_plan(folder_id, destination)
+        targets = [path for path, clip_id in updates]
         with self.connection() as database:
             database.executemany(
                 "DELETE FROM media_cache WHERE path=?",
                 [(row["source_path"],) for row in rows] + [(path,) for path in targets],
             )
             database.executemany("UPDATE clips SET source_path=? WHERE clip_id=?", updates)
-            database.execute("UPDATE folders SET path=? WHERE folder_id=?", (str(new), folder_id))
+            database.execute("UPDATE folders SET path=? WHERE folder_id=?", (new, folder_id))
 
     def projects(self):
         return self.rows("SELECT * FROM projects ORDER BY name COLLATE NOCASE")

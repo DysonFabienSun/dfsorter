@@ -68,7 +68,7 @@ Path migration tools may update a clip's stored source path while preserving its
 
 A missing source file does **not** cause its database entry to be deleted. It remains in the catalogue in an unavailable state until the source returns, is migrated, or the user explicitly purges the catalogue entry.
 
-Removing a capture folder from DFSorter does not delete source files. The user may optionally purge catalogue entries associated with that source, but this must be an explicit destructive action with confirmation.
+Removing a capture folder requires explicit confirmation and removes its catalogue entries, cached media information, and project/session references. Save a database backup first. Original source files are never deleted. Pause scanning is the reversible alternative that retains the folder and its clips.
 
 ---
 
@@ -305,7 +305,7 @@ Page and clip transitions keep the native video surface hidden until the surroun
 
 ### 9.2 Settings and Actions
 
-There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Projects and the settings cog use matching 28 px heights and are vertically centered in the strip. Undo, Redo and settings icon artwork is optically offset 1 px downward within its button.
+There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Projects and the settings cog use matching 28 px heights and are vertically centered in the strip. Undo, Redo and settings icon artwork is optically offset 1 px downward within its button.
 
 Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations retain explicit confirmation.
 
@@ -336,14 +336,14 @@ The exact content of each pane depends on the active panel.
 
 | Panel | Left pane | Center/main area | Right pane | Command bar |
 | --- | --- | --- | --- | --- |
-| Home | Library reference | Home shortcuts/placeholder | Projects | Visible |
-| Import | Library reference | Capture folders and ingest | Projects | Hidden |
+| Home | Library reference | Capture-folder management | Projects | Hidden |
+| Import | Library reference | Shortcut to capture folders on Home | Projects | Hidden |
 | Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
 | Editing | Locked session queue | Video + clip metadata | Projects | Visible |
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
 | Config | Library/reference view | Config placeholder/status | Hidden | Hidden |
 
-Unless otherwise stated, ordinary library views hide discarded clips by default.
+The shared library triage filter defaults to Undefined on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; frozen Editing sessions and Export membership are unaffected.
 
 ### 9.5 Left-Pane Library
 
@@ -377,16 +377,11 @@ Ratings are deliberately **not** searchable or filterable in the initial design.
 
 ## 10. Home Panel
 
-The Home panel is intentionally a placeholder in the initial implementation.
+Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
 
-It may contain simple navigation shortcuts such as:
+Show a folder list with readable scanning state, clip/game counts, average duration, and three controls: **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings or Import; Import links to Home. Hide the inactive command bar on Home.
 
-- resume the active session;
-- create a session;
-- open Import;
-- open Editing.
-
-It should not introduce unique data models or automated behavior in v1.
+Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
 ---
 
@@ -400,7 +395,7 @@ time; the path alone remains clip identity. Cached duration and capture date loa
 the initial library refresh. Unchanged successful results require no ffprobe launches,
 including after restart. File-specific failures retry after 24 hours or immediately
 when attributes change. Missing ffprobe produces an operation warning and no reusable
-failure entry. Reinspect all media… bypasses the cache for enabled capture folders.
+failure entry. Home → More → Rebuild media information… bypasses the cache for all enabled capture folders. Ordinary Rescan discovers new files and inspects only new/changed or retry-eligible files; rebuilding forces inspection of every discovered file. Both preserve catalogue metadata and source files.
 
 Discovery, cache access and folder ingestion run in a background coordinator. At most
 two ffprobe processes run at once, with a 20-second per-file timeout and cancellable
@@ -419,7 +414,7 @@ cache entries; missing sources retain catalogue records. Source files are never 
 No hashing, watchers or periodic scanning is introduced. Replacements preserving both
 size and mtime require explicit reinspection.
 
-Import is exclusively responsible for discovering source media and adding or maintaining references in the catalogue.
+The import workflow is managed from Home and discovers source media while adding or maintaining references in the catalogue.
 
 Capture folders are persisted across application runs.
 
@@ -439,17 +434,17 @@ An explicitly forced game assignment for a capture root overrides automatic fold
 
 ### 11.2 Capture-Folder UI
 
-The Import panel should show:
+Home shows:
 
 - configured capture folders;
 - enabled/disabled state;
 - clip counts;
 - clip counts by recognized game;
 - average clip duration where available;
-- manual Refresh/Rescan;
+- manual Rescan;
 - Add Folder;
-- Remove Folder;
-- source migration tools.
+- Remove folder… under More;
+- Relink folder… under More.
 
 Adding a folder should allow a preview before confirmation, including at least the number of recognized videos per game.
 
@@ -461,9 +456,11 @@ A missing file or temporarily disconnected drive is treated as unavailable, not 
 
 Source disappearance must never automatically remove clip metadata.
 
-Capture-folder migration updates source paths while retaining stable clip IDs and all metadata/project/session references.
+Relink folder… updates source paths while retaining stable clip IDs and all metadata/project/session references; it never moves files. Before confirmation, validate the destination and source-identity collisions and show the destination, affected clip count, files found and files that will become unavailable. Invalidate affected inspection caches after relinking.
 
-Removing a capture folder dereferences it from automatic scanning. An optional separate purge may remove associated catalogue entries after explicit confirmation; source videos are never deleted.
+Remove folder… uses one confirmation that shows the folder, clip count, affected project/session counts and full paths in expandable details. Cancel is the default; **Remove from catalogue** is the destructive action. Save a timestamped SQLite backup under `data/backups/` first, then remove the folder, clips, inspection cache and project/session references in one transaction. Preserve the current session clip if it survives; otherwise select the next surviving clip, or the last survivor, or clear the empty session. Clear obsolete undo/redo history. Source videos are never deleted. The separate Purge button is removed.
+
+Pause scanning retains all catalogue data and existing sessions, skips startup/manual scans, and excludes the folder from new sessions. Resume scanning restores eligibility for subsequent scans and new sessions; it does not move files or reset metadata.
 
 ---
 
@@ -899,7 +896,7 @@ Confirm through a red "Permanently delete originals" button in the preview, enab
 
 ### 19.2 Unified settings
 
-The top-right Lucide settings cog provides Settings… to open one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General contains the configurable near-end playback start preference (§8). Existing Import and project-pane controls remain available.
+The top-right Lucide settings cog retains its action menu. Settings… opens a dialog with General and Projects tabs, with General initially selected; Capture folders… navigates to Home. General contains the configurable near-end playback start and paused-typing preferences. Project-pane controls remain available. Capture-folder management lives only on Home.
 
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 
