@@ -767,6 +767,103 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
     assert window.right.isHidden()
 
 
+@pytest.mark.parametrize("first", ["in", "out"])
+def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    position = [0]
+    monkeypatch.setattr(window.player.media, "position", lambda: position[0])
+
+    def mark(endpoint, milliseconds):
+        position[0] = milliseconds
+        (window.mark_in if endpoint == "in" else window.mark_out)()
+
+    mark(first, 0 if first == "in" else 3000)
+    assert window.has_pending_range()
+    assert not window.ensure_range_complete()
+    assert window.catalogue.clip(ids[0])["in_ms"] is None
+    assert window.catalogue.clip(ids[0])["out_ms"] is None
+    assert getattr(window.player.seek, f"pending_{first}") == position[0]
+    mark("out" if first == "in" else "in", 3000 if first == "in" else 0)
+    assert not window.has_pending_range()
+    assert window.ensure_range_complete()
+    assert window.catalogue.clip(ids[0])["in_ms"] == 0
+    assert window.catalogue.clip(ids[0])["out_ms"] == 3000
+    mark("in", 500)
+    assert not window.has_pending_range()
+    assert window.catalogue.clip(ids[0])["in_ms"] == 500
+    mark("out", 4000)
+    assert not window.has_pending_range()
+    assert window.catalogue.clip(ids[0])["out_ms"] == 4000
+    mark("in", 4500)
+    assert window.has_pending_range()
+    assert window.catalogue.clip(ids[0])["in_ms"] == 500
+    mark("out", 4500)
+    assert window.has_pending_range()
+    assert window.catalogue.clip(ids[0])["out_ms"] == 4000
+    mark("out", 5000)
+    assert not window.has_pending_range()
+    assert window.catalogue.clip(ids[0])["in_ms"] == 4500
+    window.clear_range()
+    mark("out", 1000)
+    window.clear_range()
+    assert window.ensure_range_complete()
+    assert window.player.seek.pending_out is None
+    assert window.catalogue.clip(ids[0])["out_ms"] is None
+
+
+def test_pending_range_blocks_clip_and_session_changes(window, application, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QStyle
+
+    ids = add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]["folder_id"]
+    second = tmp_path / "captures/second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(folder, [{"path": str(second), "game": "VALORANT"}])
+    next_id = next(
+        clip["clip_id"] for clip in window.catalogue.clips() if clip["clip_id"] != ids[0]
+    )
+    window.catalogue.create_session([ids[0], next_id], replace=True)
+    project = window.catalogue.save_project("No premature membership")
+    window.catalogue.set_state("active_project", project)
+    window.catalogue.patch(ids[0], {"metadata": {"agent": "Jett", "weapon": ["Vandal"]}})
+    window.panel("Editing")
+    position = [1000]
+    monkeypatch.setattr(window.player.media, "position", lambda: position[0])
+    window.mark_out()
+    original_session = window.catalogue.state("session")
+    confirmations = []
+    monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or True)
+    for action in (
+        lambda: window.navigate(1),
+        lambda: window.library.setCurrentRow(1),
+        window.navigate_next_undefined,
+        window.advance_review,
+        window.add_to_project_next,
+        lambda: window.panel("Home"),
+        window.end_session,
+        lambda: window.create_session("all"),
+        lambda: window.load_clip(next_id),
+    ):
+        action()
+        assert window.current_id == ids[0]
+        assert window.current_panel == "Editing"
+        assert window.catalogue.state("session") == original_session
+        assert window.selected_id(window.library) == ids[0]
+    assert not confirmations
+    assert window.catalogue.clip(ids[0])["triage"] is None
+    assert not window.catalogue.member_ids(project)
+    assert window.player.play.style().styleHint(QStyle.StyleHint.SH_ToolTip_WakeUpDelay) == 200
+    position[0] = 0
+    window.mark_in()
+    window.navigate(1)
+    assert window.current_id == next_id
+    window.mark_in()
+    window.clear_range()
+    window.panel("Home")
+    assert window.current_panel == "Home"
+
+
 def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch):
     player = window.player
     calls = []

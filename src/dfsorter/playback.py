@@ -34,6 +34,7 @@ class RangeSlider(QSlider):
         self.setObjectName("timeline")
         self.marker_range = (None, None)
         self.pending_in = None
+        self.pending_out = None
         self.setMinimumHeight(30)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAccessibleName("Clip timeline")
@@ -73,6 +74,7 @@ class RangeSlider(QSlider):
             (start, COLORS["accent_focus"], "I"),
             (end, COLORS["accent_focus"], "O"),
             (self.pending_in, COLORS["accent"], "·I"),
+            (self.pending_out, COLORS["accent"], "·O"),
         ]:
             if value is None:
                 continue
@@ -244,6 +246,7 @@ class Player(QWidget):
         self.status.clear()
         self.seek.marker_range = (clip["in_ms"], clip["out_ms"]) if clip else (None, None)
         self.seek.pending_in = None
+        self.seek.pending_out = None
         self.seek.update()
         self.awaiting_frame = False
         if not clip or not Path(clip["source_path"]).is_file():

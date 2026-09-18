@@ -286,10 +286,11 @@ The Editing player includes:
 Each clip may store one optional non-destructive In/Out range.
 
 - `I` sets the In point when text input does not own the key.
-- `O` sets the Out point when text input does not own the key.
+- `O` sets the Out point when text input does not own the key. Set either endpoint first. For an existing saved pair, changing one endpoint reuses its saved partner when the resulting range is valid.
 - The range is stored as source-relative time and shown on the player's progress display.
 - Opening a clip in any panel places the paused playhead at its saved In point when `0 <= In < Out <= duration`; otherwise it starts 40 seconds before the end by default, clamped to zero for shorter clips. Settings → General allows disabling this behavior (start at zero) and configuring the offset from 1 to 86400 seconds. Preferences persist across restarts and apply on the next clip load. Apply the position as soon as media loading permits seeking.
-- Invalid or incomplete ranges must not silently replace the last valid stored range.
+- Pending In and Out points are shown distinctly on the timeline. Commit a pair only when both endpoints are present and In precedes Out; otherwise preserve the last valid stored range. Repeatedly setting either endpoint updates that pending point.
+- An incomplete or invalid pending range blocks switching clips through list selection, previous/next controls, arrow shortcuts, Next undefined, verdict-and-advance and Add to project + Next. Block panel changes, session creation/replacement and ending the session as well, before changing verdicts, project membership or session state. Explain which endpoint needs correction and offer Clear range through the existing control. A blocked mouse selection restores the current clip selection. Completing the pair or clearing the range releases the block; explicit metadata reset also clears pending markers.
 - In/Out points never trim or rewrite the source video.
 - Project Export copies whole videos without exporting In/Out metadata.
 
@@ -566,7 +567,7 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
 - A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
 
-Use native Qt video presentation and prefer hardware decoding, allowing logged software fallback. Coalesce drag seeks to at most 20 Hz with approximate previews; perform the final unquantized seek on release and restore playback state. Exception: after natural media completion, seeking backward resumes playback automatically; dragging previews while held and resumes on release. Apply this recovery in Editing and Export. Ordinary paused seeking remains paused; missing/failed media is not treated as completed playback. The timeline has a 7 px groove, larger hit target, colored markers, saved-range tint, and a distinct pending In marker. Put transport/audio/time controls directly beneath it.
+Use native Qt video presentation and prefer hardware decoding, allowing logged software fallback. Coalesce drag seeks to at most 20 Hz with approximate previews; perform the final unquantized seek on release and restore playback state. Exception: after natural media completion, seeking backward resumes playback automatically; dragging previews while held and resumes on release. Apply this recovery in Editing and Export. Ordinary paused seeking remains paused; missing/failed media is not treated as completed playback. The timeline has a 7 px groove, larger hit target, colored markers, saved-range tint, and distinct pending In and Out markers. Put transport/audio/time controls directly beneath it.
 
 ### 13.3 Command Syntax
 
@@ -744,7 +745,7 @@ Sharing:
 4. chooses the whole clip or its saved valid In/Out range, defaulting to the range when available;
 5. creates an H.264 MP4 with one stereo AAC track mixing all audio tracks, or no audio if the source is silent.
 
-Range shares decode and re-encode through the exact source-frame/audio-sample boundaries. A pending In point does not replace the saved range offered for Share. Whole H.264 shares copy the video stream without generation loss; other codecs and all range shares re-encode, preferring NVIDIA H.264 P5/CQ19 with x264 medium/CRF18 fallback. Preserve source resolution and frame timing. Share requires FFmpeg and ffprobe and supports background processing, cancellation, temporary output validation, and cleanup on failure.
+Range shares decode and re-encode through the exact source-frame/audio-sample boundaries. Pending In/Out edits do not replace the saved range offered for Share; the dialog explains when it is using the saved pair. Whole H.264 shares copy the video stream without generation loss; other codecs and all range shares re-encode, preferring NVIDIA H.264 P5/CQ19 with x264 medium/CRF18 fallback. Preserve source resolution and frame timing. Share requires FFmpeg and ffprobe and supports background processing, cancellation, temporary output validation, and cleanup on failure.
 
 Share outputs use `.mp4`. Project Export retains the source extension and original bytes.
 
@@ -975,9 +976,9 @@ Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cya
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Delete stays separate in the context menu with confirmation.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
 - Rating uses 18 px SVG stars with 4 px spacing, gray empty stars, gold filled stars and lighter gold hover preview. The small `x` clear action and right-click clear remain available. Rating never changes triage.
-- Video is black. Retain the approved **7 px timeline groove** and larger hit area, overriding the original token sheet's 4–6 px suggestion. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In has a distinct shape/label. Transport/audio/time controls remain directly below.
+- Video is black. Retain the approved **7 px timeline groove** and larger hit area, overriding the original token sheet's 4–6 px suggestion. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
-- Tooltips use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use bold `#F0D16F` and remain hidden when empty. Command states use blue background/border `#172B40`/`#6AA9E9`, dull yellow `#332F20`/`#A99A5B`, and dull violet `#2C253B`/`#9B85BC`. Unset rating uses the existing danger color for star outlines only, with no background highlight.
+- Tooltips appear after a 200 ms hover delay throughout the application. They use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use bold `#F0D16F` and remain hidden when empty. Command states use blue background/border `#172B40`/`#6AA9E9`, dull yellow `#332F20`/`#A99A5B`, and dull violet `#2C253B`/`#9B85BC`. Unset rating uses the existing danger color for star outlines only, with no background highlight.
 
 ### 20.6 Acceptance
 

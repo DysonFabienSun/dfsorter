@@ -137,6 +137,7 @@ class Window(QMainWindow):
         self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
         self.media_info = self.catalogue.media_cache()
         self.pending_in = None
+        self.pending_out = None
         self.worker = None
         self.refreshing = False
         self.setWindowTitle("DFSorter")
@@ -752,6 +753,8 @@ class Window(QMainWindow):
             self.position_transition_covers()
 
     def panel(self, name):
+        if not self.ensure_range_complete():
+            return
         self.submit_resume = False
         if name == "Editing" and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
@@ -1047,6 +1050,15 @@ class Window(QMainWindow):
     def switch_editing_clip(self, clip_id, ensure_visible=False):
         if clip_id == self.current_id:
             return
+        if not self.ensure_range_complete():
+            self.library.blockSignals(True)
+            for index in range(self.library.count()):
+                item = self.library.item(index)
+                if item.data(Qt.ItemDataRole.UserRole) == self.current_id:
+                    self.library.setCurrentItem(item)
+                    break
+            self.library.blockSignals(False)
+            return
         session = self.catalogue.state("session")
         self.catalogue.navigate(session["ids"].index(clip_id))
         for index in range(self.library.count()):
@@ -1065,11 +1077,14 @@ class Window(QMainWindow):
         self.load_clip(clip_id)
 
     def load_clip(self, clip_id):
+        if not self.ensure_range_complete():
+            return
         self.submit_resume = False
         self.cancel_space()
         self.rating_deadline = 0
         self.current_id = clip_id
         self.pending_in = None
+        self.pending_out = None
         self.command.setText(self.drafts.get(clip_id, ""))
         self.command_error.clear()
         self.command_error.hide()
@@ -1221,6 +1236,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def add_to_project_next(self):
+        if not self.ensure_range_complete():
+            return
         project_id = self.catalogue.state("active_project")
         session = self.catalogue.state("session")
         if self.current_panel != "Editing" or not self.current_id or not project_id or not session:
@@ -1238,6 +1255,8 @@ class Window(QMainWindow):
 
     def advance_review(self):
         if self.current_panel != "Editing" or not self.current_id:
+            return
+        if not self.ensure_range_complete():
             return
         if self.command.text():
             self.error(
@@ -1598,30 +1617,69 @@ class Window(QMainWindow):
             return True
         return super().eventFilter(watched, event)
 
-    def mark_in(self):
-        if self.current_panel == "Editing" and self.current_id:
-            self.pending_in = self.player.media.position()
-            self.player.seek.pending_in = self.pending_in
-            self.player.seek.update()
+    def has_pending_range(self):
+        return self.pending_in is not None or self.pending_out is not None
 
-    def mark_out(self):
-        if self.current_panel != "Editing" or not self.current_id:
-            return
+    def range_endpoints(self):
         clip = self.catalogue.clip(self.current_id)
-        start = self.pending_in if self.pending_in is not None else clip["in_ms"]
-        end = self.player.media.position()
-        if start is None or end <= start:
-            self.error("Set In before Out; stored range remains unchanged")
-            return
-        self.edit({"in_ms": start, "out_ms": end})
-        self.pending_in = None
-        self.player.seek.pending_in = None
+        return (
+            self.pending_in if self.pending_in is not None else clip["in_ms"],
+            self.pending_out if self.pending_out is not None else clip["out_ms"],
+        )
+
+    def ensure_range_complete(self):
+        if not self.has_pending_range():
+            return True
+        start, end = self.range_endpoints()
+        if start is None:
+            reason = "Set In to complete the range"
+        elif end is None:
+            reason = "Set Out to complete the range"
+        else:
+            reason = "Set In earlier than Out to complete a valid range"
+        self.error(f"{reason}, or use Clear range, before leaving this clip.")
+        return False
+
+    def reset_pending_range(self):
+        self.pending_in = self.pending_out = None
+        self.player.seek.pending_in = self.player.seek.pending_out = None
         self.player.seek.update()
 
+    def mark_in(self):
+        self.mark_range_point("in")
+
+    def mark_out(self):
+        self.mark_range_point("out")
+
+    def mark_range_point(self, endpoint):
+        if self.current_panel != "Editing" or not self.current_id:
+            return
+        position = self.player.media.position()
+        if endpoint == "in":
+            self.pending_in = self.player.seek.pending_in = position
+        else:
+            self.pending_out = self.player.seek.pending_out = position
+        self.player.seek.update()
+        start, end = self.range_endpoints()
+        if start is None or end is None or not 0 <= start < end:
+            self.ensure_range_complete()
+            return
+        self.save_range(start, end)
+
+    def save_range(self, start, end):
+        try:
+            self.catalogue.patch(self.current_id, {"in_ms": start, "out_ms": end}, editing=True)
+            self.reset_pending_range()
+            self.command_error.clear()
+            self.command_error.hide()
+            self.statusBar().clearMessage()
+            self.render_clip()
+        except (ValueError, OSError) as error:
+            self.error(error)
+
     def clear_range(self):
-        self.pending_in = None
-        self.player.seek.pending_in = None
-        self.edit({"in_ms": None, "out_ms": None})
+        if self.current_panel == "Editing" and self.current_id:
+            self.save_range(None, None)
 
     def new_project(self):
         name, accepted = QInputDialog.getText(self, "New project", "Project name")
@@ -1674,6 +1732,8 @@ class Window(QMainWindow):
             self.render_clip()
 
     def create_session(self, mode):
+        if not self.ensure_range_complete():
+            return
         selected = {item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()}
         ids = [
             self.library.item(index).data(Qt.ItemDataRole.UserRole)
@@ -1695,6 +1755,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def end_session(self):
+        if not self.ensure_range_complete():
+            return
         if self.catalogue.state("session") and self.confirm(
             "End this session? Clip metadata stays unchanged."
         ):
@@ -1753,6 +1815,7 @@ class Window(QMainWindow):
                     },
                     replace_metadata=True,
                 )
+                self.reset_pending_range()
                 self.refresh_library()
                 if self.current_panel == "Editing":
                     self.render_clip()
@@ -2173,8 +2236,10 @@ class Window(QMainWindow):
         mode.addItem("Whole clip", False)
         layout.addRow("Share", mode)
         layout.addRow(QLabel("H.264 MP4 · All audio tracks mixed to stereo AAC"))
-        if self.current_panel == "Editing" and self.pending_in is not None:
-            layout.addRow(QLabel("New In point is pending; selected range uses the saved markers."))
+        if self.current_panel == "Editing" and self.has_pending_range():
+            layout.addRow(
+                QLabel("Range changes are pending; selected range uses the saved markers.")
+            )
         destination = QLineEdit(self.settings.get("share_folder", ""))
         layout.addRow("Output folder", destination)
 

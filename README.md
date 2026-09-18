@@ -91,3 +91,5 @@ comes from Git HEAD's media implementation, so retain the pre-change revision wh
 comparing after committing. Source files and the working catalogue are not modified.
 
 Playback uses Qt native video rendering with hardware decoding where supported and software fallback. D3D11 decoding of H.264 and AV1 was confirmed on this machine with Qt diagnostics. To inspect decoder selection, set `QT_LOGGING_RULES=qt.multimedia.ffmpeg.hwaccel=true;qt.multimedia.playbackengine.codec=true` before launching. Native video surfaces may be absent from QWidget screenshots; decoded-frame artifacts are captured separately by tests. Subjective smoothness and audio balance still need acceptance with real captures.
+
+In/Out markers can be set in either order. Editing one endpoint reuses the other saved endpoint when valid. An unfinished or invalid range blocks leaving the clip until you complete it or use **Clear range**; the last saved range remains intact until a valid pair is ready. Icon tooltips appear after 200 ms.

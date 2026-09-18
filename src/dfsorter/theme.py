@@ -1,4 +1,5 @@
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
+from PySide6.QtWidgets import QProxyStyle, QStyle
 
 COLORS = {
     "bg_app": "#1E2228",
@@ -188,8 +189,15 @@ def stylesheet():
     )
 
 
+class ApplicationStyle(QProxyStyle):
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
+            return 200
+        return super().styleHint(hint, option, widget, returnData)
+
+
 def apply_theme(application):
-    application.setStyle("Fusion")
+    application.setStyle(ApplicationStyle("Fusion"))
     available = set(QFontDatabase.families())
     family = next(
         (name for name in ("Segoe UI", "Inter", "Arial") if name in available), "sans-serif"

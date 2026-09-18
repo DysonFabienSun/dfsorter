@@ -191,3 +191,10 @@ process cleanup and the existing regression suite.
 
 - [x] Both players show a centered `>>>` on the existing transport/volume/range-controls row during hold-Space fast-forward, with a left-to-right accent highlight every 120 ms. Only the indicator’s horizontal space is retained while hidden; no extra row is added; release and existing hold cancellation stop/reset the animation.
 - [x] Lightweight widget checks verified animation, centering, stable layout and stopping on release. Ruff passes; no playback-suite rerun.
+
+## Either-order range markers and faster tooltips
+
+- [x] In/Out can be set in either order; a valid adjustment reuses the other saved endpoint. Pending I and O display separately; incomplete/reversed/equal ranges preserve the previous saved pair.
+- [x] Pending ranges block clip, panel and session changes and verdict/project advancement before metadata changes. A rejected list selection returns to the current clip. Completing the pair, Clear range or explicit metadata reset releases the block.
+- [x] App-wide tooltip hover delay is 200 ms through the existing Fusion style.
+- [x] Four focused checks passed in 2.41 seconds, covering both marker orders, saved-partner edits, invalid ranges, navigation guards, clearing and tooltip delay. Ruff passes; no full-suite or codec rerun.
