@@ -8,7 +8,31 @@ from dfsorter.catalogue import Catalogue, normalized
 from dfsorter.config import Registry, title
 from dfsorter.media import discover
 from dfsorter.output import copy_one, export_project, safe_stem, share_clip, validate
-from dfsorter.parsing import parse_command, query_clips
+from dfsorter.parsing import parse_command, preview_command, query_clips
+
+
+@pytest.mark.parametrize(
+    "text,state,patch",
+    [
+        ("je", "typing", {}),
+        ("agent:", "incomplete", {}),
+        ("jett va", "typing", {"metadata": {"agent": "Jett"}}),
+        ('jett tag:"unfinished', "incomplete", {"metadata": {"agent": "Jett"}}),
+        ("jett R9", "invalid", {"metadata": {"agent": "Jett"}}),
+        ("jett sage", "invalid", {"metadata": {"agent": "Jett"}}),
+        ("nonsense jett", "invalid", {}),
+        ("jett nonsense ", "invalid", {"metadata": {"agent": "Jett"}}),
+        ('tag:""', "valid", {"tag": None}),
+        ("jett -- Title", "valid", {"metadata": {"agent": "Jett"}, "mainline": "Title"}),
+    ],
+)
+def test_command_preview(registry, text, state, patch):
+    actual_patch, actual_state, _ = preview_command(text, "VALORANT", registry)
+    assert (actual_patch, actual_state) == (patch, state)
+    if state == "valid":
+        assert actual_patch == parse_command(text, "VALORANT", registry)
+    else:
+        assert preview_command(text, "VALORANT", registry, submitted=True)[1] == "invalid"
 
 
 def test_folder_case_and_disabled_sessions(catalogue, tmp_path):

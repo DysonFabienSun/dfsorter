@@ -165,6 +165,50 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
     return patch
 
 
+def preview_command(text: str, game_name: str | None, registry: Registry, *, submitted=False):
+    """Return a presentation-only patch, validation state and explanation."""
+    if not text.strip():
+        return {}, "empty", ""
+    try:
+        return parse_command(text, game_name, registry), "valid", "Enter to apply"
+    except ValueError as error:
+        message = str(error)
+    patch = {}
+    game = registry.game(game_name)
+    missing_enum_value = bool(
+        game and text.rstrip().endswith(":")
+        and text.split()[-1][:-1].casefold() in game.prefixes
+    )
+    # Reuse the submission grammar: only fully parseable prefixes can contribute.
+    for boundary in reversed(list(re.finditer(r"\s+", text))):
+        try:
+            patch = parse_command(text[:boundary.start()], game_name, registry)
+            break
+        except ValueError:
+            continue
+    if submitted:
+        state = "invalid"
+    elif message == "Unclosed quotation mark" or "needs a value" in message or missing_enum_value:
+        state = "incomplete"
+        if missing_enum_value:
+            message = "Enter a value after the field prefix"
+    elif message.startswith("Unknown "):
+        # An unknown token still being typed is not an error until delimited.
+        state = "invalid"
+        if not text[-1].isspace():
+            # Only defer errors if removing the final token leaves valid input.
+            prefix = text.rsplit(None, 1)[0] if len(text.split()) > 1 else ""
+            try:
+                parse_command(prefix, game_name, registry)
+            except ValueError:
+                pass
+            else:
+                state = "typing"
+    else:
+        state = "invalid"
+    return patch, state, "" if state == "typing" else message
+
+
 def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[dict]:
     terms = [token.value for token in tokenize(expression)]
     tests = []

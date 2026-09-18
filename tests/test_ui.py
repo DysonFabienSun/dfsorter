@@ -309,6 +309,68 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     assert "Session complete" in window.statusBar().currentMessage()
 
 
+def test_field_checklist_previews_commands_without_saving(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    saved = window.catalogue.clip(ids[0])
+    original = window.field_reminder.text()
+    window.command.setFocus()
+    QTest.keyClicks(window.command, "jett R3 -- Example")
+    for key in ("agent", "rating", "mainline"):
+        assert f"✓&nbsp;{key}" in window.field_reminder.text()
+    assert "press Enter to save" in window.field_reminder.toolTip()
+    assert window.catalogue.clip(ids[0]) == saved
+    window.render_clip()
+    assert "✓&nbsp;agent" in window.field_reminder.text()
+    window.command.setText('jett tag:"unfinished')
+    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert window.command.property("validationState") == "incomplete"
+    assert window.command_error.isHidden()
+    window.command.clear()
+    assert window.field_reminder.text() == original
+    window.command.setText("jett tag:Example")
+    window.submit()
+    assert window.catalogue.clip(ids[0])["metadata"]["agent"] == "Jett"
+    window.command.setText('tag:""')
+    assert "o&nbsp;tag" in window.field_reminder.text()
+    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert window.catalogue.clip(ids[0])["tag"] == "Example"
+    window.command.clear()
+    assert "✓&nbsp;tag" in window.field_reminder.text()
+
+
+def test_command_validation_colors_and_save_feedback(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.command.setFocus()
+    artifact = ROOT / "cache/verification/command-validation"
+    artifact.mkdir(parents=True, exist_ok=True)
+    for text, state in [
+        ("", "empty"), ("je", "typing"), ("jett", "valid"),
+        ("jett va", "typing"), ("jett tag:", "incomplete"),
+        ("jett nonsense ", "invalid"), ("R9", "invalid"),
+    ]:
+        window.command.setText(text)
+        window.update_command_state()
+        assert window.command.property("validationState") == state
+        application.processEvents()
+        window.command_area.grab().save(str(artifact / f"{state}.png"))
+    window.command.setText("je")
+    window.submit()
+    assert window.command.property("validationState") == "invalid"
+    assert "Unknown metadata" in window.command_feedback.text()
+    window.command.setText("jett")
+    assert window.command_error.isHidden()
+    assert window.command.property("validationState") == "valid"
+    window.submit()
+    assert window.command.property("validationState") == "saved"
+    assert window.command_feedback.text() == "Saved"
+    window.command_area.grab().save(str(artifact / "saved.png"))
+    assert window.catalogue.clip(ids[0])["metadata"]["agent"] == "Jett"
+    assert wait_for(application, lambda: window.command.property("validationState") == "empty", 3)
+    assert window.command_feedback.text() == ""
+
+
 def test_editing_session_counts_and_list_height(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     folder = window.catalogue.folders()[0]

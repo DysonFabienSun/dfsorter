@@ -1,5 +1,12 @@
 # DFSorter v1 delivery checklist
 
+## Live command field indicators and validation colors
+
+- [x] Field indicators preview commands as typed, merging with saved fields without writing metadata. Incomplete/invalid drafts retain the longest parseable prefix; clearing restores saved indicators. Tooltips distinguish partial previews. Enter still saves.
+- [x] Validation colors replace mode colors: neutral empty/unfinished tokens, blue valid drafts, amber incomplete syntax, red invalid commands, and a 1.2-second green save underline. Cyan focus remains visible. Inline hints explain validation and “Saved · Space to resume”; keyboard modes remain intact.
+- [x] Five focused UI checks passed. Full regression run: 99 passed, one AV1 hold-Space timing assertion failed; both codec playback checks passed on targeted rerun together with command preview/UI tests (14 passed). Ruff passes. Inspected valid/incomplete command screenshots in `cache/verification/command-validation`.
+- [ ] User acceptance of the updated colors and live indicators; exhaustive display-scale verification remains pending.
+
 Completion requires implementation plus verification. `specs/dfsorter-specs-clean.md` is authoritative.
 
 ## Stage 1 — Catalogue and deterministic metadata

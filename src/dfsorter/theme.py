@@ -40,10 +40,6 @@ COLORS = {
     "command_focus": "#141B21",
     "tag_color": "#F0D16F",
     "command_blue": "#172B40",
-    "command_yellow": "#332F20",
-    "command_yellow_border": "#A99A5B",
-    "command_violet": "#2C253B",
-    "command_violet_border": "#9B85BC",
     "timeline_track": "#3A424D",
     "timeline_progress": "#617080",
     "scrollbar_hover": "#56616F",
@@ -113,9 +109,10 @@ def stylesheet():
             border-color: %(accent_focus)s;
         }
         QLineEdit#command:focus { background: %(command_focus)s; border-color: %(accent_focus)s; }
-        QLineEdit#command[commandState="input"] { background: %(command_blue)s; border-color: %(info)s; }
-        QLineEdit#command[commandState="paused"] { background: %(command_yellow)s; border-color: %(command_yellow_border)s; }
-        QLineEdit#command[commandState="resume"] { background: %(command_violet)s; border-color: %(command_violet_border)s; }
+        QLineEdit#command[validationState="valid"] { background: %(command_blue)s; }
+        QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(warning)s; }
+        QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(danger)s; }
+        QLineEdit#command[validationState="saved"] { border-bottom: 2px solid %(success)s; }
         QPushButton, QToolButton {
             background: %(bg_surface)s; border: 1px solid %(border_default)s;
             border-radius: 4px; padding: 4px 8px; min-height: 18px;

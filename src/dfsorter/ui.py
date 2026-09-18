@@ -59,7 +59,7 @@ from .config import Registry, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
-from .parsing import parse_command, query_clips, requests_discarded
+from .parsing import parse_command, preview_command, query_clips, requests_discarded
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -314,17 +314,24 @@ class Window(QMainWindow):
         self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("Enter clip metadata…")
+        self.command_submitted_error = False
+        self.command_saved_timer = QTimer(self)
+        self.command_saved_timer.setSingleShot(True)
+        self.command_saved_timer.setInterval(1200)
+        self.command_saved_timer.timeout.connect(self.update_command_state)
         command_layout.addWidget(self.command)
+        self.command_feedback = QLabel()
+        self.command_feedback.setTextFormat(Qt.TextFormat.PlainText)
+        self.command_feedback.setObjectName("muted")
+        self.command_feedback.setWordWrap(True)
+        self.command_feedback.setMinimumHeight(self.command_feedback.fontMetrics().height())
+        command_layout.addWidget(self.command_feedback)
         self.field_reminder = QLabel()
         self.field_reminder.setTextFormat(Qt.TextFormat.RichText)
         self.field_reminder.setWordWrap(True)
         # Keep the command baseline stable when checklist glyphs change font metrics.
         self.field_reminder.setMinimumHeight(self.field_reminder.fontMetrics().height())
-        self.field_reminder.setAccessibleName("Saved metadata field checklist")
-        self.field_reminder.setToolTip(
-            "Saved metadata: ✓ populated · ! required for export · o optional · x invalid for current configuration. "
-            "Unsubmitted commands do not change this checklist."
-        )
+        self.field_reminder.setAccessibleName("Metadata field checklist with command preview")
         self.field_reminder.hide()
         command_layout.addWidget(self.field_reminder)
         self.command_error = QLabel()
@@ -1079,6 +1086,8 @@ class Window(QMainWindow):
     def load_clip(self, clip_id):
         if not self.ensure_range_complete():
             return
+        self.command_submitted_error = False
+        self.command_saved_timer.stop()
         self.submit_resume = False
         self.cancel_space()
         self.rating_deadline = 0
@@ -1153,12 +1162,28 @@ class Window(QMainWindow):
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
         self.command_history.setVisible(bool(self.command_history.text()))
         self.refresh_session_status()
+        self.update_command_state()
 
     def render_field_reminder(self, clip, game):
         self.field_reminder.setVisible(self.current_panel == "Editing" and game is not None)
         if game is None:
             self.field_reminder.clear()
             return
+        state = "Saved metadata."
+        if self.command.text().strip():
+            patch, validation, _ = preview_command(self.command.text(), clip["game"], self.registry)
+            clip = {
+                **clip,
+                **patch,
+                "metadata": {**clip["metadata"], **patch.get("metadata", {})},
+            }
+            state = (
+                "Command preview; press Enter to save." if validation == "valid"
+                else "Partial command preview; finish or correct the command before saving."
+            )
+        self.field_reminder.setToolTip(
+            state + " ✓ populated · ! required for export · o optional · x invalid for current configuration."
+        )
         fields = list(
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
         )
@@ -1229,9 +1254,12 @@ class Window(QMainWindow):
             self.render_clip()
             self.command.setFocus()
             self.submit_resume = self.editing_paused()
+            if text.strip():
+                self.command_saved_timer.start()
             self.update_command_state()
         except ValueError as error:
             self.submit_resume = False
+            self.command_submitted_error = True
             self.update_command_state()
             self.error(error)
 
@@ -1342,11 +1370,17 @@ class Window(QMainWindow):
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
+        self.command_submitted_error = False
+        self.command_saved_timer.stop()
+        self.command_error.clear()
+        self.command_error.hide()
         if text:
             self.submit_resume = False
-            self.update_command_state()
         if self.current_id:
             self.drafts[self.current_id] = text
+            clip = self.catalogue.clip(self.current_id)
+            self.render_field_reminder(clip, self.registry.game(clip["game"]))
+        self.update_command_state()
 
     def editing_paused(self):
         return (
@@ -1383,6 +1417,23 @@ class Window(QMainWindow):
                 state = "paused"
         if self.command.property("commandState") != state:
             self.command.setProperty("commandState", state)
+        validation, message = "empty", ""
+        if self.current_id:
+            clip = self.catalogue.clip(self.current_id)
+            _, validation, message = preview_command(
+                self.command.text(), clip["game"], self.registry,
+                submitted=self.command_submitted_error,
+            )
+        if validation == "empty":
+            if self.command_saved_timer.isActive():
+                validation, message = "saved", "Saved"
+            if state == "resume":
+                message = "Saved · Space to resume"
+            elif state == "paused" and not message:
+                message = "Type to enter commands"
+        self.command_feedback.setText(message)
+        if self.command.property("validationState") != validation:
+            self.command.setProperty("validationState", validation)
             self.command.style().unpolish(self.command)
             self.command.style().polish(self.command)
             self.command.update()
@@ -1451,7 +1502,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nYellow: type while paused to enter input (Settings → General).\nBlue: input mode. Violet: first Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
