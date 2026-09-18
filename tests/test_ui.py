@@ -667,8 +667,13 @@ def test_paused_typing_and_submit_resume(window, application, tmp_path):
     QTest.keyClick(window.player, Qt.Key.Key_I)
     assert application.focusWidget() is window.player
     QTest.keyClick(window.player, Qt.Key.Key_R)
-    QTest.keyClick(window.player, Qt.Key.Key_4)
+    assert application.focusWidget() is window.command
+    QTest.keyClick(window.command, Qt.Key.Key_4)
+    assert window.command.text() == "r4"
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
     assert window.catalogue.clip(ids[0])["rating"] == 4
+    QTest.keyClick(window.command, Qt.Key.Key_Escape)
     QTest.keyClick(window.player, Qt.Key.Key_B)
     assert window.command.text() == "b"
     assert window.command.property("commandState") == "input"
@@ -766,13 +771,11 @@ def test_session_arrow_navigation_and_tag_display(window, application, tmp_path)
 def test_review_drafts_rating_and_panes(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
+    window.settings["paused_typing_enabled"] = False
     QTest.keyClick(window.player, Qt.Key.Key_R)
     QTest.keyClick(window.player, Qt.Key.Key_3)
-    assert window.catalogue.clip(ids[0])["rating"] == 3
-    QTest.keyClick(window.player, Qt.Key.Key_R)
-    window.rating_deadline = 0
-    QTest.keyClick(window.player, Qt.Key.Key_5)
-    assert window.catalogue.clip(ids[0])["rating"] == 3
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    assert application.focusWidget() is window.player
     QTest.keyClick(window.player, Qt.Key.Key_Slash)
     assert application.focusWidget() is window.command
     assert window.command.text() == ""

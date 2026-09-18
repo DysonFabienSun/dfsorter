@@ -25,7 +25,7 @@ To open without a console window, run `pwsh -File .\create-shortcut.ps1` after s
 4. **Projects:** activate a project to receive clips when they transition to Keep. Membership survives later triage changes. Add/remove selected clips explicitly when needed.
 5. **Export:** select a project, resolve every listed blocker, choose filename fields and an output folder, then copy. Share independently offers a whole clip or saved range, defaulting to the range, and produces H.264 MP4 with all audio mixed to stereo AAC.
 
-In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until release. Arrows seek ±5 seconds, Shift+arrows ±1 second, I/O set markers, and R then 1–5 rates. Every text field, even when empty, consumes normal typing. Press `?` for the cheatsheet. In remains pending until a valid Out is set; Share continues offering the previous saved range. Source videos are never trimmed or rewritten.
+In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until release. Arrows seek ±5 seconds, Shift+arrows ±1 second, I/O set markers. Rate using commands such as `r4` followed by Enter, or clickable stars. Every text field, even when empty, consumes normal typing. Press `?` for the cheatsheet. In remains pending until a valid Out is set; Share continues offering the previous saved range. Source videos are never trimmed or rewritten.
 
 Description saves when leaving its editor or navigating, and has an explicit Save button. Rating and triage are independent. Ctrl+Z/Ctrl+Y undo/redo catalogue edits for the current run. Changing game requires confirmation and clears game-specific metadata; Undo restores it.
 

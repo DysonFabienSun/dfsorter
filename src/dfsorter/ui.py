@@ -127,7 +127,6 @@ class Window(QMainWindow):
         self.history = defaultdict(list)
         self.drafts = {}
         self.pane_overrides = {}
-        self.rating_deadline = 0
         self.space_down = False
         self.submit_resume = False
         self.consume_resume_space = False
@@ -1090,7 +1089,6 @@ class Window(QMainWindow):
         self.command_saved_timer.stop()
         self.submit_resume = False
         self.cancel_space()
-        self.rating_deadline = 0
         self.current_id = clip_id
         self.pending_in = None
         self.pending_out = None
@@ -1440,7 +1438,6 @@ class Window(QMainWindow):
 
     def review_mode(self):
         self.submit_resume = False
-        self.rating_deadline = 0
         self.player.setFocus()
         self.update_command_state()
 
@@ -1502,7 +1499,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nR then 1–5: Rate · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -1524,7 +1521,6 @@ class Window(QMainWindow):
         if event.type() == QEvent.Type.MouseButtonPress:
             self.submit_resume = False
             self.update_command_state()
-            self.rating_deadline = 0
             self.cancel_space()
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
             if event.type() == QEvent.Type.ApplicationDeactivate:
@@ -1532,7 +1528,6 @@ class Window(QMainWindow):
                 self.consume_resume_space = False
                 self.update_command_state()
             self.cancel_space()
-            self.rating_deadline = 0
         if event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Space:
             if self.consume_resume_space:
                 if not event.isAutoRepeat():
@@ -1626,7 +1621,6 @@ class Window(QMainWindow):
                     ),
                 )
             )
-            self.rating_deadline = 0
             return True
         if self.current_panel == "Editing" and key == Qt.Key.Key_Question:
             self.show_shortcuts()
@@ -1636,17 +1630,8 @@ class Window(QMainWindow):
                 if not event.isAutoRepeat() and not self.space_down:
                     self.space_down = True
                     self.space_timer.start()
-                self.rating_deadline = 0
                 return True
             if self.current_panel == "Editing":
-                rating_pending = time.monotonic() < self.rating_deadline
-                self.rating_deadline = 0
-                if rating_pending and Qt.Key.Key_1 <= key <= Qt.Key.Key_5:
-                    self.edit({"rating": key - Qt.Key.Key_0})
-                    return True
-                if key == Qt.Key.Key_R:
-                    self.rating_deadline = time.monotonic() + 1
-                    return True
                 if key == Qt.Key.Key_Slash:
                     self.command.setFocus()
                     return True

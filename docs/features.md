@@ -37,7 +37,7 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 
 ## Stage 4 — First graphical touchup
 
-- [x] Review/input separation, Space tap/hold, seek/rating shortcuts, per-run drafts, and shortcut help.
+- [x] Review/input separation, Space tap/hold, seek shortcuts, per-run drafts, and shortcut help.
 - [x] Restrained navigation, elided clip rows, compact Lucide controls, star rating, title emphasis, and conditional tags.
 - [x] Collapsible Projects with normal/maximized defaults and per-run overrides; compact project and session actions.
 - [x] Native Qt video presentation, 20 Hz coalesced scrubbing, release seek, and colored range timeline.
@@ -205,3 +205,8 @@ process cleanup and the existing regression suite.
 - [x] Pending ranges block clip, panel and session changes and verdict/project advancement before metadata changes. A rejected list selection returns to the current clip. Completing the pair, Clear range or explicit metadata reset releases the block.
 - [x] App-wide tooltip hover delay is 200 ms through the existing Fusion style.
 - [x] Four focused checks passed in 2.41 seconds, covering both marker orders, saved-partner edits, invalid ranges, navigation guards, clearing and tooltip delay. Ruff passes; no full-suite or codec rerun.
+
+## Command-only keyboard ratings
+
+- [x] Removed legacy review-mode R then 1–5 rating shortcut and timer. Paused typing accepts `r4`; Enter saves. Command ratings and clickable stars remain available.
+- [x] Core/UI regression suite: 79 passed. Ruff and `git diff --check` passed.
