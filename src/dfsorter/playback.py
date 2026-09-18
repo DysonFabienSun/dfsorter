@@ -10,6 +10,11 @@ from .theme import COLORS, SIZES, role
 from .widgets import icon, tool
 
 
+def start_offset_seconds(settings):
+    value = settings.get("start_near_end_seconds", 40)
+    return value if type(value) is int and 1 <= value <= 86400 else 40
+
+
 class VideoSurface(QVideoWidget):
     def __init__(self):
         super().__init__()
@@ -84,8 +89,9 @@ class Player(QWidget):
     previous = Signal()
     next = Signal()
 
-    def __init__(self):
+    def __init__(self, settings=None):
         super().__init__()
+        self.settings = settings if settings is not None else {}
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         layout = QVBoxLayout(self)
         self.video = VideoSurface()
@@ -211,7 +217,12 @@ class Player(QWidget):
                 and isinstance(end, int)
                 and 0 <= start < end <= self.media.duration()
             )
-            self.media.setPosition(start if valid_range else 0)
+            fallback = 0
+            if self.settings.get("start_near_end_enabled", True):
+                fallback = max(
+                    0, self.media.duration() - start_offset_seconds(self.settings) * 1000
+                )
+            self.media.setPosition(start if valid_range else fallback)
             self.load_timeout.stop()
             self.loading_finished.emit()
 

@@ -286,7 +286,7 @@ Each clip may store one optional non-destructive In/Out range.
 - `I` sets the In point when text input does not own the key.
 - `O` sets the Out point when text input does not own the key.
 - The range is stored as source-relative time and shown on the player's progress display.
-- Opening a clip in Editing or Export places the paused playhead at its saved In point when `0 <= In < Out <= duration`; otherwise it starts at zero. Apply the position as soon as media loading permits seeking.
+- Opening a clip in any panel places the paused playhead at its saved In point when `0 <= In < Out <= duration`; otherwise it starts 40 seconds before the end by default, clamped to zero for shorter clips. Settings → General allows disabling this behavior (start at zero) and configuring the offset from 1 to 86400 seconds. Preferences persist across restarts and apply on the next clip load. Apply the position as soon as media loading permits seeking.
 - Invalid or incomplete ranges must not silently replace the last valid stored range.
 - In/Out points never trim or rewrite the source video.
 - Project Export copies whole videos without exporting In/Out metadata.
@@ -897,7 +897,7 @@ Confirm through a red "Permanently delete originals" button in the preview, enab
 
 ### 19.2 Unified settings
 
-A top-right Lucide settings cog (also Edit → Settings) opens one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General is an explicitly labeled placeholder for future preferences. Existing Import and project-pane controls remain available.
+A top-right Lucide settings cog (also Edit → Settings) opens one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General contains the configurable near-end playback start preference (§8). Existing Import and project-pane controls remain available.
 
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 

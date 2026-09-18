@@ -117,6 +117,27 @@ def test_settings_preserves_capture_folder_case(window, tmp_path):
     settings.close()
 
 
+def test_playback_preferences_persist(window, application):
+    settings = SettingsDialog(window)
+    assert settings.start_near_end.isChecked()
+    assert settings.start_offset.value() == 40
+    settings.start_offset.setValue(17)
+    settings.start_near_end.setChecked(False)
+    assert not settings.start_offset.isEnabled()
+    settings.close()
+    restarted = Window(window.root)
+    try:
+        restored = SettingsDialog(restarted)
+        assert restored.start_offset.value() == 17
+        assert not restored.start_near_end.isChecked()
+        assert restarted.player.settings["start_near_end_seconds"] == 17
+        assert restarted.export_player.settings["start_near_end_enabled"] is False
+        restored.close()
+    finally:
+        restarted.close()
+        application.processEvents()
+
+
 def add_clips(window, tmp_path, valid=False, codec="libx264"):
     captures = tmp_path / "captures"
     captures.mkdir(exist_ok=True)
@@ -438,6 +459,24 @@ def test_real_playback(window, application, tmp_path, codec):
             preview_player.load({**clip, "in_ms": start, "out_ms": end})
             assert wait_for(application, lambda: not preview_player.awaiting_frame)
             assert preview_player.media.position() == 0
+        # A smaller offset exercises seeking from the end with the short real fixture.
+        settings = SettingsDialog(window)
+        settings.start_offset.setValue(1)
+        for start, end in [(None, None), (500, None), (1500, 500), (500, 999999)]:
+            preview_player.load({**clip, "in_ms": start, "out_ms": end})
+            assert wait_for(application, lambda: not preview_player.awaiting_frame)
+            assert preview_player.media.position() == preview_player.media.duration() - 1000
+            assert preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        preview_player.load(clip)
+        assert wait_for(application, lambda: not preview_player.awaiting_frame)
+        assert preview_player.media.position() == 500
+        settings.start_near_end.setChecked(False)
+        preview_player.load({**clip, "in_ms": None, "out_ms": None})
+        assert wait_for(application, lambda: not preview_player.awaiting_frame)
+        assert preview_player.media.position() == 0
+        settings.start_offset.setValue(40)
+        settings.start_near_end.setChecked(True)
+        settings.close()
     window.export_player.load(None)
     window.command.setFocus()
     window.command.setText("jett")

@@ -395,7 +395,7 @@ class Window(QMainWindow):
         session.addWidget(button("End session", self.end_session))
         session.addStretch()
         editing = self.pages["Editing"][1]
-        self.player = Player()
+        self.player = Player(self.settings)
         self.player.previous.connect(lambda: self.navigate(-1))
         self.player.next.connect(lambda: self.navigate(1))
         editing.addWidget(self.player, 1)
@@ -468,7 +468,7 @@ class Window(QMainWindow):
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
         exporting.addWidget(self.export_project)
-        self.export_player = Player()
+        self.export_player = Player(self.settings)
         self.export_player.previous_button.hide()
         self.export_player.next_button.hide()
         exporting.addWidget(self.export_player, 1)

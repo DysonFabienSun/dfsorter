@@ -108,3 +108,9 @@ process cleanup and the existing regression suite.
 - [x] Editing list footer shows live Kept, Rejected, Undefined and Total counts for the frozen Session, excluding clips outside it.
 - [x] Empty list errors collapse; reduced list margins and a center-column command area allow the left pane to use the full height.
 - [ ] User acceptance of the revised Editing layout.
+
+## Configurable playback start
+
+- [x] Settings → General enables a start offset before the end for clips without a valid I/O range, defaulting to 40 seconds. Both players share the persisted preference; saved In points take priority and short clips start at zero.
+- [x] All 28 UI tests pass, including generated H.264/AV1 playback in both players, configurable offset, disabling, short clips, valid/invalid ranges and settings persistence. Ruff checks pass. Windows emitted a COM diagnostic during window setup; the test run completed successfully.
+- [ ] User acceptance of the playback preference and starting position.

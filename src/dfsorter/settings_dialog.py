@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -7,11 +8,13 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from .playback import start_offset_seconds
 from .theme import role
 
 
@@ -77,13 +80,44 @@ class SettingsDialog(QDialog):
                 controls.addWidget(control)
             body.addLayout(controls)
             tabs.addTab(page, title)
-        future = QLabel("Additional application preferences will appear here in future updates.")
-        future.setWordWrap(True)
-        tabs.addTab(future, "General")
+        general = QWidget()
+        preferences = QVBoxLayout(general)
+        self.start_near_end = QCheckBox("Start videos without a valid I/O range near the end")
+        self.start_near_end.setChecked(window.settings.get("start_near_end_enabled", True))
+        preferences.addWidget(self.start_near_end)
+        offset_row = QHBoxLayout()
+        offset_label = QLabel("Start before the end:")
+        self.start_offset = QSpinBox()
+        self.start_offset.setRange(1, 86400)
+        self.start_offset.setSuffix(" s")
+        self.start_offset.setValue(start_offset_seconds(window.settings))
+        self.start_offset.setEnabled(self.start_near_end.isChecked())
+        offset_label.setBuddy(self.start_offset)
+        offset_row.addWidget(offset_label)
+        offset_row.addWidget(self.start_offset)
+        offset_row.addStretch()
+        preferences.addLayout(offset_row)
+        explanation = QLabel(
+            "Applies to videos opened in any panel. Saved I/O ranges start at the In point. "
+            "Shorter videos start at the beginning. Changes are saved automatically and "
+            "apply the next time a video is opened."
+        )
+        explanation.setWordWrap(True)
+        preferences.addWidget(explanation)
+        preferences.addStretch()
+        self.start_near_end.toggled.connect(self.save_playback_preferences)
+        self.start_offset.valueChanged.connect(self.save_playback_preferences)
+        tabs.addTab(general, "General")
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
         layout.addWidget(close)
         self.refresh()
+
+    def save_playback_preferences(self):
+        self.start_offset.setEnabled(self.start_near_end.isChecked())
+        self.window.settings["start_near_end_enabled"] = self.start_near_end.isChecked()
+        self.window.settings["start_near_end_seconds"] = self.start_offset.value()
+        self.window.save_settings()
 
     def refresh(self):
         for listing, source in [
