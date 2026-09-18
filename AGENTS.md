@@ -6,6 +6,12 @@
 - Use `uv` to manage Python environments and dependencies and to run Python commands.
 - This machine is behind the PRC's internet firewalls. Use the `proxy_on` and `proxy_off` commands from the default PowerShell profile when accessing the broader internet. Load the profile explicitly if the shell was started without it, enable the proxy before network access, and disable it afterward in a `finally` block.
 
+## Icon Assets
+
+- The main Lucide icon library is `node_modules/lucide-static/icons` relative to this repository. Search it when choosing icons; available choices are not limited to the existing application assets.
+- Copy only icons actually used by the application into `resources/icons`, retaining the icon license. Do not copy, bundle, or preload the entire library into the app.
+- Keep runtime icon loading on demand through the existing `icon()` helper in `src/dfsorter/widgets.py`.
+
 ## Specification and Clarification
 
 - Follow `specs/dfsorter-specs-clean.md` for all project work.

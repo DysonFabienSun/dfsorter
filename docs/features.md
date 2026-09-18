@@ -121,3 +121,37 @@ process cleanup and the existing regression suite.
 - [x] Renamed Add selected clips to Add to project; updated shortcut hint, help and specification.
 - [x] All 29 UI tests and Ruff checks pass, including active-project gating, input-mode isolation, existing Keep/Discard clips, duplicate membership, final-clip behavior and draft preservation. Windows emitted the previously observed COM diagnostic during setup; the suite completed successfully.
 - [ ] User acceptance of the player button layout.
+
+## Next undefined navigation
+
+- [x] Editing-only Next undefined clip button above the left clip list uses the Lucide arrow-down-to-dot icon copied from the local source library. Navigation preserves verdicts and drafts, skips decided clips and never wraps.
+- [x] Focused navigation and verdict-advance regressions pass (2 tests), as do Ruff checks. The previously observed Windows COM setup diagnostic did not prevent completion.
+- [ ] User acceptance of button placement and appearance.
+
+## Compact Editing controls
+
+- [x] Session clips header balances its left label with a compact next-undefined icon on the right, shown only in Editing.
+- [x] Add to project + Next uses a folder-plus icon and descriptive Ctrl+Enter tooltip, separated from range/share actions by a vertical rule. Removed the separate range text; the timeline retains saved and pending markers.
+- [x] All 30 UI tests passed for the player changes; all 3 affected UI regressions passed again after the header change. Ruff checks pass.
+- [ ] User acceptance of the revised header and player controls.
+
+## Connected workspace navigation
+
+- [x] Continuous dark navigation strip with 14 px labels, rectangular tabs and a cyan top edge on the selected tab; workspace-colored fill and bottom edge connect the active tab to the content. Projects and Settings remain right-aligned utilities.
+- [x] Session clips uses 14 px semibold primary text, a transparent header and an inset matching clip-title text; the action aligns to the card's right edge.
+- [x] All 30 UI regressions and Ruff checks pass. Inspected the updated Editing screenshot in cache/verification/session-counts/editing.png for alignment and tab rendering.
+- [ ] User acceptance and full multi-DPI visual review of the new navigation.
+
+## Navigation spacing correction
+
+- [x] Removed the inherited 12 px gap above the navigation. The strip now spans the window directly beneath the menu bar; the workspace has a separate 12 px inset below it.
+- [x] Inspected the regenerated Editing screenshot for the menu/strip connection and workspace spacing. Ruff checks pass.
+- [ ] User acceptance of the adjusted spacing.
+
+## Menu removal and navigation utilities
+
+- [x] Removed the menu bar. The cog opens Settings and the remaining menu-only clip, deletion, layout and exit actions; existing page controls retain other operations.
+- [x] Undo/Redo use local Lucide undo-2/redo-2 icons left of Projects, with a 16 px group gap. Ctrl+Z and Ctrl+Shift+Z operate catalogue undo/redo in review; command input retains text undo/redo. Ctrl+Q remains available.
+- [x] Projects and the cog share a centered 28 px height. Inspected the regenerated Editing screenshot.
+- [x] Focused checks pass for menu removal, retained actions, keyboard/button undo/redo and utility alignment. Final full UI run: 30 passed, one playback text-focus assertion failed; both playback tests passed on isolated rerun. Earlier runs also showed intermittent startup/focus failures. Ruff and diff checks pass.
+- [ ] User acceptance of the simplified navigation and cog menu.

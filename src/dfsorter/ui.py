@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressDialog,
@@ -47,6 +48,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -139,7 +141,13 @@ class Window(QMainWindow):
         self.resize(1400, 918)
         central, outer = page()
         self.setCentralWidget(central)
-        navigation = QHBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.navigation_strip = QWidget()
+        self.navigation_strip.setObjectName("navigationStrip")
+        navigation = QHBoxLayout(self.navigation_strip)
+        navigation.setContentsMargins(SIZES["panel_padding"], 0, 4, 0)
+        navigation.setSpacing(0)
         self.nav = {}
         for name in ["Home", "Import", "Session", "Editing", "Export", "Config"]:
             self.nav[name] = button(name, lambda checked=False, name=name: self.panel(name))
@@ -148,15 +156,33 @@ class Window(QMainWindow):
             self.nav[name].setFocusPolicy(Qt.FocusPolicy.NoFocus)
             navigation.addWidget(self.nav[name])
         navigation.addStretch()
-        self.projects_toggle = tool("panel-right", "Show / hide Projects", self.toggle_projects)
+        self.undo_button = tool("undo-2", "Undo · Ctrl+Z", lambda: self.undo(False))
+        self.redo_button = tool("redo-2", "Redo · Ctrl+Shift+Z", lambda: self.undo(True))
+        navigation.addWidget(self.undo_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(4)
+        navigation.addWidget(self.redo_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(16)
+        self.projects_toggle = button("Projects", self.toggle_projects)
+        self.projects_toggle.setIcon(icon("folder-open"))
+        self.projects_toggle.setToolTip("Show / hide Projects")
+        self.projects_toggle.setAccessibleName("Show / hide Projects")
+        self.projects_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.projects_toggle.setCheckable(True)
-        navigation.addWidget(self.projects_toggle)
-        self.settings_button = tool("settings", "Settings", self.open_settings)
-        navigation.addWidget(self.settings_button)
-        outer.addLayout(navigation)
+        self.projects_toggle.setFixedHeight(SIZES["toolbar"])
+        navigation.addWidget(self.projects_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(8)
+        self.settings_button = tool("settings", "Settings and actions", lambda: None)
+        for control in (self.undo_button, self.redo_button, self.settings_button):
+            control.setProperty("navUtility", True)
+        navigation.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(8)
+        outer.addWidget(self.navigation_strip)
         self.splitter = QSplitter()
         self.splitter.setHandleWidth(1)
-        outer.addWidget(self.splitter, 1)
+        workspace, workspace_layout = page()
+        workspace_layout.setSpacing(0)
+        workspace_layout.addWidget(self.splitter)
+        outer.addWidget(workspace, 1)
         self.left, left_layout = page()
         left_layout.setContentsMargins(8, 4, 8, 4)
         role(self.left, "panel")
@@ -184,6 +210,22 @@ class Window(QMainWindow):
         self.library_error.setWordWrap(True)
         self.library_error.hide()
         left_layout.addWidget(self.library_error)
+        self.session_header = QWidget()
+        session_header_layout = QHBoxLayout(self.session_header)
+        self.session_header.setObjectName("sessionHeader")
+        session_header_layout.setContentsMargins(13, 0, 5, 0)
+        session_heading = QLabel("Session clips")
+        role(session_heading, "paneHeading")
+        session_header_layout.addWidget(session_heading)
+        session_header_layout.addStretch()
+        self.next_undefined_button = tool(
+            "arrow-down-to-dot",
+            "Next undefined clip · Jump ahead without changing verdicts (no wrap)",
+            self.navigate_next_undefined,
+        )
+        session_header_layout.addWidget(self.next_undefined_button)
+        self.session_header.hide()
+        left_layout.addWidget(self.session_header)
         self.library = QListWidget()
         self.library.setMouseTracking(True)
         self.library.setUniformItemSizes(True)
@@ -310,7 +352,7 @@ class Window(QMainWindow):
         for player in (self.player, self.export_player):
             player.loading_started.connect(lambda player=player: self.player_loading(player))
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
-        self.build_menus()
+        self.build_settings_menu()
         QApplication.instance().installEventFilter(self)
         self.refresh_references()
         self.panel("Home")
@@ -446,9 +488,6 @@ class Window(QMainWindow):
         self.technical.setPlaceholderText("Technical condition (optional)")
         self.technical.editingFinished.connect(self.save_technical)
         editing.addWidget(self.technical)
-        self.range_label = QLabel("No In/Out range")
-        self.range_label.setWordWrap(True)
-        self.player.controls.addWidget(self.range_label)
         controls = self.player.controls
         for text, callback in [
             ("Set In", self.mark_in),
@@ -464,8 +503,15 @@ class Window(QMainWindow):
             }
             label = {"Set In": "Set In · I", "Set Out": "Set Out · O"}.get(text, text)
             controls.addWidget(tool(names[text], label, callback))
-        self.add_project_next = button("Add to project + Next", self.add_to_project_next)
-        self.add_project_next.setToolTip("Add to active project + Next · Ctrl+Enter (review mode)")
+        project_separator = QWidget()
+        project_separator.setFixedSize(1, 20)
+        project_separator.setStyleSheet(f"background: {COLORS['separator']};")
+        controls.addWidget(project_separator, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.add_project_next = tool(
+            "folder-plus",
+            "Add to project + Next · Ctrl+Enter (review mode)",
+            self.add_to_project_next,
+        )
         self.add_project_next.setEnabled(False)
         controls.addWidget(self.add_project_next)
         exporting = self.pages["Export"][1]
@@ -501,35 +547,43 @@ class Window(QMainWindow):
         configuration.addWidget(button("Open game YAML folder", self.open_configs))
         configuration.addWidget(button("Reload configurations", self.reload_configs))
 
-    def build_menus(self):
-        menus = {
-            name: self.menuBar().addMenu(name)
-            for name in ["File", "Edit", "Clip", "View", "Window"]
-        }
+    def build_settings_menu(self):
+        self.settings_menu = QMenu(self)
         actions = [
-            ("File", "New project", self.new_project, None),
-            ("File", "Add capture folder", self.add_folder, None),
-            ("File", "Share selected clip", self.share, None),
-            ("File", "Project Export", lambda: self.panel("Export"), None),
-            ("File", "Delete rejected originals…", self.delete_rejected, None),
-            ("File", "Exit", self.close, "Ctrl+Q"),
-            ("Edit", "Undo", lambda: self.undo(False), "Ctrl+Z"),
-            ("Edit", "Redo", lambda: self.undo(True), "Ctrl+Y"),
-            ("Edit", "Game configuration files", self.open_configs, None),
-            ("Edit", "Settings", self.open_settings, None),
-            ("Clip", "Reset user metadata", self.reset_metadata, None),
-            ("Clip", "Change game", self.change_game, None),
-            ("Clip", "Edit technical condition…", self.edit_technical, None),
-            ("View", "Play / pause", lambda: self.active_player().toggle(), None),
-            ("View", "Mute / unmute", lambda: self.active_player().mute.toggle(), None),
-            ("Window", "Reset window and panes", self.reset_layout, None),
+            ("Settings…", self.open_settings, None),
+            None,
+            ("Reset clip metadata…", self.reset_metadata, None),
+            ("Edit technical condition…", self.edit_technical, None),
+            None,
+            ("Delete rejected originals…", self.delete_rejected, None),
+            ("Reset window and panes", self.reset_layout, None),
+            None,
+            ("Exit", self.close, "Ctrl+Q"),
         ]
-        for menu, name, callback, shortcut in actions:
+        for entry in actions:
+            if entry is None:
+                self.settings_menu.addSeparator()
+                continue
+            name, callback, shortcut = entry
             action = QAction(name, self)
             action.triggered.connect(callback)
             if shortcut:
                 action.setShortcut(shortcut)
-            menus[menu].addAction(action)
+            self.addAction(action)
+            self.settings_menu.addAction(action)
+        for name, callback, shortcut in [
+            ("Undo", lambda: self.undo(False), "Ctrl+Z"),
+            ("Redo", lambda: self.undo(True), "Ctrl+Shift+Z"),
+        ]:
+            action = QAction(name, self)
+            action.triggered.connect(callback)
+            action.setShortcut(shortcut)
+            self.addAction(action)
+        self.settings_button.setMenu(self.settings_menu)
+        self.settings_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.settings_button.setObjectName("settingsMenuButton")
+        self.settings_button.ensurePolished()
+        self.settings_button.setFixedSize(SIZES["toolbar"], SIZES["toolbar"])
 
     def error(self, message):
         logging.error("%s", message)
@@ -691,6 +745,7 @@ class Window(QMainWindow):
         self.command.setEnabled(name == "Editing")
         self.shortcut_hint.setVisible(name == "Editing")
         self.field_reminder.hide()
+        self.session_header.setVisible(name == "Editing")
         self.search.setVisible(name not in {"Editing", "Export"})
         self.filters.setVisible(name not in {"Editing", "Export"})
         self.library.setSelectionMode(
@@ -1030,11 +1085,6 @@ class Window(QMainWindow):
         self.description.setVisible(bool((clip["description"] or "").strip()))
         self.technical.setText(clip["technical_condition"] or "")
         self.technical.setVisible(bool(clip["technical_condition"]))
-        self.range_label.setText(
-            f"In {clip['in_ms'] / 1000:.3f}s → Out {clip['out_ms'] / 1000:.3f}s"
-            if clip["in_ms"] is not None
-            else "No In/Out range"
-        )
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
         self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
@@ -1199,6 +1249,24 @@ class Window(QMainWindow):
         except (ValueError, OSError) as error:
             self.error(error)
 
+    def navigate_next_undefined(self):
+        session = self.catalogue.state("session")
+        if self.current_panel != "Editing" or not session:
+            return
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        next_id = next(
+            (
+                clip_id
+                for clip_id in session["ids"][session["index"] + 1 :]
+                if clips[clip_id]["triage"] is None
+            ),
+            None,
+        )
+        if next_id is not None:
+            self.switch_editing_clip(next_id, ensure_visible=True)
+        else:
+            self.statusBar().showMessage("No undefined clips ahead in this session.", 12000)
+
     def navigate(self, offset):
         session = self.catalogue.state("session")
         if not session:
@@ -1330,6 +1398,12 @@ class Window(QMainWindow):
                     )
                 return True
         if text_editing:
+            if key == Qt.Key.Key_Z and modifiers == (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+            ):
+                editor = focus.lineEdit() if isinstance(focus, QSpinBox) else focus
+                editor.redo()
+                return True
             return super().eventFilter(watched, event)
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
@@ -1391,9 +1465,6 @@ class Window(QMainWindow):
             self.pending_in = self.player.media.position()
             self.player.seek.pending_in = self.pending_in
             self.player.seek.update()
-            self.range_label.setText(
-                f"Pending In {self.pending_in / 1000:.3f}s — set Out to save; stored range unchanged"
-            )
 
     def mark_out(self):
         if self.current_panel != "Editing" or not self.current_id:

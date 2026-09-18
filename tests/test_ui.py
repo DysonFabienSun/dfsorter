@@ -308,10 +308,10 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.catalogue.clip(ids[0])["description"] == "Notes <keep literal>"
     window.edit({"description": None})
     assert window.description.isHidden()
-    assert window.range_label.parentWidget() is window.player
+    assert window.add_project_next.parentWidget() is window.player
     application.processEvents()
     assert window.library_error.isHidden()
-    assert window.library.geometry().top() <= 8
+    assert window.session_header.geometry().bottom() < window.library.geometry().top()
     assert window.left.height() == window.center_column.height()
     assert window.session_counts.geometry().bottom() >= window.left.height() - 8
     artifact = ROOT / "cache/verification/session-counts"
@@ -564,6 +564,12 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
     QTest.keyClicks(window.command, "jett")
     QTest.keyClick(window.command, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
     assert window.command.text() == ""
+    QTest.keyClick(
+        window.command,
+        Qt.Key.Key_Z,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert window.command.text() == "jett"
     assert window.catalogue.clip(ids[0])["rating"] == 4
     window.refresh_library()
     application.processEvents()
@@ -940,3 +946,72 @@ def test_add_project_next_requires_active_and_preserves_triage(window, applicati
     assert window.command.text() == "unfinished note"
     window.deactivate()
     assert not window.add_project_next.isEnabled()
+
+
+def test_next_undefined_navigation_is_editing_only(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]
+    window.catalogue.ingest(
+        folder["folder_id"],
+        [{"path": str(tmp_path / "captures" / f"next-{i}.mp4"), "game": None} for i in range(3)],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    window.catalogue.patch(ids[1], {"triage": "keep"})
+    window.catalogue.patch(ids[2], {"triage": "discard"})
+    window.panel("Editing")
+    assert not window.session_header.isHidden()
+    window.command.setText("draft")
+    window.next_undefined_button.click()
+    assert window.current_id == ids[3]
+    assert window.catalogue.clip(ids[0])["triage"] is None
+    window.next_undefined_button.click()
+    assert window.current_id == ids[3]
+    assert "No undefined clips ahead" in window.statusBar().currentMessage()
+    window.navigate(-3)
+    assert window.command.text() == "draft"
+    for panel in ["Home", "Import", "Session", "Export", "Config"]:
+        window.panel(panel)
+        assert window.session_header.isHidden()
+
+
+def test_settings_cog_preserves_actions_without_menu_bar(window, application, tmp_path):
+    from PySide6.QtWidgets import QMenuBar, QToolButton
+
+    assert not window.findChildren(QMenuBar)
+    assert window.settings_button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
+    actions = {action.text(): action for action in window.settings_menu.actions()}
+    assert {
+        "Settings…",
+        "Reset clip metadata…",
+        "Edit technical condition…",
+        "Delete rejected originals…",
+        "Reset window and panes",
+        "Exit",
+    } <= actions.keys()
+    assert actions["Exit"].shortcut().toString() == "Ctrl+Q"
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.edit({"rating": 4})
+    window.review_mode()
+    QTest.keyClick(window.player, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    QTest.keyClick(
+        window.player,
+        Qt.Key.Key_Z,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    assert "Undo" not in actions and "Redo" not in actions
+    window.undo_button.click()
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    window.redo_button.click()
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    assert window.projects_toggle.height() == window.settings_button.height()
+    assert (
+        abs(
+            window.projects_toggle.geometry().center().y()
+            - window.settings_button.geometry().center().y()
+        )
+        <= 1
+    )

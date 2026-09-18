@@ -90,6 +90,8 @@ def stylesheet():
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
         QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
+        QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
+        QWidget#sessionHeader { background: transparent; }
         QLabel#workingTitle { font-size: %(font_lg)spx; font-weight: 600; }
         QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {
             background: %(bg_input)s; border: 1px solid %(border_subtle)s;
@@ -119,11 +121,27 @@ def stylesheet():
         QPushButton[role="discard"]:checked { background: %(danger_muted)s; color: %(danger)s; border-color: %(danger)s; }
         QPushButton[role="undefined"]:checked { background: %(bg_surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
         QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 1px solid %(accent_focus)s; }
+        QToolButton#settingsMenuButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
-        QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent;
-            color: %(text_muted)s; padding: 0px 12px; min-height: 32px; }
+        QWidget#navigationStrip { background: %(bg_panel)s; border-bottom: 1px solid %(separator)s; }
+        QToolButton[navUtility="true"] { padding: 3px 2px 1px 2px; }
+        QPushButton#navigation {
+            background: transparent; border: 1px solid transparent;
+            border-top: 2px solid transparent; border-bottom: 1px solid %(separator)s;
+            border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx;
+            font-weight: 500; padding: 0px 16px; min-height: 33px;
+        }
         QPushButton#navigation:hover { color: %(text_primary)s; background: %(bg_surface)s; }
-        QPushButton#navigation:checked { color: %(text_primary)s; border-bottom-color: %(accent)s; }
+        QPushButton#navigation:checked {
+            background: %(bg_app)s; color: %(text_primary)s; font-weight: 600;
+            border-left-color: %(separator)s; border-right-color: %(separator)s;
+            border-top-color: %(accent)s; border-bottom-color: %(bg_app)s;
+        }
+        QPushButton#navigation:disabled {
+            background: transparent; color: %(text_disabled)s;
+            border-top-color: transparent; border-left-color: transparent;
+            border-right-color: transparent;
+        }
         QListWidget { background: %(bg_panel)s; border: none; padding: 4px; outline: none; }
         QListWidget::item { padding: 4px; }
         QListWidget::item:selected { background: %(accent_selection)s; color: %(text_primary)s; }

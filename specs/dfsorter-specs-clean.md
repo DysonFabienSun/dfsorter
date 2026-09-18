@@ -301,21 +301,15 @@ Use the application-wide dark design system in §20. A light theme is not requir
 
 Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls, reset its scroll position, or restart an already selected clip. Keyboard navigation scrolls only enough to reveal its destination. Necessary library rebuilds retain surviving selections and the viewport anchor where possible. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
-### 9.2 Menu Bar
+### 9.2 Settings and Actions
 
-The Windows-style menu bar contains:
+There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Reset clip metadata…, Edit technical condition…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Projects and the settings cog use matching 28 px heights and are vertically centered in the strip. Undo, Redo and settings icon artwork is optically offset 1 px downward within its button.
 
-- **File**: projects, capture folders, and application-level file operations.
-- **Edit**: undo/redo and access to game configuration files.
-- **Clip**: clip-level operations such as resetting user metadata or manually changing game assignment.
-- **View**: video/playback-related controls.
-- **Window**: reset the application window and pane layout to defaults.
-
-Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations require explicit confirmation.
+Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations retain explicit confirmation.
 
 ### 9.3 Panel Navigation
 
-Below the menu bar, provide a restrained six-destination navigation strip with a cyan active underline:
+At the top of the window, provide a restrained six-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
 
 1. Home
 2. Import
@@ -324,14 +318,14 @@ Below the menu bar, provide a restrained six-destination navigation strip with a
 5. Export
 6. Config
 
-The menu bar and panel-navigation row are present on every panel.
+The panel-navigation row and settings cog are present on every panel.
 
 ### 9.4 Pane Layout
 
 The application uses a Premiere-inspired three-pane layout where relevant.
 
 - The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible toggle controls it; manual visibility overrides are remembered separately for normal/maximized states for the current run. Export and Config always hide it. Reset Layout restores defaults.
+- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible **Projects** toggle with a folder icon controls it and is highlighted while the pane is open; manual visibility overrides are remembered separately for normal/maximized states for the current run. Export and Config always hide it. Reset Layout restores defaults.
 - Both panes are manually resizable using splitters.
 - Resizing/maximizing the window primarily gives additional width to the center pane.
 - User-adjusted pane widths are not persisted across application restarts.
@@ -504,7 +498,7 @@ Once locked, Session membership and ordering do not change because metadata or s
 
 The Session stores the current clip index across application restarts.
 
-While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters.
+While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters. An Editing-only header above the clip list shows **Session clips** on the left and a compact icon-only **Next undefined clip** button on the right, with a downward navigation icon and an explanatory tooltip. It jumps to the next undefined clip later in frozen Session order without changing metadata or verdicts, preserving drafts. It does not wrap; if none exists ahead, it stays on the current clip and reports that fact.
 
 The Session view should display progress and the proportions/counts of:
 
@@ -550,9 +544,9 @@ VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
 
 The `mainline` portion is visually emphasized in the UI.
 
-Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. Technical condition appears only when populated; **Clip → Edit technical condition…** adds or changes it.
+Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. Technical condition appears only when populated; **Settings cog → Edit technical condition…** adds or changes it.
 
-Description text is secondary and is never automatically appended to the working title. There is no dedicated description editor or Save description button. The In/Out summary and Set In, Set Out, Clear range and Share actions sit on the right of the playback-controls row immediately beneath the video timeline.
+Description text is secondary and is never automatically appended to the working title. There is no dedicated description editor or Save description button. Set In, Set Out, Clear range and Share icon actions sit on the right of the playback-controls row immediately beneath the video timeline. A vertical divider separates them from the icon-only Add to project + Next action, whose tooltip includes Ctrl+Enter. In/Out state is shown on the timeline without a separate range text display.
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
@@ -566,7 +560,7 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - `/` or Enter enters metadata input without inserting text or submitting a retained draft. Slash commands are not supported.
 - Every text field consumes normal editing keys, including Space and Backspace when empty.
 - Enter submits commands only in command-input mode and returns to review on success; invalid commands retain input focus and text. Shift+Enter never submits and advances only in review mode. Escape returns to review preserving the draft.
-- Ctrl+Enter in review mode adds the current clip to the active project and advances one position in frozen Session order regardless of triage. It requires an active project, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without an active project. The Projects menu retains **Add to project** for the current selection (one clip in Editing, potentially multiple in other library views).
+- Ctrl+Enter in review mode adds the current clip to the active project and advances one position in frozen Session order regardless of triage. It requires an active project, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible icon-only **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without an active project. The Projects menu retains **Add to project** for the current selection (one clip in Editing, potentially multiple in other library views).
 - Unsubmitted metadata drafts are retained per clip for this run, including across panel changes; they are not persisted on restart.
 - A contextual hint and `?` button/shortcut explain review/input keys and the watch, annotate, verdict, advance workflow.
 
@@ -898,7 +892,7 @@ Confirm through a red "Permanently delete originals" button in the preview, enab
 
 ### 19.2 Unified settings
 
-A top-right Lucide settings cog (also Edit → Settings) opens one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General contains the configurable near-end playback start preference (§8). Existing Import and project-pane controls remain available.
+The top-right Lucide settings cog provides Settings… to open one dialog with Capture folders and Projects tabs using existing catalogue operations and confirmations. General contains the configurable near-end playback start preference (§8). Existing Import and project-pane controls remain available.
 
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 
@@ -956,7 +950,7 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 | Toolbar / navigation height | 28 / 34 |
 | Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
 
-Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 16 px semibold, with mainline bold and primary-colored and structured portions in the brighter `text_working_title #C7CDD5` tone. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 16 px semibold, with mainline bold and primary-colored and structured portions in the brighter `text_working_title #C7CDD5` tone. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px, panels 0–3 px. Font metrics take precedence over dimensions where necessary to avoid clipping.
 
@@ -971,7 +965,7 @@ Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cya
 ### 20.5 Component Rules
 
 - Neutral buttons use surface/hover/pressed colors and default borders. Primary actions use accent-muted fill and accent border sparingly. Destructive buttons use danger text/border with danger-muted fill. Disabled controls use panel background, subtle border and disabled text/icon colors; avoid fading whole widgets into illegibility.
-- Navigation tabs have transparent inactive backgrounds and muted text, surface hover, and primary active text with a 2 px cyan underline.
+- Navigation sits at the top of the application with no menu bar or outer top gap; the workspace beneath it has its own 12 px inset. Navigation uses a continuous dark strip with a bottom divider and compact rectangular text-only tabs. Labels are 14 px medium; active labels are semibold. The active tab matches the workspace background with a straight 2 px cyan top edge, subtle side borders, and no contrasting bottom border. Inactive labels use secondary text and surface hover. Projects and Settings remain right-aligned utilities.
 - Inputs use input background, subtle border, primary text, muted placeholders, default hover border and focus-cyan border. The command bar uses the same idle styling and `command_focus` background when focused. No neon glow or native dotted focus rectangles. Preserve review/input focus semantics.
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Undefined uses pressed-surface/strong-border/secondary-text. Selection reflects stored metadata after edits, navigation and undo/redo.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Delete stays separate in the context menu with confirmation.
