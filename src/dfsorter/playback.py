@@ -172,6 +172,7 @@ class Player(QWidget):
         role(self.status, "warning")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.status.hide()
         self.media.durationChanged.connect(self.seek.setMaximum)
         self.media.positionChanged.connect(self.position)
         self.media.playbackStateChanged.connect(
@@ -190,6 +191,10 @@ class Player(QWidget):
         self.load_timeout.timeout.connect(self.load_timed_out)
         self.loaded_clip = None
         self.retry_load = False
+
+    def set_status(self, message):
+        self.status.setText(message)
+        self.status.setVisible(bool(message))
 
     def begin_scrub(self):
         self.awaiting_frame = False
@@ -248,7 +253,7 @@ class Player(QWidget):
         self.pending_seek = None
         self.media.stop()
         self.video.clear()
-        self.status.clear()
+        self.set_status("")
         self.play.setEnabled(False)
         self.seek.setEnabled(False)
         self.seek.marker_range = (clip["in_ms"], clip["out_ms"]) if clip else (None, None)
@@ -259,7 +264,7 @@ class Player(QWidget):
         self.awaiting_frame = False
         if not clip or not Path(clip["source_path"]).is_file():
             self.media.setSource(QUrl())
-            self.status.setText("Source unavailable" if clip else "No clip selected")
+            self.set_status("Source unavailable" if clip else "No clip selected")
             self.loading_finished.emit()
             return
         self.awaiting_frame = True
@@ -290,7 +295,7 @@ class Player(QWidget):
             self.loading_finished.emit()
 
     def load_error(self, error, message):
-        self.status.setText(message)
+        self.set_status(message)
         self.play.setEnabled(False)
         self.seek.setEnabled(False)
         if self.awaiting_frame:
@@ -304,7 +309,7 @@ class Player(QWidget):
             self.media.stop()
             self.retry_load = True
             self.play.setEnabled(True)
-            self.status.setText("Video preview timed out. Press Play to retry.")
+            self.set_status("Video preview timed out. Press Play to retry.")
             self.loading_finished.emit()
 
     def position(self, milliseconds):

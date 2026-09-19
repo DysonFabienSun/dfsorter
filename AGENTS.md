@@ -13,6 +13,16 @@
 - Once relevant checks pass, do not repeat them unless subsequent code changes affect their results. Scope lint and other checks to changed files where supported.
 - Documentation-only or instruction-only edits require diff review, not runtime tests.
 
+## Application-Wide Style and Font Consistency
+
+- Treat visual consistency across all pages, panes, dialogs, and control states as a requirement for every UI change. Equivalent content and controls must use the same typography and styling unless the user explicitly requests a difference or the canonical specification defines one.
+- Before styling a component, inspect its existing counterpart and shared theme. Reuse typography, colors, spacing, dimensions, alignment, borders, and interaction states from `src/dfsorter/theme.py` and shared widgets rather than inventing page-specific variants.
+- Match font family, size, weight, and color by semantic role. Working titles and game-code prefixes must match the Editing pane wherever they represent the same content, including rich-text spans and filename fallbacks. Check both widget fonts and embedded rich-text styles; matching only one is insufficient.
+- Prefer shared style helpers and theme tokens. Avoid local stylesheets, hard-coded font sizes, or duplicated formatting rules that make equivalent components diverge. Put necessary reusable styling in the shared theme or component.
+- Keep related labels, inputs, buttons, and icons aligned using shared layout rows and columns. Do not calculate fixed input widths from layout size hints before Qt has completed sizing. Preserve intentional spacing and alignment when windows resize or display scaling changes.
+- Verify affected components against their counterparts, including relevant enabled, disabled, hover, selection, and empty states. Use the smallest relevant checks; distinguish window resizing from display scaling when assessing layout.
+- Do not turn a focused UI task into an unsolicited application-wide redesign. Preserve existing approved styling and flag unrelated inconsistencies for separate work.
+
 ## Icon Assets
 
 - The main Lucide icon library is `node_modules/lucide-static/icons` relative to this repository. Search it when choosing icons; available choices are not limited to the existing application assets.

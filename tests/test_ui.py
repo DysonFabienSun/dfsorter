@@ -1715,3 +1715,18 @@ def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch):
     assert not source.exists()
     assert catalogue_dump(window) == before
     assert not window.browse.delete_button.isEnabled()
+
+
+def test_browse_form_alignment_and_title_style(window, application):
+    window.panel("Browse")
+    application.processEvents()
+    browse = window.browse
+    for width in (1100, 1600):
+        window.resize(width, 900)
+        application.processEvents()
+        title_left = browse.custom_title.mapTo(browse, QPoint(0, 0)).x()
+        title_right = title_left + browse.custom_title.width()
+        mode_right = browse.mode.mapTo(browse, QPoint(0, 0)).x() + browse.mode.width()
+        assert title_right == mode_right
+        assert browse.custom_title.width() > browse.destination.width() == 480
+        assert browse.working_title.font() == window.working_title.font()

@@ -232,3 +232,9 @@ process cleanup and the existing regression suite.
 Setup: `pwsh -File .\setup-playback.ps1` installs checksum-verified Windows x64 libmpv and licenses into `runtime/mpv/`. Runtime is installed on this machine; fresh checkouts require setup. No database migration or playback preview files.
 
 Browse follow-up: each page entry selects newest matching clip and resets newest-first sorting. Delete source… confirms permanent deletion of the selected source, retaining catalogue references as unavailable. Targeted checks cover reset, cancellation, selected-source deletion, and changed-file protection.
+
+Browse layout: enlarged working title with square red delete icon alongside; fixed-width title/folder inputs; output folder and Share mode share one row.
+
+Browse spacing: matching 10 px gaps around the Share form; 480 px output path input and custom title spanning the folder/Share row to align right edges.
+
+Browse consistency fix: shared Editing title typography, divider above Share form, and grid-based textbox alignment verified at two window widths.

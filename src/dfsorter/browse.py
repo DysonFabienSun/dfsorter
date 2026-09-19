@@ -7,7 +7,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
-    QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,8 +22,8 @@ from .config import title
 from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
-from .theme import role, title_styles
-from .widgets import tool
+from .theme import COLORS, role, title_styles
+from .widgets import icon, tool
 
 
 class BrowsePage(QWidget):
@@ -40,17 +41,25 @@ class BrowsePage(QWidget):
         layout.addWidget(self.player, 1)
         self.working_title = QLabel()
         self.working_title.setWordWrap(True)
+        self.working_title.setObjectName("workingTitle")
         self.working_title.setTextFormat(Qt.TextFormat.RichText)
         self.filename = QLabel()
         self.filename.setTextFormat(Qt.TextFormat.PlainText)
         self.filename.setWordWrap(True)
         role(self.filename, "secondary")
-        layout.addWidget(self.working_title)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(12)
+        title_row.addWidget(self.working_title, 1)
+        self.delete_button = tool("trash-2", "Delete source…", self.delete_source)
+        self.delete_button.setIcon(icon("trash-2", COLORS["danger"]))
+        self.delete_button.setStyleSheet(
+            f"QToolButton {{ border: 1px solid {COLORS['danger']}; "
+            f"background: {COLORS['danger_muted']}; border-radius: 4px; }}"
+            f"QToolButton:hover {{ border-color: {COLORS['danger_hover']}; }}"
+        )
+        title_row.addWidget(self.delete_button, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(title_row)
         layout.addWidget(self.filename)
-        self.delete_button = QPushButton("Delete source…")
-        role(self.delete_button, "danger")
-        self.delete_button.clicked.connect(self.delete_source)
-        layout.addWidget(self.delete_button)
         self.marker_buttons = []
         for icon_name, label, callback in [
             ("list-start", "Set In · I", lambda: self.mark("in")),
@@ -60,27 +69,39 @@ class BrowsePage(QWidget):
             control = tool(icon_name, label, callback)
             self.player.controls.addWidget(control)
             self.marker_buttons.append(control)
-        form = QFormLayout()
+        form = QGridLayout()
+        form.setVerticalSpacing(10)
+        form.setHorizontalSpacing(6)
+        form.setColumnStretch(5, 1)
         self.custom_title = QLineEdit()
         self.custom_title.setPlaceholderText("Required; .mp4 is appended")
         self.custom_title.setAccessibleName("Custom title")
         self.custom_title.textChanged.connect(self.update_share)
-        form.addRow("Custom title", self.custom_title)
-        folder_row = QHBoxLayout()
+        form.addWidget(QLabel("Custom title"), 0, 0)
+        form.addWidget(self.custom_title, 0, 1, 1, 4)
         self.destination = QLineEdit(window.settings.get("share_folder", ""))
+        self.destination.setFixedWidth(480)
         self.destination.setAccessibleName("Share output folder")
         self.destination.textChanged.connect(self.update_share)
-        folder_row.addWidget(self.destination, 1)
-        choose = QPushButton("Choose folder…")
-        choose.clicked.connect(self.choose_folder)
-        folder_row.addWidget(choose)
-        form.addRow("Output folder", folder_row)
+        form.addWidget(QLabel("Output folder"), 1, 0)
+        form.addWidget(self.destination, 1, 1)
+        choose = tool("folder-open", "Choose output folder…", self.choose_folder)
+        form.addWidget(choose, 1, 2)
         self.mode = QComboBox()
         self.mode.addItem("Whole clip", False)
         self.mode.addItem("Selected range", True)
         self.mode.currentIndexChanged.connect(self.update_share)
-        form.addRow("Share", self.mode)
+        self.mode.setFixedWidth(140)
+        mode_label = QLabel("Share")
+        mode_label.setContentsMargins(12, 0, 0, 0)
+        form.addWidget(mode_label, 1, 3)
+        form.addWidget(self.mode, 1, 4)
+        divider = QFrame()
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(f"background: {COLORS['border_subtle']};")
+        layout.addWidget(divider)
         layout.addLayout(form)
+        layout.addSpacing(10)
         self.range_status = QLabel()
         role(self.range_status, "secondary")
         layout.addWidget(self.range_status)
