@@ -161,6 +161,9 @@ class Window(QMainWindow):
         navigation.addStretch()
         self.undo_button = tool("undo-2", "Undo · Ctrl+Z", lambda: self.undo(False))
         self.redo_button = tool("redo-2", "Redo · Ctrl+Shift+Z", lambda: self.undo(True))
+        self.undo_button.setIcon(icon("undo-2", COLORS["history_available"]))
+        self.redo_button.setIcon(icon("redo-2", COLORS["history_available"]))
+        self.update_history_controls()
         navigation.addWidget(self.undo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
         navigation.addWidget(self.redo_button, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -809,6 +812,7 @@ class Window(QMainWindow):
         self.queue_page_reveal()
 
     def refresh_references(self):
+        self.update_history_controls()
         self.refreshing = True
         projects = self.catalogue.projects()
         active = self.catalogue.state("active_project")
@@ -964,6 +968,7 @@ class Window(QMainWindow):
         )
 
     def refresh_library(self):
+        self.update_history_controls()
         if getattr(self, "settings_dialog", None) is not None:
             self.settings_dialog.refresh()
         if self.refreshing:
@@ -1150,6 +1155,7 @@ class Window(QMainWindow):
         self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
 
     def render_clip(self):
+        self.update_history_controls()
         if not self.current_id:
             return
         clip = self.catalogue.clip(self.current_id)
@@ -1817,6 +1823,7 @@ class Window(QMainWindow):
         ids = [item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()]
         for clip_id in ids:
             self.catalogue.patch(clip_id, {}, membership=(project_id, include))
+        self.update_history_controls()
         if self.current_panel == "Editing":
             self.render_clip()
 
@@ -1910,6 +1917,10 @@ class Window(QMainWindow):
                     self.render_clip()
         except ValueError as error:
             self.error(error)
+
+    def update_history_controls(self):
+        self.undo_button.setEnabled(bool(self.catalogue.undo_stack))
+        self.redo_button.setEnabled(bool(self.catalogue.redo_stack))
 
     def undo(self, redo=False):
         self.catalogue.undo(redo)

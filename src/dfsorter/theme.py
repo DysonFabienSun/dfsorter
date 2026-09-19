@@ -16,6 +16,7 @@ COLORS = {
     "separator": "#303741",
     "text_primary": "#E6E9ED",
     "text_secondary": "#A9B0BA",
+    "history_available": "#B8BFC9",
     "text_working_title": "#C7CDD5",
     "text_muted": "#77808C",
     "text_disabled": "#59616C",

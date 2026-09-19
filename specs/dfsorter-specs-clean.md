@@ -866,6 +866,8 @@ Configuration changes must never silently delete existing clip metadata.
 
 Undo/redo is intentionally narrow.
 
+Navigation Undo and Redo icons independently reflect their catalogue history stacks: available actions use slightly brighter neutral artwork (`#B8BFC9`); unavailable actions are disabled with dim gray artwork (`#59616C`). Refresh availability after edits, undo/redo, and history clearing. Preserve native text-input undo/redo.
+
 The normal undo stack covers user metadata operations performed during the current application run, including:
 
 - structured metadata changes;

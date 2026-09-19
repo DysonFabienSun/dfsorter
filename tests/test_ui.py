@@ -1375,6 +1375,51 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     )
 
 
+def test_history_controls_availability(window, tmp_path):
+    from PySide6.QtGui import QIcon
+
+    from dfsorter.theme import COLORS
+
+    def available(undo, redo):
+        assert window.undo_button.isEnabled() is undo
+        assert window.redo_button.isEnabled() is redo
+
+    available(False, False)
+    for control in (window.undo_button, window.redo_button):
+        for mode, color in [
+            (QIcon.Mode.Normal, COLORS["history_available"]),
+            (QIcon.Mode.Disabled, COLORS["text_disabled"]),
+        ]:
+            image = control.icon().pixmap(16, 16, mode).toImage()
+            pixels = [image.pixelColor(x, y) for x in range(16) for y in range(16)]
+            assert max(pixels, key=lambda pixel: pixel.alpha()).name() == color.lower()
+    add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.edit({"rating": 4})
+    available(True, False)
+    window.undo_button.click()
+    available(False, True)
+    window.redo_button.click()
+    available(True, False)
+    window.edit({"rating": 5})
+    window.undo()
+    available(True, True)
+    window.edit({"rating": 3})
+    available(True, False)
+    while window.catalogue.undo_stack:
+        window.undo()
+    window.panel("Import")
+    project = window.catalogue.save_project("History controls")
+    window.refresh_references()
+    window.projects.setCurrentRow(0)
+    window.library.setCurrentRow(0)
+    window.membership(True)
+    available(True, False)
+    window.catalogue.delete_project(project)
+    window.refresh_references()
+    available(False, False)
+
+
 def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatch):
     import yaml
     from PySide6.QtGui import QTextDocument
