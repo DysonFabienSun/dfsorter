@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .browse import BrowsePage
 from .catalogue import Catalogue
 from .config import Registry, title
 from .deletion import delete_reviewed, preview
@@ -124,6 +125,8 @@ class Window(QMainWindow):
                 self.settings = {}
         self.current_id = None
         self.current_panel = "Home"
+        self.browse_newest = True
+        self.browse_id = None
         self.history = defaultdict(list)
         self.drafts = {}
         self.pane_overrides = {}
@@ -152,7 +155,7 @@ class Window(QMainWindow):
         navigation.setContentsMargins(SIZES["panel_padding"], 0, 4, 0)
         navigation.setSpacing(0)
         self.nav = {}
-        for name in ["Home", "Import", "Session", "Editing", "Export", "Config"]:
+        for name in ["Home", "Browse", "Import", "Session", "Editing", "Export", "Config"]:
             self.nav[name] = button(name, lambda checked=False, name=name: self.panel(name))
             self.nav[name].setObjectName("navigation")
             self.nav[name].setCheckable(True)
@@ -212,6 +215,25 @@ class Window(QMainWindow):
             filter_layout.addWidget(control)
             control.currentIndexChanged.connect(self.refresh_library)
         left_layout.addWidget(self.filters)
+        self.browse_filters, browse_filters_layout = page()
+        browse_filters_layout.setContentsMargins(0, 0, 0, 0)
+        self.browse_search = QLineEdit()
+        self.browse_search.setPlaceholderText("Search clips")
+        self.browse_search.returnPressed.connect(self.refresh_library)
+        browse_filters_layout.addWidget(self.browse_search)
+        self.browse_game = QComboBox()
+        self.browse_game.addItem("All games", None)
+        self.browse_game.currentIndexChanged.connect(self.refresh_library)
+        browse_filters_layout.addWidget(self.browse_game)
+        browse_header = QHBoxLayout()
+        browse_header.setContentsMargins(13, 0, 5, 0)
+        browse_title = QLabel("Library clips")
+        role(browse_title, "paneHeading")
+        browse_header.addWidget(browse_title, 1)
+        self.browse_sort = tool("arrow-down-up", "Newest first · Switch to oldest first", self.toggle_browse_sort)
+        browse_header.addWidget(self.browse_sort)
+        browse_filters_layout.addLayout(browse_header)
+        left_layout.addWidget(self.browse_filters)
         self.library_error = QLabel()
         role(self.library_error, "error")
         self.library_error.setWordWrap(True)
@@ -377,7 +399,7 @@ class Window(QMainWindow):
         self.command_cover = QWidget(self.command_area)
         self.command_cover.setStyleSheet(f"background: {COLORS['bg_app']};")
         self.command_cover.hide()
-        for player in (self.player, self.export_player):
+        for player in (self.player, self.export_player, self.browse.player):
             player.loading_started.connect(lambda player=player: self.player_loading(player))
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_settings_menu()
@@ -393,10 +415,12 @@ class Window(QMainWindow):
         QTimer.singleShot(0, self.rescan)
 
     def build_pages(self):
-        for name in ["Home", "Import", "Session", "Editing", "Export", "Config"]:
+        for name in ["Home", "Browse", "Import", "Session", "Editing", "Export", "Config"]:
             widget, layout = page()
             self.pages[name] = (widget, layout)
             self.center.addWidget(widget)
+        self.browse = BrowsePage(self)
+        self.pages["Browse"][1].addWidget(self.browse)
         home = self.pages["Home"][1]
         home_title = QLabel("Capture folders")
         role(home_title, "heading")
@@ -593,6 +617,7 @@ class Window(QMainWindow):
 
     def build_settings_menu(self):
         self.settings_menu = QMenu(self)
+        self.browse_write_actions = []
         actions = [
             ("Settings…", self.open_settings, None),
             ("Capture folders…", lambda: self.panel("Home"), None),
@@ -612,6 +637,8 @@ class Window(QMainWindow):
             name, callback, shortcut = entry
             action = QAction(name, self)
             action.triggered.connect(callback)
+            if name in {"Settings…", "Reset clip metadata…", "Edit tag…", "Delete rejected originals…"}:
+                self.browse_write_actions.append(action)
             if shortcut:
                 action.setShortcut(shortcut)
             self.addAction(action)
@@ -637,6 +664,8 @@ class Window(QMainWindow):
         self.command_error.setVisible(bool(str(message)))
 
     def open_settings(self):
+        if self.current_panel == "Browse":
+            return
         dialog = SettingsDialog(self)
         self.settings_dialog = dialog
         dialog.exec()
@@ -644,6 +673,8 @@ class Window(QMainWindow):
         dialog.deleteLater()
 
     def delete_rejected(self):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -655,6 +686,8 @@ class Window(QMainWindow):
         )
 
     def review_deletion(self, candidates):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             QTimer.singleShot(25, lambda: self.review_deletion(candidates))
             return
@@ -713,11 +746,11 @@ class Window(QMainWindow):
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     def player_loading(self, player):
-        if self.current_panel in {"Editing", "Export"} and player is self.active_player():
+        if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
             self.begin_page_transition("clip")
 
     def player_ready(self, player):
-        if self.current_panel in {"Editing", "Export"} and player is self.active_player():
+        if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
             self.queue_page_reveal()
 
     def position_transition_covers(self):
@@ -738,7 +771,7 @@ class Window(QMainWindow):
             self.transition_pending = True
             self.loading_label.hide()
             self.loading_indicator_timer.start()
-        for player in (self.player, self.export_player):
+        for player in (self.player, self.export_player, self.browse.player):
             policy = player.video.sizePolicy()
             policy.setRetainSizeWhenHidden(True)
             player.video.setSizePolicy(policy)
@@ -758,14 +791,14 @@ class Window(QMainWindow):
     def reveal_page(self, generation):
         if generation != self.transition_generation or not self.transition_pending:
             return
-        if self.current_panel in {"Editing", "Export"} and self.active_player().awaiting_frame:
+        if self.current_panel in {"Browse", "Editing", "Export"} and self.active_player().awaiting_frame:
             return
         self.loading_indicator_timer.stop()
         self.transition_pending = False
         self.transition_cover.hide()
         self.command_cover.hide()
         self.centralWidget().layout().activate()
-        for player in (self.player, self.export_player):
+        for player in (self.player, self.export_player, self.browse.player):
             player.video.show()
 
     def resizeEvent(self, event):
@@ -784,6 +817,9 @@ class Window(QMainWindow):
         self.cancel_space()
         self.player.media.pause()
         self.export_player.media.pause()
+        self.browse.player.media.pause()
+        if self.current_panel == "Browse" and name != "Browse":
+            self.browse.leave()
         self.current_panel = name
         self.center.setCurrentWidget(self.pages[name][0])
         self.update_projects_visibility()
@@ -794,11 +830,12 @@ class Window(QMainWindow):
         self.shortcut_hint.setVisible(name == "Editing")
         self.field_reminder.hide()
         self.session_header.setVisible(name == "Editing")
-        self.search.setVisible(name not in {"Editing", "Export"})
-        self.filters.setVisible(name not in {"Editing", "Export"})
+        self.search.setVisible(name not in {"Browse", "Editing", "Export"})
+        self.filters.setVisible(name not in {"Browse", "Editing", "Export"})
+        self.browse_filters.setVisible(name == "Browse")
         self.library.setSelectionMode(
             QListWidget.SelectionMode.SingleSelection
-            if name == "Editing"
+            if name in {"Browse", "Editing"}
             else QListWidget.SelectionMode.ExtendedSelection
         )
         self.refresh_references()
@@ -855,6 +892,15 @@ class Window(QMainWindow):
         for name in self.registry.games:
             self.game_filter.addItem(name, name)
         self.game_filter.setCurrentIndex(max(0, self.game_filter.findData(selected)))
+        selected = self.browse_game.currentData()
+        self.browse_game.blockSignals(True)
+        self.browse_game.clear()
+        self.browse_game.addItem("All games", None)
+        self.browse_game.addItem("Unassigned", "")
+        for name in self.registry.games:
+            self.browse_game.addItem(name, name)
+        self.browse_game.setCurrentIndex(max(0, self.browse_game.findData(selected)))
+        self.browse_game.blockSignals(False)
         folder_selection = self.selected_id(self.folders)
         self.folders.clear()
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
@@ -943,9 +989,26 @@ class Window(QMainWindow):
             lowercase=self.settings.get("lowercase_generated_titles", True),
             mainline_separator=" | ",
         )
-        item.setText(
-            f"{card_title}\n{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}{available}"
-        )
+        browse_details = None
+        if self.current_panel == "Browse":
+            from datetime import datetime
+
+            captured = self.browse_sort_key(clip)[0]
+            try:
+                captured = datetime.fromisoformat(captured.replace("Z", "+00:00")).astimezone().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                captured = captured or "Date unavailable"
+            source = Path(clip["source_path"])
+            folder_name = next(
+                (Path(folder["path"]).name for folder in self.catalogue.folders()
+                 if source.is_relative_to(Path(folder["path"]))),
+                "Unlinked",
+            )
+            browse_details = f"{captured} · {folder_name}"
+        details = browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}"
+        item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])
         item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
         item.setData(
@@ -961,11 +1024,38 @@ class Window(QMainWindow):
                     rich_styles=title_styles(card=True),
                     mainline_separator=" | ",
                 ),
+                "browse_details": browse_details,
                 "game": clip["game"],
                 "triage": clip["triage"],
                 "unavailable": bool(available),
             },
         )
+
+    def browse_sort_key(self, clip):
+        from datetime import datetime, timezone
+
+        captured = self.media_info.get(clip["source_path"], {}).get("created")
+        if not captured:
+            try:
+                captured = datetime.fromtimestamp(
+                    Path(clip["source_path"]).stat().st_ctime, timezone.utc
+                ).isoformat()
+            except OSError:
+                captured = ""
+        return captured, clip["source_path"]
+
+    def toggle_browse_sort(self):
+        self.browse_newest = not self.browse_newest
+        current, other = ("Newest", "oldest") if self.browse_newest else ("Oldest", "newest")
+        label = f"{current} first · Switch to {other} first"
+        self.browse_sort.setToolTip(label)
+        self.browse_sort.setAccessibleName(label)
+        self.refresh_library()
+
+    def update_browse_navigation(self):
+        row = self.library.currentRow()
+        self.browse.player.previous_button.setEnabled(row > 0)
+        self.browse.player.next_button.setEnabled(0 <= row < self.library.count() - 1)
 
     def refresh_library(self):
         self.update_history_controls()
@@ -982,6 +1072,12 @@ class Window(QMainWindow):
             elif self.current_panel == "Export":
                 ids = self.catalogue.member_ids(self.export_project.currentData())
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
+            elif self.current_panel == "Browse":
+                clips = query_clips(clips, self.browse_search.text(), self.registry)
+                game = self.browse_game.currentData()
+                if game is not None:
+                    clips = [clip for clip in clips if (clip["game"] or "") == game]
+                clips.sort(key=self.browse_sort_key, reverse=self.browse_newest)
             else:
                 clips = query_clips(clips, self.search.text(), self.registry)
                 if self.current_panel == "Session":
@@ -1030,6 +1126,11 @@ class Window(QMainWindow):
                 item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()
             }
             current = self.selected_id(self.library)
+            if self.current_panel == "Browse":
+                current = self.browse_id
+                if current not in {clip["clip_id"] for clip in clips}:
+                    current = clips[0]["clip_id"] if clips else None
+                selected = {current}
             if self.current_panel == "Editing" and self.catalogue.state("session"):
                 session = self.catalogue.state("session")
                 current = session["ids"][session["index"]]
@@ -1058,6 +1159,10 @@ class Window(QMainWindow):
                     break
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
+            if self.current_panel == "Browse":
+                self.browse_id = current
+                self.browse.load(self.catalogue.clip(current) if current else None)
+                self.update_browse_navigation()
             self.library_error.clear()
             self.library_error.hide()
         except ValueError as error:
@@ -1068,7 +1173,12 @@ class Window(QMainWindow):
         if not item:
             return
         clip_id = item.data(Qt.ItemDataRole.UserRole)
-        if self.current_panel == "Editing":
+        if self.current_panel == "Browse":
+            self.cancel_space()
+            self.browse_id = clip_id
+            self.browse.load(self.catalogue.clip(clip_id))
+            self.update_browse_navigation()
+        elif self.current_panel == "Editing":
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
@@ -1120,6 +1230,7 @@ class Window(QMainWindow):
         self.review_mode()
 
     def refresh_title_presentation(self):
+        self.browse.render_title()
         for index in range(self.library.count()):
             item = self.library.item(index)
             clip = self.catalogue.clip(item.data(Qt.ItemDataRole.UserRole))
@@ -1270,6 +1381,8 @@ class Window(QMainWindow):
         )
 
     def edit(self, patch, **kwargs):
+        if self.current_panel == "Browse":
+            return
         if self.current_panel != "Editing" or not self.current_id:
             return
         try:
@@ -1279,6 +1392,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def submit(self):
+        if self.current_panel == "Browse":
+            return
         if self.current_panel != "Editing" or not self.current_id:
             return
         text = self.command.text()
@@ -1305,6 +1420,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def add_to_project_next(self):
+        if self.current_panel == "Browse":
+            return
         if not self.ensure_range_complete():
             return
         project_id = self.catalogue.state("active_project")
@@ -1323,6 +1440,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def advance_review(self):
+        if self.current_panel == "Browse":
+            return
         if self.current_panel != "Editing" or not self.current_id:
             return
         if not self.ensure_range_complete():
@@ -1401,6 +1520,11 @@ class Window(QMainWindow):
             self.statusBar().showMessage("No undefined clips ahead in this session.", 12000)
 
     def navigate(self, offset):
+        if self.current_panel == "Browse":
+            index = self.library.currentRow() + offset
+            if 0 <= index < self.library.count():
+                self.library.setCurrentRow(index)
+            return
         session = self.catalogue.state("session")
         if not session:
             return
@@ -1408,6 +1532,8 @@ class Window(QMainWindow):
         self.switch_editing_clip(session["ids"][index], ensure_visible=True)
 
     def active_player(self):
+        if self.current_panel == "Browse":
+            return self.browse.player
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
@@ -1508,7 +1634,7 @@ class Window(QMainWindow):
             self.update_projects_visibility()
 
     def update_projects_visibility(self):
-        allowed = self.current_panel not in {"Export", "Config"}
+        allowed = self.current_panel not in {"Browse", "Export", "Config"}
         visible = allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
         self.right.setVisible(visible)
         self.projects_toggle.setEnabled(allowed)
@@ -1522,6 +1648,8 @@ class Window(QMainWindow):
             self.update_projects_visibility()
 
     def edit_tag(self):
+        if self.current_panel == "Browse":
+            return
         try:
             clip = self.selected_clip()
         except ValueError as error:
@@ -1590,9 +1718,12 @@ class Window(QMainWindow):
             or QApplication.activePopupWidget()
         ):
             return super().eventFilter(watched, event)
-        if self.current_panel not in {"Editing", "Export"}:
+        if self.current_panel not in {"Browse", "Editing", "Export"}:
             return super().eventFilter(watched, event)
-        focus = QApplication.focusWidget()
+        focus = (
+            watched if isinstance(watched, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
+            else QApplication.focusWidget()
+        )
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
@@ -1645,7 +1776,7 @@ class Window(QMainWindow):
                 self.command.setFocus()
             return True
         if (
-            self.current_panel == "Editing"
+            self.current_panel in {"Browse", "Editing"}
             and key in {Qt.Key.Key_Up, Qt.Key.Key_Down}
             and modifiers == Qt.KeyboardModifier.NoModifier
         ):
@@ -1683,7 +1814,7 @@ class Window(QMainWindow):
                 if key == Qt.Key.Key_Backspace:
                     self.edit({"triage": "discard"})
                     return True
-            if self.current_panel == "Editing" and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
+            if self.current_panel in {"Browse", "Editing"} and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
                 (self.mark_in if event.key() == Qt.Key.Key_I else self.mark_out)()
                 return True
         if (
@@ -1747,6 +1878,9 @@ class Window(QMainWindow):
         self.mark_range_point("out")
 
     def mark_range_point(self, endpoint):
+        if self.current_panel == "Browse":
+            self.browse.mark(endpoint)
+            return
         if self.current_panel != "Editing" or not self.current_id:
             return
         position = self.player.media.position()
@@ -1762,6 +1896,8 @@ class Window(QMainWindow):
         self.save_range(start, end)
 
     def save_range(self, start, end):
+        if self.current_panel == "Browse":
+            return
         try:
             self.catalogue.patch(self.current_id, {"in_ms": start, "out_ms": end}, editing=True)
             self.reset_pending_range()
@@ -1773,10 +1909,15 @@ class Window(QMainWindow):
             self.error(error)
 
     def clear_range(self):
+        if self.current_panel == "Browse":
+            self.browse.clear_range()
+            return
         if self.current_panel == "Editing" and self.current_id:
             self.save_range(None, None)
 
     def new_project(self):
+        if self.current_panel == "Browse":
+            return
         name, accepted = QInputDialog.getText(self, "New project", "Project name")
         if accepted:
             try:
@@ -1786,6 +1927,8 @@ class Window(QMainWindow):
                 self.error(error)
 
     def rename_project(self):
+        if self.current_panel == "Browse":
+            return
         project_id = self.selected_id(self.projects)
         if project_id:
             name, accepted = QInputDialog.getText(self, "Rename project", "New name")
@@ -1797,16 +1940,22 @@ class Window(QMainWindow):
                     self.error(error)
 
     def activate_project(self):
+        if self.current_panel == "Browse":
+            return
         project_id = self.selected_id(self.projects)
         if project_id:
             self.catalogue.set_state("active_project", project_id)
             self.refresh_references()
 
     def deactivate(self):
+        if self.current_panel == "Browse":
+            return
         self.catalogue.set_state("active_project", None)
         self.refresh_references()
 
     def delete_project(self):
+        if self.current_panel == "Browse":
+            return
         project_id = self.selected_id(self.projects)
         if project_id and self.confirm(
             "Delete this project and its memberships? Clips and source files remain."
@@ -1816,6 +1965,8 @@ class Window(QMainWindow):
             self.refresh_library()
 
     def membership(self, include):
+        if self.current_panel == "Browse":
+            return
         project_id = self.selected_id(self.projects)
         if not project_id:
             self.error("Select a project first")
@@ -1828,6 +1979,8 @@ class Window(QMainWindow):
             self.render_clip()
 
     def create_session(self, mode):
+        if self.current_panel == "Browse":
+            return
         if not self.ensure_range_complete():
             return
         selected = {item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()}
@@ -1851,6 +2004,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def end_session(self):
+        if self.current_panel == "Browse":
+            return
         if not self.ensure_range_complete():
             return
         if self.catalogue.state("session") and self.confirm(
@@ -1870,6 +2025,8 @@ class Window(QMainWindow):
         return self.catalogue.clip(clip_id)
 
     def change_game(self):
+        if self.current_panel == "Browse":
+            return
         try:
             clip = self.selected_clip()
             options = ["Unassigned", *self.registry.games]
@@ -1892,6 +2049,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def reset_metadata(self):
+        if self.current_panel == "Browse":
+            return
         try:
             clip = self.selected_clip()
             if self.confirm(
@@ -1919,10 +2078,15 @@ class Window(QMainWindow):
             self.error(error)
 
     def update_history_controls(self):
-        self.undo_button.setEnabled(bool(self.catalogue.undo_stack))
-        self.redo_button.setEnabled(bool(self.catalogue.redo_stack))
+        allowed = self.current_panel != "Browse"
+        self.undo_button.setEnabled(allowed and bool(self.catalogue.undo_stack))
+        self.redo_button.setEnabled(allowed and bool(self.catalogue.redo_stack))
+        for action in getattr(self, "browse_write_actions", []):
+            action.setEnabled(allowed)
 
     def undo(self, redo=False):
+        if self.current_panel == "Browse":
+            return
         self.catalogue.undo(redo)
         self.refresh_references()
         self.refresh_library()
@@ -1934,7 +2098,7 @@ class Window(QMainWindow):
             self.error("Wait for the current operation to finish")
             return
         self.worker = Worker(function)
-        continuation = None
+        results = []
         progress = QProgressDialog(label, "Cancel", 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
@@ -1953,11 +2117,7 @@ class Window(QMainWindow):
         )
 
         def succeeded(result):
-            nonlocal continuation
-            try:
-                continuation = done(result)
-            except Exception as error:
-                self.error(error)
+            results.append(result)
 
         def failed(message):
             self.error(message)
@@ -1968,8 +2128,13 @@ class Window(QMainWindow):
             progress.deleteLater()
             self.worker.deleteLater()
             self.worker = None
-            if callable(continuation):
-                continuation()
+            if results:
+                try:
+                    continuation = done(results[0])
+                    if callable(continuation):
+                        continuation()
+                except Exception as error:
+                    self.error(error)
 
         self.worker.succeeded.connect(succeeded)
         self.worker.failed.connect(failed)
@@ -1979,6 +2144,8 @@ class Window(QMainWindow):
         QTimer.singleShot(0, self.worker.start)
 
     def add_folder(self):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -2094,6 +2261,8 @@ class Window(QMainWindow):
         )
 
     def toggle_folder(self):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -2105,6 +2274,8 @@ class Window(QMainWindow):
         self.refresh_library()
 
     def migrate(self):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -2158,6 +2329,8 @@ class Window(QMainWindow):
         return clicked is remove
 
     def remove_folder(self):
+        if self.current_panel == "Browse":
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -2320,6 +2493,9 @@ class Window(QMainWindow):
         self.background(export, done, label="Preparing project export…")
 
     def share(self):
+        if self.current_panel == "Browse":
+            self.browse.share()
+            return
         try:
             clip = self.selected_clip()
         except ValueError as error:
@@ -2427,8 +2603,9 @@ class Window(QMainWindow):
             self.error("Cancelling current operation; close again after it finishes")
             event.ignore()
             return
-        self.player.media.stop()
-        self.export_player.media.stop()
+        self.player.media.shutdown()
+        self.export_player.media.shutdown()
+        self.browse.player.media.shutdown()
         QApplication.instance().removeEventFilter(self)
         event.accept()
 

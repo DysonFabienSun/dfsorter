@@ -153,6 +153,11 @@ class ClipDelegate(QStyledItemDelegate):
             max(0, detail.width() - reserved),
         )
         text = game + status
+        if data.get("browse_details") is not None:
+            text = detail_metrics.elidedText(
+                data["browse_details"], Qt.TextElideMode.ElideRight,
+                max(0, detail.width() - detail_metrics.horizontalAdvance(warning)),
+            )
         painter.setClipRect(card)
         painter.setPen(QColor(COLORS["text_secondary"]))
         painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)

@@ -2,10 +2,10 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QPainter, QPalette
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
-from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
 
+from .mpv_backend import MpvBackend
 from .theme import COLORS, SIZES, font, role
 from .widgets import icon, tool
 
@@ -15,7 +15,7 @@ def start_offset_seconds(settings):
     return value if type(value) is int and 1 <= value <= 86400 else 40
 
 
-class VideoSurface(QVideoWidget):
+class VideoSurface(QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet(f"background: {COLORS['bg_video']};")
@@ -23,9 +23,11 @@ class VideoSurface(QVideoWidget):
         palette.setColor(QPalette.ColorRole.Window, QColor(COLORS["bg_video"]))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors)
+        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
 
     def clear(self):
-        self.videoSink().setVideoFrame(QVideoFrame())
+        self.update()
 
 
 class RangeSlider(QSlider):
@@ -104,11 +106,9 @@ class Player(QWidget):
         video_layout.addWidget(self.video)
         self.video.setMinimumSize(260, 150)
         layout.addWidget(video_container, 1)
-        self.media = QMediaPlayer(self)
-        self.audio = QAudioOutput(self)
+        self.media = MpvBackend(self.video, self)
+        self.audio = self.media
         self.audio.setVolume(0.6)
-        self.media.setAudioOutput(self.audio)
-        self.media.setVideoOutput(self.video)
         self.seek = RangeSlider()
         self.seek.sliderPressed.connect(self.begin_scrub)
         self.seek.sliderMoved.connect(self.queue_seek)
@@ -181,13 +181,15 @@ class Player(QWidget):
         )
         self.media.playbackStateChanged.connect(self.playback_state_changed)
         self.media.errorOccurred.connect(self.load_error)
-        self.video.videoSink().videoFrameChanged.connect(self.first_frame)
+        self.media.frameReady.connect(self.first_frame)
         self.awaiting_frame = False
         self.fast_state = None
         self.load_timeout = QTimer(self)
         self.load_timeout.setSingleShot(True)
         self.load_timeout.setInterval(15000)
         self.load_timeout.timeout.connect(self.load_timed_out)
+        self.loaded_clip = None
+        self.retry_load = False
 
     def begin_scrub(self):
         self.awaiting_frame = False
@@ -234,6 +236,9 @@ class Player(QWidget):
             self.media.play()
 
     def load(self, clip):
+        self.loaded_clip = clip
+        self.retry_load = False
+        self.initial_seek_done = False
         self.ended = False
         self.load_timeout.stop()
         self.awaiting_frame = False
@@ -244,7 +249,10 @@ class Player(QWidget):
         self.media.stop()
         self.video.clear()
         self.status.clear()
+        self.play.setEnabled(False)
+        self.seek.setEnabled(False)
         self.seek.marker_range = (clip["in_ms"], clip["out_ms"]) if clip else (None, None)
+        self.initial_range = self.seek.marker_range
         self.seek.pending_in = None
         self.seek.pending_out = None
         self.seek.update()
@@ -257,13 +265,12 @@ class Player(QWidget):
         self.awaiting_frame = True
         self.load_timeout.start()
         self.media.setSource(QUrl.fromLocalFile(clip["source_path"]))
-        self.media.play()
 
-    def first_frame(self, frame):
-        if self.awaiting_frame and frame.isValid():
-            self.awaiting_frame = False
+    def first_frame(self):
+        if self.awaiting_frame and not self.initial_seek_done:
+            self.initial_seek_done = True
             self.media.pause()
-            start, end = self.seek.marker_range
+            start, end = self.initial_range
             valid_range = (
                 isinstance(start, int)
                 and isinstance(end, int)
@@ -275,11 +282,17 @@ class Player(QWidget):
                     0, self.media.duration() - start_offset_seconds(self.settings) * 1000
                 )
             self.media.setPosition(start if valid_range else fallback)
+        elif self.awaiting_frame:
+            self.awaiting_frame = False
+            self.play.setEnabled(True)
+            self.seek.setEnabled(True)
             self.load_timeout.stop()
             self.loading_finished.emit()
 
     def load_error(self, error, message):
         self.status.setText(message)
+        self.play.setEnabled(False)
+        self.seek.setEnabled(False)
         if self.awaiting_frame:
             self.awaiting_frame = False
             self.load_timeout.stop()
@@ -289,6 +302,8 @@ class Player(QWidget):
         if self.awaiting_frame:
             self.awaiting_frame = False
             self.media.stop()
+            self.retry_load = True
+            self.play.setEnabled(True)
             self.status.setText("Video preview timed out. Press Play to retry.")
             self.loading_finished.emit()
 
@@ -301,7 +316,11 @@ class Player(QWidget):
         self.position_changed.emit(milliseconds)
 
     def toggle(self):
-        self.awaiting_frame = False
+        if self.retry_load:
+            self.load(self.loaded_clip)
+            return
+        if self.awaiting_frame or not self.play.isEnabled():
+            return
         if self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.media.pause()
         else:
@@ -318,6 +337,8 @@ class Player(QWidget):
         self.fast_indicator_phase = (self.fast_indicator_phase + 1) % 3
 
     def fast(self, enabled):
+        if enabled and (self.awaiting_frame or not self.play.isEnabled()):
+            return
         if enabled and self.fast_state is None:
             self.awaiting_frame = False
             self.fast_state = (self.media.playbackState(), self.media.playbackRate())

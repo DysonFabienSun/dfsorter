@@ -52,6 +52,213 @@ def wait_for(application, predicate, timeout=12):
     return False
 
 
+def catalogue_dump(window):
+    with window.catalogue.connection() as database:
+        return list(database.iterdump())
+
+
+def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch):
+    root = tmp_path / "browse-captures"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [
+        {"path": str(root / f"clip-{index}.mp4"), "game": "VALORANT" if index else None}
+        for index in range(3)
+    ])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.patch(ids[0], {"triage": "keep"})
+    window.catalogue.patch(ids[1], {"triage": "discard"})
+    for index, clip in enumerate(window.catalogue.clips()):
+        window.media_info[clip["source_path"]] = {"created": f"2026-09-{index + 1:02}T00:00:00Z"}
+    window.refresh_references()
+    before = catalogue_dump(window)
+    history = list(window.catalogue.undo_stack)
+    window.panel("Browse")
+    assert list(window.nav)[:3] == ["Home", "Browse", "Import"]
+    assert window.catalogue.state("session") is None
+    assert window.library.count() == 3
+    for index in range(window.library.count()):
+        item = window.library.item(index)
+        assert "undefined" not in item.text().lower()
+        assert "2026-09-" in item.data(CLIP_ROLE)["browse_details"]
+        assert "browse-captures" in item.data(CLIP_ROLE)["browse_details"]
+        assert str(root) not in item.data(CLIP_ROLE)["browse_details"]
+    assert window.browse_id == ids[2]
+    assert window.browse.clip["clip_id"] == ids[2]
+    assert window.browse.player.status.text() == "Source unavailable"
+    assert not window.browse.player.play.isEnabled()
+    assert not window.browse.share_button.isEnabled()
+    assert window.filters.isHidden() and window.search.isHidden()
+    assert not window.browse_filters.isHidden()
+    assert window.command_area.isHidden() and window.right.isHidden()
+    assert not window.undo_button.isEnabled()
+    assert not window.projects_toggle.isEnabled()
+    window.toggle_browse_sort()
+    assert window.library.item(0).data(Qt.ItemDataRole.UserRole) == ids[0]
+    assert window.browse_id == ids[2]
+    window.navigate(-1)
+    assert window.browse_id == ids[1]
+    window.browse.custom_title.setText("Disposable")
+    window.browse.in_ms = 120
+    window.navigate(-1)
+    assert window.browse_id == ids[0]
+    assert not window.browse.custom_title.text()
+    assert window.browse.in_ms is None
+    window.navigate(-1)
+    assert window.browse_id == ids[0]
+    for action in [
+        lambda: window.edit({"triage": "discard"}), window.undo,
+        lambda: window.undo(True), window.reset_metadata, window.edit_tag,
+        window.new_project, window.delete_project, window.activate_project,
+        lambda: window.membership(True), lambda: window.create_session("all"),
+        window.end_session, window.delete_rejected, lambda: window.save_range(10, 20),
+    ]:
+        action()
+    window.browse_game.setCurrentIndex(window.browse_game.findData("VALORANT"))
+    assert window.library.count() == 2
+    window.browse_search.setText("missing text")
+    window.refresh_library()
+    assert window.library.count() == 0
+    assert window.browse.clip is None
+    assert window.browse.player.status.text() == "No clip selected"
+    window.panel("Home")
+    assert window.triage_filter.currentText() == "Undefined"
+    assert catalogue_dump(window) == before
+    assert window.catalogue.undo_stack == history
+
+
+def test_browse_temporary_range_and_share(window, application, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path, valid=True)
+    window.catalogue.patch(ids[0], {"in_ms": 500, "out_ms": 1500})
+    before = catalogue_dump(window)
+    window.panel("Browse")
+    browse = window.browse
+    assert wait_for(application, lambda: not browse.player.awaiting_frame)
+    assert browse.player.media.position() == 500
+    assert browse.mode.currentData() is True
+    browse.destination.setText(str(tmp_path / "shares"))
+    browse.custom_title.setText(" ")
+    assert not browse.share_button.isEnabled()
+    browse.custom_title.setText("My Custom 中文 Clip")
+    assert browse.share_button.isEnabled()
+    browse.player.media.setPosition(800)
+    window.mark_in()
+    assert browse.in_ms == 800
+    window.toggle_browse_sort()
+    assert browse.in_ms == 800
+    assert browse.custom_title.text() == "My Custom 中文 Clip"
+    calls = []
+    monkeypatch.setattr("dfsorter.browse.share_clip", lambda *args, **kwargs: calls.append((args, kwargs)))
+    work = []
+    monkeypatch.setattr(window, "background", lambda function, done: work.append(function))
+    browse.share()
+    browse.custom_title.setText("Changed after snapshot")
+    browse.in_ms = 1000
+    work[0](lambda: False, lambda text: None)
+    args, kwargs = calls[0]
+    assert args[0]["in_ms"] == 800
+    assert args[0]["out_ms"] == 1500
+    assert kwargs["custom"] == "My Custom 中文 Clip"
+    assert kwargs["selected_range"] is True
+    window.clear_range()
+    browse.player.media.setPosition(1800)
+    window.mark_in()
+    assert not browse.valid_range()
+    assert browse.mode.currentData() is False
+    assert browse.share_button.isEnabled()  # Whole clip needs no valid markers.
+    window.panel("Home")
+    assert browse.clip is None
+    assert not browse.custom_title.text()
+    assert catalogue_dump(window) == before
+    window.panel("Browse")
+    assert wait_for(application, lambda: not browse.player.awaiting_frame)
+    assert (browse.in_ms, browse.out_ms) == (500, 1500)
+    assert not browse.custom_title.text()
+
+
+def test_all_players_mix_tracks_and_ignore_stale_loads(window, application, tmp_path):
+    ids = add_clips(window, tmp_path, valid=True)
+    original = window.catalogue.clip(ids[0])
+    sources = []
+    for count in (0, 2):
+        target = tmp_path / f"tracks-{count}.mp4"
+        args = ["ffmpeg", "-v", "error", "-i", original["source_path"], "-map", "0:v"]
+        for _ in range(count):
+            args += ["-map", "0:a:0"]
+        subprocess.run(args + ["-c", "copy", str(target)], check=True, capture_output=True)
+        sources.append({**original, "source_path": str(target), "in_ms": None, "out_ms": None})
+    for player in (window.player, window.export_player, window.browse.player):
+        player.audio.setMuted(True)
+        player.load(sources[0])
+        assert wait_for(application, lambda: not player.awaiting_frame)
+        assert player.media.duration() > 0
+        assert not player.media.hasAudio()
+        assert not player.media.engine.lavfi_complex
+        for clip in [sources[1], sources[0], sources[1]]:
+            player.load(clip)
+        assert wait_for(application, lambda: not player.awaiting_frame)
+        assert Path(player.media.source().toLocalFile()) == Path(sources[1]["source_path"])
+        assert player.media.hasAudio()
+        assert "amix=inputs=2" in player.media.engine.lavfi_complex
+        assert player.media.engine.audio_params["channel-count"] == 2
+        assert not player.media.frame_image().isNull()
+        status = player.media.mediaStatus()
+        player.media._receive(player.media.generation - 1, "error", "obsolete source failure")
+        assert player.media.mediaStatus() == status
+        assert not player.status.text()
+        player.load(None)
+
+
+def test_browse_runtime_failure_reveals_page(window, application, tmp_path, monkeypatch):
+    add_clips(window, tmp_path, valid=True)
+
+    def missing():
+        raise OSError("Playback runtime missing. Run setup-playback.ps1.")
+
+    monkeypatch.setattr("dfsorter.mpv_backend.load_mpv", missing)
+    window.panel("Browse")
+    assert wait_for(application, lambda: not window.transition_pending)
+    assert window.browse.player.status.text() == "Playback runtime missing. Run setup-playback.ps1."
+    assert not window.browse.player.awaiting_frame
+    assert not window.browse.player.play.isEnabled()
+
+
+def test_browse_layout(window, application, tmp_path):
+    ids = add_clips(window, tmp_path, valid=True)
+    clip = window.catalogue.clip(ids[0])
+    window.catalogue.patch(ids[0], {
+        "mainline": "残局 中文 English — accurate shot", "triage": "keep",
+        "metadata": {"agent": "Jett", "weapon": ["Vandal", "Sheriff"], "kill": 3},
+        "in_ms": 500, "out_ms": 1500,
+    })
+    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"], [
+        {"path": str(tmp_path / "captures" / "unavailable.mp4"), "game": None},
+    ])
+    window.media_info[clip["source_path"]] = {"created": "2026-09-20T00:00:00Z"}
+    window.panel("Browse")
+    window.browse.custom_title.setText("Weekend highlights — 精选")
+    window.browse.destination.setText(str(tmp_path / "share-output"))
+    assert wait_for(application, lambda: not window.transition_pending)
+    scale = os.environ.get("QT_SCALE_FACTOR", "1")
+    artifact = ROOT / "cache/verification/browse" / scale
+    artifact.mkdir(parents=True, exist_ok=True)
+    for name, show in [("normal", window.showNormal), ("maximized", window.showMaximized)]:
+        show()
+        window.activateWindow()
+        window.raise_()
+        QTest.qWait(200)
+        browse = window.browse
+        assert browse.player.video.height() >= 150
+        assert browse.share_button.mapTo(browse, QPoint(0, browse.share_button.height())).y() <= browse.height()
+        assert browse.custom_title.width() > 200
+        assert window.right.isHidden()
+        # Capture the composed desktop region: HWND capture omits D3D child surfaces.
+        rect = window.geometry()
+        window.screen().grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height()).save(
+            str(artifact / f"{name}.png")
+        )
+
+
 def test_export_player_grows_with_window(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     project = window.catalogue.save_project("Export layout")
@@ -550,8 +757,7 @@ def test_real_playback(window, application, tmp_path, codec):
     window.panel("Editing")
     player = window.player
     assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
-    assert player.video.videoSink().videoFrame().isValid()
-    assert not player.video.videoSink().videoFrame().toImage().isNull()
+    assert not player.media.frame_image().isNull()
     assert player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
     window.catalogue.patch(ids[0], {"in_ms": 500, "out_ms": 1500})
     clip = window.catalogue.clip(ids[0])
@@ -601,7 +807,7 @@ def test_real_playback(window, application, tmp_path, codec):
                 lambda: (
                     preview_player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
                     and 700 < preview_player.media.position() < 2000
-                    and preview_player.video.videoSink().videoFrame().isValid()
+                    and not preview_player.media.frame_image().isNull()
                 ),
             )
             preview_player.media.pause()
@@ -646,7 +852,7 @@ def test_real_playback(window, application, tmp_path, codec):
     artifact.mkdir(parents=True, exist_ok=True)
     window.grab().save(str(artifact / f"editing-{codec}.png"))
     window.screen().grabWindow(int(window.winId())).save(str(artifact / f"screen-{codec}.png"))
-    player.video.videoSink().videoFrame().toImage().save(
+    player.media.frame_image().save(
         str(artifact / f"decoded-video-{codec}.png")
     )
     left_width, _, right_width = window.splitter.sizes()
@@ -1105,7 +1311,7 @@ def test_real_clip_switch_reveals_local_preview(window, application, tmp_path):
         window.grab().save(str(artifact / f"{panel.lower()}-loading.png"))
         assert wait_for(application, lambda: not window.transition_pending)
         assert wait_for(application, lambda: window.active_player().media.duration() > 0)
-        assert window.active_player().video.videoSink().videoFrame().isValid()
+        assert not window.active_player().media.frame_image().isNull()
         assert Path(window.active_player().media.source().toLocalFile()) == Path(expected)
         window.grab().save(str(artifact / f"{panel.lower()}-ready.png"))
 
@@ -1179,10 +1385,11 @@ def test_game_change_confirmation_and_undo(window, application, tmp_path, monkey
     assert window.catalogue.clip(ids[0])["metadata"] == {"agent": "Jett"}
 
 
-def test_folder_dialogs_and_background_scan(window, application, tmp_path, monkeypatch):
+@pytest.mark.parametrize("folder_name, game", [("VALORANT", "VALORANT"), ("NVIDIA", None)])
+def test_folder_dialogs_and_background_scan(window, application, tmp_path, monkeypatch, folder_name, game):
     from PySide6.QtWidgets import QFileDialog
 
-    captures = tmp_path / "VALORANT"
+    captures = tmp_path / folder_name
     captures.mkdir()
     (captures / "clip.mp4").write_bytes(b"test")
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(captures))
@@ -1191,12 +1398,19 @@ def test_folder_dialogs_and_background_scan(window, application, tmp_path, monke
         "getItem",
         lambda *args, **kwargs: ("Automatic (nearest recognized ancestor)", True),
     )
-    monkeypatch.setattr(window, "confirm", lambda message: True)
+    def confirm(message):
+        # Reproduce a modal dialog processing worker-finished events.
+        QTest.qWait(100)
+        application.processEvents()
+        return True
+
+    monkeypatch.setattr(window, "confirm", confirm)
     window.panel("Import")
     window.add_folder()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1
-    assert window.catalogue.clips()[0]["game"] == "VALORANT"
+    assert window.catalogue.clips()[0]["game"] == game
+    assert Path(window.catalogue.folders()[0]["path"]) == captures
     window.rescan()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1

@@ -275,6 +275,8 @@ The exact SQLite representation of dynamic game fields is an implementation deta
 
 Initial required playback support includes MP4 clips containing H.264 or AV1 video. AV1-in-MP4 must work without requiring the user to install an unrelated codec pack manually.
 
+Browse, Editing, and Export use application-local libmpv playback. All audio tracks play together by default, including microphone tracks. Mix tracks channel-wise into stereo, preserving left/right separation and relative track timing; mono contributes to both channels. Silent sources remain silent. Playback never creates derived media or changes source files. Project Export retains original bytes and separate audio tracks; Share produces mixed stereo AAC.
+
 The Editing player includes:
 
 - embedded video playback;
@@ -304,7 +306,7 @@ Each clip may store one optional non-destructive In/Out range.
 
 Use the application-wide dark design system in §20. A light theme is not required.
 
-Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls, reset its scroll position, or restart an already selected clip. Keyboard navigation scrolls only enough to reveal its destination. Necessary library rebuilds retain surviving selections and the viewport anchor where possible. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls, reset its scroll position, or restart an already selected clip. Keyboard navigation scrolls only enough to reveal its destination. Necessary library rebuilds retain surviving selections and the viewport anchor where possible. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
 ### 9.2 Settings and Actions
 
@@ -314,14 +316,15 @@ Resetting clip metadata must never modify or delete the source video. Destructiv
 
 ### 9.3 Panel Navigation
 
-At the top of the window, provide a restrained six-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
+At the top of the window, provide a restrained seven-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
 
 1. Home
-2. Import
-3. Session
-4. Editing
-5. Export
-6. Config
+2. Browse
+3. Import
+4. Session
+5. Editing
+6. Export
+7. Config
 
 The panel-navigation row and settings cog are present on every panel.
 
@@ -330,7 +333,7 @@ The panel-navigation row and settings cog are present on every panel.
 The application uses a Premiere-inspired three-pane layout where relevant.
 
 - The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible **Projects** toggle with a folder icon controls it and is highlighted while the pane is open; manual visibility overrides are remembered separately for normal/maximized states for the current run. Export and Config always hide it. Reset Layout restores defaults.
+- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible **Projects** toggle with a folder icon controls it and is highlighted while the pane is open; manual visibility overrides are remembered separately for normal/maximized states for the current run. Browse, Export and Config always hide it. Reset Layout restores defaults.
 - Both panes are manually resizable using splitters.
 - Resizing/maximizing the window primarily gives additional width to the center pane.
 - User-adjusted pane widths are not persisted across application restarts.
@@ -340,13 +343,14 @@ The exact content of each pane depends on the active panel.
 | Panel | Left pane | Center/main area | Right pane | Command bar |
 | --- | --- | --- | --- | --- |
 | Home | Library reference | Capture-folder management | Projects | Hidden |
+| Browse | All library clips, search, game filter, date-order toggle | Video, working title, filename, inline Share | Hidden | Hidden |
 | Import | Library reference | Shortcut to capture folders on Home | Projects | Hidden |
 | Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
 | Editing | Locked session queue | Video + clip metadata | Projects | Visible |
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
 | Config | Library/reference view | Config placeholder/status | Hidden | Hidden |
 
-The shared library triage filter defaults to Undefined on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; frozen Editing sessions and Export membership are unaffected.
+The shared library triage filter defaults to Undefined on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; Browse's independent controls, frozen Editing sessions and Export membership are unaffected.
 
 ### 9.5 Left-Pane Library
 
@@ -387,6 +391,18 @@ Show a folder list with readable scanning state, clip/game counts, average durat
 Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
 ---
+
+### 10.1 Browse Panel
+
+Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including every triage state and clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
+
+Browse library cards show capture datetime (local time) and capture-folder name, without triage text. Retain all triage states in results. Show search and a game filter with state independent from Session/Home. Default to newest capture first each application run. An accessible date-order icon in the library header, where Editing places Next undefined, toggles newest/oldest. Use media capture time with filesystem creation-time fallback and source-path tie-breaking. Previous/next and Up/Down follow visible order without wrapping. Sorting preserves selection; filtering selects the first result when the current clip disappears. Empty results clear the player.
+
+Show only working title and filename below the player, followed by an always-visible Share panel. Hide editing metadata, command/session controls and Projects. Disable catalogue undo/redo and mutating settings actions in Browse; text fields retain normal undo/redo. Keep transport, seeking, volume, mute, hold-Space fast-forward and I/O shortcuts, without consuming text-field typing.
+
+Initialize temporary I/O from saved markers. Either endpoint may be changed first, and Clear range affects only the preview. A complete range within the duration enables selected-range sharing; incomplete/invalid markers still allow whole-clip sharing. Discard temporary markers and custom title freely when leaving the clip or page, including incomplete ranges. Sorting or refreshing the same selected clip preserves them.
+
+Inline Share contains a required custom title, output folder/picker, whole/selected-range selector, timing summary and Share action. Default to a valid selected range, otherwise whole clip. No generated-name field or game-prefix controls. Whitespace-only titles disable Share. Reuse existing Share encoding, filename sanitization, collision avoidance, destination restrictions, cancellation and cleanup; pass a snapshot of temporary markers without saving them. Remember the output folder in application settings. Missing sources remain visible with unavailable playback/sharing.
 
 ## 11. Import Panel
 

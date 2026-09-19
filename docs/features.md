@@ -218,3 +218,15 @@ process cleanup and the existing regression suite.
 
 - [x] Removed legacy review-mode R then 1–5 rating shortcut and timer. Paused typing accepts `r4`; Enter saves. Command ratings and clickable stars remain available.
 - [x] Core/UI regression suite: 79 passed. Ruff and `git diff --check` passed.
+
+## Browse viewer and mixed-track playback
+
+- [x] Browse tab after Home: session-free library, all triage states, independent search/game filter, newest-first default and newest/oldest header toggle.
+- [x] Read-only catalogue behavior, hidden editing/project controls, guarded mutation handlers and catalogue undo/redo. Temporary I/O and custom title reset freely on clip/page exit.
+- [x] Inline Share with required custom title, folder picker, whole/temporary-range choice and existing background encoding/cancellation. Saved markers and session position remain unchanged.
+- [x] Application-local pinned libmpv runtime and Python binding. All players mix audio tracks live while preserving stereo channels and timing. Runtime lifecycle uses a dedicated thread to isolate Windows initialization/cleanup from Qt.
+- [x] Focused Browse, keyboard, marker, clip-navigation and H.264/AV1 playback checks passed. Generated-audio checks verify mono mic mixing, stereo separation and delayed tracks; Share checks passed and Project Export retains original bytes.
+- [x] Normal/maximized Browse captures inspected under simulated 100%, 125% and 150% display scaling; artifacts in `cache/verification/browse`. Display scaling changes font/control sizes independently from maximization.
+- [ ] Real capture-library audio balance and performance acceptance. User indicated displayed layout looks fine; no further GUI testing requested.
+
+Setup: `pwsh -File .\setup-playback.ps1` installs checksum-verified Windows x64 libmpv and licenses into `runtime/mpv/`. Runtime is installed on this machine; fresh checkouts require setup. No database migration or playback preview files.

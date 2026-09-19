@@ -8,10 +8,11 @@ Install [uv](https://docs.astral.sh/uv/) and run from this checkout:
 
 ```powershell
 uv sync --python 3.13
+pwsh -File .\setup-playback.ps1
 uv run dfsorter
 ```
 
-After setup, double-click `launch.bat`. The launcher uses its own directory regardless of where it is invoked. Qt's packaged FFmpeg backend decodes H.264 and AV1 MP4 without a separate codec pack. `ffprobe` on PATH enables duration and source-media capture-time inspection; scanning still works without it. Share requires both `ffmpeg` and `ffprobe` on PATH. The external tools are also used to generate playback test fixtures.
+After setup, double-click `launch.bat`. The launcher uses its own directory regardless of where it is invoked. Playback uses libmpv for H.264/AV1 and mixes every audio track live into stereo, preserving left/right separation and microphone timing. No preview files are generated. `setup-playback.ps1` requires 7-Zip and the PowerShell profile's proxy helpers; it downloads pinned Windows x64 build `20260903-git-69e63f425a`, verifies its SHA-256, and installs runtime/license files under `runtime/mpv/`. Playback performs no downloads. Missing runtime produces an explicit player error. `ffprobe` on PATH enables media inspection; scanning still works without it. Share requires both `ffmpeg` and `ffprobe` on PATH.
 
 On this machine, dependency downloads use the PowerShell profile's proxy helpers: enable `proxy_on` / `proxyon` before `uv sync` and disable `proxy_off` / `proxyoff` in `finally` afterward.
 
@@ -29,7 +30,13 @@ In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until 
 
 Description saves when leaving its editor or navigating, and has an explicit Save button. Rating and triage are independent. Ctrl+Z/Ctrl+Y undo/redo catalogue edits for the current run. Changing game requires confirmation and clears game-specific metadata; Undo restores it.
 
-Opening a clip in Editing or Export starts paused at its saved In point when its complete In/Out range fits the video. Clips without a valid saved range start at zero.
+Opening a clip starts paused at its saved In point when its complete In/Out range fits the video. Otherwise it starts 40 seconds before the end, clamped to zero; General settings control this offset or disable it.
+
+## Browse viewer
+
+Browse sits after Home and needs no session. It shows all library clips, newest first, with independent search and game filtering. Header sort icon toggles newest/oldest; previous/next and Up/Down follow that order. Metadata and project actions are unavailable.
+
+Set temporary I/O with `I`/`O`, supply a required custom title and output folder, then Share the whole clip or valid range using controls below the player. Markers and title reset when leaving the clip or page. Stored metadata, saved markers, and session position remain unchanged. Share mixes audio into stereo AAC; Project Export copies originals with all separate tracks intact.
 
 ## Configuration and search
 

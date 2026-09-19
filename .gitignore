@@ -6,5 +6,6 @@ data/
 cache/
 *.egg-info/
 node_modules/
+runtime/mpv/
 DFSorter.lnk
 *.psd
