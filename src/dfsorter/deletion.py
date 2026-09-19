@@ -59,12 +59,15 @@ def signature(details):
     )
 
 
-def preview(catalogue, media_info=None, cancelled=lambda: False, progress=lambda text: None):
+def preview(catalogue, media_info=None, cancelled=lambda: False, progress=lambda text: None, *, clip_id=None):
     candidates = []
     for clip in catalogue.clips():
         if cancelled():
             raise InterruptedError("Deletion preview cancelled; no files deleted")
-        if clip["triage"] != "discard":
+        if clip_id is not None:
+            if clip["clip_id"] != clip_id:
+                continue
+        elif clip["triage"] != "discard":
             continue
         path = clip["source_path"]
         displayed = display_path(path)
@@ -150,6 +153,8 @@ def delete_reviewed(
     delete_file=delete_original,
     cancelled=lambda: False,
     progress=lambda text: None,
+    *,
+    require_discard=True,
 ):
     results = []
     seen = set()
@@ -173,7 +178,7 @@ def delete_reviewed(
                     "SELECT source_path, triage FROM clips WHERE clip_id=?",
                     (candidate.clip_id,),
                 ).fetchone()
-                if not current or current["triage"] != "discard":
+                if not current or (require_discard and current["triage"] != "discard"):
                     raise ValueError("Clip is no longer discarded")
                 if current["source_path"] != candidate.path:
                     raise ValueError("Source path changed; review again")

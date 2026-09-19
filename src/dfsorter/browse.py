@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from .config import title
+from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
 from .theme import role, title_styles
@@ -46,6 +47,10 @@ class BrowsePage(QWidget):
         role(self.filename, "secondary")
         layout.addWidget(self.working_title)
         layout.addWidget(self.filename)
+        self.delete_button = QPushButton("Delete source…")
+        role(self.delete_button, "danger")
+        self.delete_button.clicked.connect(self.delete_source)
+        layout.addWidget(self.delete_button)
         self.marker_buttons = []
         for icon_name, label, callback in [
             ("list-start", "Set In · I", lambda: self.mark("in")),
@@ -167,12 +172,49 @@ class BrowsePage(QWidget):
         if not hasattr(self, "share_button"):
             return
         available = bool(self.clip and Path(self.clip["source_path"]).is_file())
+        self.delete_button.setEnabled(available)
         for control in self.marker_buttons:
             control.setEnabled(available and self.player.media.duration() > 0)
         self.share_button.setEnabled(
             available and bool(self.custom_title.text().strip())
             and bool(self.destination.text().strip())
             and (not self.mode.currentData() or self.valid_range())
+        )
+
+    def delete_source(self):
+        if not self.clip or self.window.worker is not None:
+            return
+        candidates = preview(self.window.catalogue, self.window.media_info, clip_id=self.clip["clip_id"])
+        if not candidates:
+            return
+        candidate = candidates[0]
+        if candidate.problem:
+            self.window.error(candidate.problem)
+            return
+        answer = QMessageBox.warning(
+            self, "Delete source permanently?",
+            f"Permanently delete this video?\n{candidate.display_path or candidate.path}\n\n"
+            "Bypasses the Recycle Bin and cannot be undone. "
+            "Catalogue records and project/session references remain as unavailable.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.player.load(None)
+        self.window.player.load(None)
+        self.window.export_player.load(None)
+
+        def done(results):
+            self.leave()
+            self.window.refresh_library()
+            self.window.statusBar().showMessage(results[0][1], 12000)
+
+        self.window.background(
+            lambda cancelled, progress: delete_reviewed(
+                self.window.catalogue, candidates, cancelled=cancelled,
+                progress=progress, require_discard=False,
+            ), done,
         )
 
     def choose_folder(self):

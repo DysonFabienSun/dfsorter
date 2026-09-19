@@ -1676,3 +1676,42 @@ def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatc
         "lowercase_generated_titles"
     ]
     dialog.close()
+
+
+def test_browse_entry_selects_newest(window, tmp_path):
+    add_clips(window, tmp_path)
+    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"], [
+        {"path": str(tmp_path / "captures" / "second.mp4"), "game": None}
+    ])
+    clips = window.catalogue.clips()
+    for index, clip in enumerate(clips):
+        window.media_info[clip["source_path"]] = {"created": f"2026-09-{index + 1:02}T12:00:00Z"}
+    window.panel("Browse")
+    newest = clips[-1]["clip_id"]
+    assert window.browse_id == newest
+    window.toggle_browse_sort()
+    window.library.setCurrentRow(0)
+    assert window.browse_id != newest
+    window.panel("Home")
+    window.panel("Browse")
+    assert window.browse_id == newest
+    assert window.browse_newest
+
+
+def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    add_clips(window, tmp_path)
+    window.panel("Browse")
+    source = Path(window.browse.clip["source_path"])
+    before = catalogue_dump(window)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Cancel)
+    window.browse.delete_button.click()
+    assert source.exists()
+    assert catalogue_dump(window) == before
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Yes)
+    window.browse.delete_button.click()
+    assert wait_for(application, lambda: window.worker is None)
+    assert not source.exists()
+    assert catalogue_dump(window) == before
+    assert not window.browse.delete_button.isEnabled()

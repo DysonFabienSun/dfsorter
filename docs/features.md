@@ -230,3 +230,5 @@ process cleanup and the existing regression suite.
 - [ ] Real capture-library audio balance and performance acceptance. User indicated displayed layout looks fine; no further GUI testing requested.
 
 Setup: `pwsh -File .\setup-playback.ps1` installs checksum-verified Windows x64 libmpv and licenses into `runtime/mpv/`. Runtime is installed on this machine; fresh checkouts require setup. No database migration or playback preview files.
+
+Browse follow-up: each page entry selects newest matching clip and resets newest-first sorting. Delete source… confirms permanent deletion of the selected source, retaining catalogue references as unavailable. Targeted checks cover reset, cancellation, selected-source deletion, and changed-file protection.

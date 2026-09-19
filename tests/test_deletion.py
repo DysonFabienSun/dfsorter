@@ -101,3 +101,17 @@ def test_junction_excluded(catalogue, clips, monkeypatch):
     assert "junctions" in reviewed[0].problem
     assert delete_reviewed(catalogue, reviewed)[0][1].startswith("Skipped / failed")
     assert Path(reviewed[0].path).exists()
+
+
+def test_selected_source_delete_preserves_catalogue(catalogue, clips):
+    catalogue.patch(clips[0]["clip_id"], {"triage": "keep"})
+    snapshot = catalogue.clips()
+    candidates = preview(catalogue, clip_id=clips[0]["clip_id"])
+    assert len(candidates) == 1
+    blocked = delete_reviewed(catalogue, candidates)
+    assert "no longer discarded" in blocked[0][1]
+    result = delete_reviewed(catalogue, candidates, require_discard=False)
+    assert result[0][1] == "Deleted"
+    assert not Path(clips[0]["source_path"]).exists()
+    assert Path(clips[1]["source_path"]).exists()
+    assert catalogue.clips() == snapshot

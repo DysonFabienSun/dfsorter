@@ -820,6 +820,12 @@ class Window(QMainWindow):
         self.browse.player.media.pause()
         if self.current_panel == "Browse" and name != "Browse":
             self.browse.leave()
+        entering_browse = name == "Browse" and self.current_panel != "Browse"
+        if entering_browse:
+            self.browse_id = None
+            self.browse_newest = True
+            self.browse_sort.setToolTip("Newest first · Switch to oldest first")
+            self.browse_sort.setAccessibleName("Newest first · Switch to oldest first")
         self.current_panel = name
         self.center.setCurrentWidget(self.pages[name][0])
         self.update_projects_visibility()
@@ -840,6 +846,8 @@ class Window(QMainWindow):
         )
         self.refresh_references()
         self.refresh_library()
+        if entering_browse:
+            self.library.scrollToTop()
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
