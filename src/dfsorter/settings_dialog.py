@@ -91,6 +91,14 @@ class SettingsDialog(QDialog):
         self.paused_typing.setChecked(window.settings.get("paused_typing_enabled", True))
         self.paused_typing.toggled.connect(self.save_command_preferences)
         preferences.addWidget(self.paused_typing)
+        self.lowercase_titles = QCheckBox("Lowercase working titles and generated filenames")
+        self.lowercase_titles.setChecked(window.settings.get("lowercase_generated_titles", True))
+        self.lowercase_titles.setToolTip(
+            "Keeps game codes uppercase. Custom filenames and original filename fallbacks "
+            "keep their casing. Uncheck to use stored capitalization."
+        )
+        self.lowercase_titles.toggled.connect(self.save_title_preferences)
+        preferences.addWidget(self.lowercase_titles)
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
@@ -100,6 +108,11 @@ class SettingsDialog(QDialog):
         close.rejected.connect(self.reject)
         layout.addWidget(close)
         self.refresh()
+
+    def save_title_preferences(self):
+        self.window.settings["lowercase_generated_titles"] = self.lowercase_titles.isChecked()
+        self.window.save_settings()
+        self.window.refresh_title_presentation()
 
     def save_playback_preferences(self):
         self.start_offset.setEnabled(self.start_near_end.isChecked())

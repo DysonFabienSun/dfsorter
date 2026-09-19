@@ -6,6 +6,13 @@
 - Use `uv` to manage Python environments and dependencies and to run Python commands.
 - This machine is behind the PRC's internet firewalls. Use the `proxy_on` and `proxy_off` commands from the default PowerShell profile when accessing the broader internet. Load the profile explicitly if the shell was started without it, enable the proxy before network access, and disable it afterward in a `finally` block.
 
+## Minimal Relevant Testing
+
+- For each feature or edit, run only the smallest set of tests directly relevant to the changed behavior. Prefer individual test cases or narrowly selected parametrizations over entire test files or suites.
+- Do not run the full suite by default, including before commits or amendments. Broaden testing only when a failure or concrete dependency impact requires it, or when the user explicitly requests it.
+- Once relevant checks pass, do not repeat them unless subsequent code changes affect their results. Scope lint and other checks to changed files where supported.
+- Documentation-only or instruction-only edits require diff review, not runtime tests.
+
 ## Icon Assets
 
 - The main Lucide icon library is `node_modules/lucide-static/icons` relative to this repository. Search it when choosing icons; available choices are not limited to the existing application assets.

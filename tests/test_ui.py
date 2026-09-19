@@ -187,7 +187,8 @@ def add_clips(window, tmp_path, valid=False, codec="libx264"):
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440",
+                # Keep an audio track for playback coverage without audible test tones.
+                "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-t",
                 "3",
                 "-c:v",
@@ -346,9 +347,13 @@ def test_command_validation_colors_and_save_feedback(window, application, tmp_pa
     artifact = ROOT / "cache/verification/command-validation"
     artifact.mkdir(parents=True, exist_ok=True)
     for text, state in [
-        ("", "empty"), ("je", "typing"), ("jett", "valid"),
-        ("jett va", "typing"), ("jett tag:", "incomplete"),
-        ("jett nonsense ", "invalid"), ("R9", "invalid"),
+        ("", "empty"),
+        ("je", "typing"),
+        ("jett", "valid"),
+        ("jett va", "typing"),
+        ("jett tag:", "incomplete"),
+        ("jett nonsense ", "invalid"),
+        ("R9", "invalid"),
     ]:
         window.command.setText(text)
         window.update_command_state()
@@ -845,6 +850,9 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
 
     mark(first, 0 if first == "in" else 3000)
     assert window.has_pending_range()
+    assert not window.range_warning.isHidden()
+    assert window.range_warning.text() == "I/O not set"
+    assert window.command_error.isHidden()
     assert not window.ensure_range_complete()
     assert window.catalogue.clip(ids[0])["in_ms"] is None
     assert window.catalogue.clip(ids[0])["out_ms"] is None
@@ -853,6 +861,7 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     assert not window.has_pending_range()
     assert window.ensure_range_complete()
     assert window.catalogue.clip(ids[0])["in_ms"] == 0
+    assert window.range_warning.isHidden()
     assert window.catalogue.clip(ids[0])["out_ms"] == 3000
     mark("in", 500)
     assert not window.has_pending_range()
@@ -862,6 +871,8 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     assert window.catalogue.clip(ids[0])["out_ms"] == 4000
     mark("in", 4500)
     assert window.has_pending_range()
+    assert window.range_warning.text() == "I/O invalid"
+    assert window.command_error.isHidden()
     assert window.catalogue.clip(ids[0])["in_ms"] == 500
     mark("out", 4500)
     assert window.has_pending_range()
@@ -873,6 +884,8 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     mark("out", 1000)
     window.clear_range()
     assert window.ensure_range_complete()
+    assert not window.range_warning.isHidden()
+    assert window.range_warning.text() == "I/O not set"
     assert window.player.seek.pending_out is None
     assert window.catalogue.clip(ids[0])["out_ms"] is None
 
@@ -1360,3 +1373,47 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
         )
         <= 1
     )
+
+
+def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatch):
+    import yaml
+    from PySide6.QtGui import QTextDocument
+
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.edit(
+        {
+            "metadata": {"agent": "Clove", "weapon": ["Phantom"], "kill": 4},
+            "mainline": "My BEST 中文",
+            "tag": "LOW_FPS",
+        }
+    )
+    before = window.catalogue.clip(ids[0])
+    selected = window.library.currentRow()
+    scroll = window.library.verticalScrollBar().value()
+    position = window.player.media.position()
+    monkeypatch.setattr(
+        window, "load_clip", lambda *args: pytest.fail("Title toggle reloaded clip")
+    )
+    dialog = SettingsDialog(window)
+    assert dialog.lowercase_titles.isChecked()
+    for enabled, expected in [
+        (True, "4k clove phantom | my best 中文"),
+        (False, "4K Clove Phantom | My BEST 中文"),
+        (True, "4k clove phantom | my best 中文"),
+    ]:
+        dialog.lowercase_titles.setChecked(enabled)
+        document = QTextDocument()
+        document.setHtml(window.working_title.text())
+        assert document.toPlainText() == "[LOW_FPS] VAL_" + expected
+        data = window.library.item(selected).data(CLIP_ROLE)
+        assert data["title"] == document.toPlainText()
+        assert data["title"] in window.library.item(selected).toolTip()
+        assert window.catalogue.clip(ids[0]) == before
+        assert window.library.currentRow() == selected
+        assert window.library.verticalScrollBar().value() == scroll
+        assert window.player.media.position() == position
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
+        "lowercase_generated_titles"
+    ]
+    dialog.close()

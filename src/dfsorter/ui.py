@@ -63,7 +63,7 @@ from .parsing import parse_command, preview_command, query_clips, requests_disca
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
-from .theme import COLORS, SIZES, apply_theme, role
+from .theme import COLORS, SIZES, apply_theme, role, title_styles
 from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tag_prefix, tool
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -332,7 +332,19 @@ class Window(QMainWindow):
         self.field_reminder.setMinimumHeight(self.field_reminder.fontMetrics().height())
         self.field_reminder.setAccessibleName("Metadata field checklist with command preview")
         self.field_reminder.hide()
-        command_layout.addWidget(self.field_reminder)
+        fields_row = QHBoxLayout()
+        fields_row.addWidget(self.field_reminder, 1)
+        self.range_warning_icon = QLabel()
+        self.range_warning_icon.setPixmap(icon("triangle-alert", COLORS["danger"], size=12).pixmap(12, 12))
+        self.range_warning = QLabel("I/O not set")
+        self.range_warning.setStyleSheet(f"color: {COLORS['danger']}; font-size: 11px;")
+        for widget in (self.range_warning_icon, self.range_warning):
+            policy = widget.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            widget.setSizePolicy(policy)
+            widget.hide()
+            fields_row.addWidget(widget)
+        command_layout.addLayout(fields_row)
         self.command_error = QLabel()
         role(self.command_error, "error")
         self.command_error.setWordWrap(True)
@@ -924,6 +936,7 @@ class Window(QMainWindow):
         card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
             self.registry,
+            lowercase=self.settings.get("lowercase_generated_titles", True),
             mainline_separator=" | ",
         )
         item.setText(
@@ -940,6 +953,8 @@ class Window(QMainWindow):
                     {**clip, "mainline": (clip.get("mainline") or "").strip()},
                     self.registry,
                     rich=True,
+                    lowercase=self.settings.get("lowercase_generated_titles", True),
+                    rich_styles=title_styles(card=True),
                     mainline_separator=" | ",
                 ),
                 "game": clip["game"],
@@ -1099,6 +1114,41 @@ class Window(QMainWindow):
         self.player.load(self.catalogue.clip(clip_id))
         self.review_mode()
 
+    def refresh_title_presentation(self):
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            clip = self.catalogue.clip(item.data(Qt.ItemDataRole.UserRole))
+            if clip:
+                self.render_card(item, clip)
+        if self.current_id:
+            self.render_working_title(self.catalogue.clip(self.current_id))
+
+    def render_working_title(self, clip):
+        game = self.registry.game(clip["game"])
+        title_fields = game.display_order if game else ["mainline"]
+        has_title = any(
+            (clip.get("mainline") if key == "mainline" else clip["metadata"].get(key))
+            not in (None, "", [])
+            for key in title_fields
+        )
+        if has_title:
+            rendered = title(
+                clip,
+                self.registry,
+                rich=True,
+                mainline_separator=" | ",
+                lowercase=self.settings.get("lowercase_generated_titles", True),
+                rich_styles=title_styles(),
+            )
+        else:
+            rendered = html.escape(Path(clip["source_path"]).name)
+            rendered += (
+                f' <span style="color:{COLORS["text_secondary"]}; font-size:12px; font-weight:400">'
+                "— Working title not set</span>"
+            )
+        rendered = f'<span style="color:{COLORS["text_working_title"]}">{rendered}</span>'
+        self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
+
     def render_clip(self):
         if not self.current_id:
             return
@@ -1112,23 +1162,7 @@ class Window(QMainWindow):
         self.command.setPlaceholderText(
             game.command_example if game and game.command_example else "Enter clip metadata…"
         )
-        title_fields = game.display_order if game else ["mainline"]
-        has_title = any(
-            (clip.get("mainline") if key == "mainline" else clip["metadata"].get(key))
-            not in (None, "", [])
-            for key in title_fields
-        )
-        if has_title:
-            rendered = title(clip, self.registry, rich=True)
-            rendered = rendered.replace("<b>", f'<b style="color:{COLORS["text_primary"]}">')
-        else:
-            rendered = html.escape(Path(clip["source_path"]).name)
-            rendered += (
-                f' <span style="color:{COLORS["text_secondary"]}; font-size:12px; font-weight:400">'
-                "— Working title not set</span>"
-            )
-        rendered = f'<span style="color:{COLORS["text_working_title"]}">{rendered}</span>'
-        self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
+        self.render_working_title(clip)
         self.render_field_reminder(clip, game)
         self.filename.setText(Path(clip["source_path"]).name)
         member_ids = self.catalogue.memberships(self.current_id)
@@ -1163,6 +1197,7 @@ class Window(QMainWindow):
         self.update_command_state()
 
     def render_field_reminder(self, clip, game):
+        self.update_range_warning()
         self.field_reminder.setVisible(self.current_panel == "Editing" and game is not None)
         if game is None:
             self.field_reminder.clear()
@@ -1176,11 +1211,13 @@ class Window(QMainWindow):
                 "metadata": {**clip["metadata"], **patch.get("metadata", {})},
             }
             state = (
-                "Command preview; press Enter to save." if validation == "valid"
+                "Command preview; press Enter to save."
+                if validation == "valid"
                 else "Partial command preview; finish or correct the command before saving."
             )
         self.field_reminder.setToolTip(
-            state + " ✓ populated · ! required for export · o optional · x invalid for current configuration."
+            state
+            + " ✓ populated · ! required for export · o optional · x invalid for current configuration."
         )
         fields = list(
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
@@ -1419,7 +1456,9 @@ class Window(QMainWindow):
         if self.current_id:
             clip = self.catalogue.clip(self.current_id)
             _, validation, message = preview_command(
-                self.command.text(), clip["game"], self.registry,
+                self.command.text(),
+                clip["game"],
+                self.registry,
                 submitted=self.command_submitted_error,
             )
         if validation == "empty":
@@ -1673,8 +1712,22 @@ class Window(QMainWindow):
             reason = "Set Out to complete the range"
         else:
             reason = "Set In earlier than Out to complete a valid range"
-        self.error(f"{reason}, or use Clear range, before leaving this clip.")
+        self.update_range_warning()
+        self.range_warning.setToolTip(f"{reason}, or use Clear range, before leaving this clip.")
         return False
+
+    def update_range_warning(self):
+        start, end = self.range_endpoints() if self.current_id else (None, None)
+        missing = start is None or end is None
+        visible = self.current_panel == "Editing" and bool(self.current_id)
+        visible = visible and (missing or not 0 <= start < end)
+        self.range_warning.setText("I/O not set" if missing else "I/O invalid")
+        self.range_warning.setToolTip(
+            "Set both In and Out to complete the range."
+            if missing else "In must be earlier than Out."
+        )
+        self.range_warning.setVisible(visible)
+        self.range_warning_icon.setVisible(visible)
 
     def reset_pending_range(self):
         self.pending_in = self.pending_out = None
@@ -2222,6 +2275,7 @@ class Window(QMainWindow):
             return
         formats = self.formats.copy()
         group = self.group_rating.isChecked()
+        lowercase = self.settings.get("lowercase_generated_titles", True)
 
         def export(cancelled, progress):
             if cancelled():
@@ -2237,6 +2291,7 @@ class Window(QMainWindow):
                 group,
                 cancelled,
                 progress,
+                lowercase=lowercase,
             )
 
         def done(result):
@@ -2317,6 +2372,7 @@ class Window(QMainWindow):
         folders = self.catalogue.folders()
         include_prefix = prefix.isChecked()
         selected_range = mode.currentData()
+        lowercase = self.settings.get("lowercase_generated_titles", True)
         self.background(
             lambda cancelled, progress: share_clip(
                 clip,
@@ -2328,6 +2384,7 @@ class Window(QMainWindow):
                 include_prefix,
                 cancelled,
                 selected_range=selected_range,
+                lowercase=lowercase,
                 progress=progress,
             ),
             lambda target: QMessageBox.information(

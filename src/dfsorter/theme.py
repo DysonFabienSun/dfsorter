@@ -225,3 +225,14 @@ def apply_theme(application):
         )
     application.setPalette(palette)
     application.setStyleSheet(stylesheet())
+
+
+def title_styles(card=False):
+    small = FONT_SIZES["sm" if card else "md"]
+    large = FONT_SIZES["md" if card else "lg"]
+    return {
+        "prefix": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
+        "metadata": f"color:{COLORS['text_working_title']}; font-size:{small}px; font-weight:400",
+        "separator": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
+        "mainline": f"color:{COLORS['text_primary']}; font-size:{large}px; font-weight:700",
+    }

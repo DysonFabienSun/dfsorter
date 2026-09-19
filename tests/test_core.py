@@ -483,3 +483,43 @@ def test_unquoted_multiword_enum(registry):
         "weapon": ["Tour de Force"],
         "kill": 3,
     }
+
+
+@pytest.mark.parametrize("lowercase", [True, False])
+def test_generated_title_casing(registry, catalogue, clips, tmp_path, monkeypatch, lowercase):
+    clip_id = clips[0]["clip_id"]
+    catalogue.patch(
+        clip_id,
+        {
+            "triage": "keep",
+            "mainline": "My <BEST>  中文",
+            "metadata": {
+                "kill": 4,
+                "agent": "Clove",
+                "map": "Corrode",
+                "weapon": ["Phantom", "Vandal"],
+            },
+        },
+    )
+    clip = catalogue.clip(clip_id)
+    before = deepcopy(clip)
+    body = "4K Clove Corrode Phantom Vandal My <BEST>  中文"
+    expected = "VAL_" + (body.lower() if lowercase else body)
+    assert title(clip, registry, lowercase=lowercase) == expected
+    assert "&lt;" in title(clip, registry, rich=True, lowercase=lowercase)
+    result = export_project([clip], registry, tmp_path / "export", [], lowercase=lowercase)
+    assert Path(result.completed[0]).stem == safe_stem(expected)
+    assert Path(result.completed[0]).read_bytes() == Path(clip["source_path"]).read_bytes()
+    received = []
+    monkeypatch.setattr(
+        "dfsorter.sharing.encode_share", lambda c, d, stem, *args: received.append(stem)
+    )
+    share_clip(clip, registry, tmp_path / "share", [], lowercase=lowercase)
+    share_clip(clip, registry, tmp_path / "share", [], custom="My Custom NAME", lowercase=lowercase)
+    assert received == [safe_stem(expected), "My Custom NAME"]
+    assert clip == before == catalogue.clip(clip_id)
+    fallback = {**clip, "metadata": {}, "mainline": None, "source_path": "Original NAME.MP4"}
+    assert title(fallback, registry, lowercase=lowercase) == "VAL_Original NAME"
+    assert title(clip, registry, selected=["kill"], prefix=False, lowercase=lowercase) == (
+        "4k" if lowercase else "4K"
+    )

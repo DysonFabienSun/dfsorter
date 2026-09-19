@@ -23,13 +23,15 @@ A **Session** is a temporary-but-persisted, fixed review queue. It freezes the m
 
 ## 2. Naming and Normalization Conventions
 
-- Canonical video-game references stored and displayed by DFSorter use their official names and capitalization where practical. Examples include `VALORANT`, `Battlefield 6`, `Escape from Tarkov`, `Jett`, `Headhunter`, `Tour de Force`, and `Bladestorm`.
+- Canonical video-game references stored by DFSorter use their official names and capitalization where practical. UI casing is contextual: command hints and field indicators retain their existing presentation; working titles follow the generated-name preference. Examples include `VALORANT`, `Battlefield 6`, `Escape from Tarkov`, `Jett`, `Headhunter`, `Tour de Force`, and `Bladestorm`.
 - Matching, parsing, aliases, filtering, and text sorting are case-insensitive.
 - Case-insensitive matching must not destroy the canonical capitalization of stored structured metadata.
 - Parsed field values have leading and trailing whitespace removed. Free-form human text such as `mainline` and `description` preserves the user's original capitalization, punctuation, and internal spacing.
 - Game-specific YAML files define the canonical game name and a three-letter uppercase display code such as `VAL`, `BF6`, or `EFT`.
 
 ---
+
+Working titles and generated Share/Project Export filename bodies default to lowercase, including structured fields and mainline. Game codes remain uppercase. Settings → General → “Lowercase working titles and generated filenames” is enabled by default; disabling it restores stored capitalization. Changes refresh visible titles immediately and apply to subsequent output operations. Stored metadata and free-form text remain unchanged. Explicit custom filenames, original-filename fallbacks, source extensions, and UI tag prefixes retain casing. Filename selection/order, sanitization and collision suffixes remain unchanged; UI ` | ` separators remain spaces in generated filenames.
 
 ## 3. Storage Conventions
 
@@ -550,6 +552,8 @@ Description text is secondary and is never automatically appended to the working
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
+At the end of the field checklist row, show a red danger icon and `I/O not set` whenever either range endpoint is missing, or `I/O invalid` for invalid endpoint order. Hide the indicator for a valid range while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
+
 ### 13.2 Command-Bar Focus and Playback Keys
 
 Entering Editing or changing clips starts review mode with a non-text surface focused.
@@ -957,7 +961,7 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 | Toolbar / navigation height | 28 / 34 |
 | Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
 
-Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 16 px semibold, with mainline bold and primary-colored and structured portions in the brighter `text_working_title #C7CDD5` tone. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 13 px regular metadata in `text_working_title #C7CDD5`, 13 px regular game codes and separators in `text_muted`, and 16 px bold mainline in `text_primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px, panels 0–3 px. Font metrics take precedence over dimensions where necessary to avoid clipping.
 
@@ -965,7 +969,7 @@ Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups,
 
 Use one shared delegate in all left-pane library, Session and Export views. A clip card has a 48 px body, 4 px external gap, 1 px subtle border, 3 px radius, neutral `bg_panel_alt` fill and 8 px horizontal padding. Grow only as required by font metrics.
 
-Line one is the existing working title or filename fallback at 13 px. Line two is a 6 px triage dot, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
+Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text_working_title`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot centered against visible text using font metrics, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
 
 Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cyan left indicator. Keyboard focus uses a subtle cyan border. Preserve multi-selection outside Editing, single selection within Editing, frozen Session ordering and stable-boundary refresh behavior. Presentation data must use explicit roles, not substring matching against visible text.
 

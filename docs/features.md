@@ -1,5 +1,13 @@
 # DFSorter v1 delivery checklist
 
+## Working-title and generated-filename casing
+
+- [x] Default lowercase generated title/filename bodies with uppercase game codes; canonical catalogue values, custom filenames, original-name fallbacks, source extensions and UI tags retain casing. Settings → General can restore stored capitalization; preference persists and refreshes visible titles without reloading playback.
+- [x] Shared inline hierarchy: muted game codes, smaller regular metadata, subtle separator and bold mainline. Shared clip-card triage dots align against visible text metrics.
+- [x] Seven targeted tests passed covering both output casing modes, actual copied filenames/bytes, Share encoder stems, custom names, fallback names, metadata preservation, settings persistence, immediate UI refresh and existing title/navigation behavior. Changed-file Ruff check passed. Qt emitted Windows diagnostic `0x8001010d` during test setup; tests still completed successfully.
+- [x] Inspected populated, metadata-only, mainline-only, fallback and long mixed Chinese/English cards with all triage states at 100%, 125% and 150% scaling. Screenshots: `cache/verification/title-casing/scale-*.png`; isolated invalid-media fixtures exercised error-state layout without encoding video.
+- [ ] User acceptance of title hierarchy and dot alignment.
+
 ## Live command field indicators and validation colors
 
 - [x] Field indicators preview commands as typed, merging with saved fields without writing metadata. Incomplete/invalid drafts retain the longest parseable prefix; clearing restores saved indicators. Tooltips distinguish partial previews. Enter still saves.

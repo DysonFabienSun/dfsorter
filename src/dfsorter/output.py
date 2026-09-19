@@ -112,6 +112,8 @@ def export_project(
     group_rating=False,
     cancelled=lambda: False,
     progress=lambda text: None,
+    *,
+    lowercase=True,
 ):
     errors = validate(clips, registry)
     if errors:
@@ -122,7 +124,9 @@ def export_project(
         if clip["triage"] != "keep":
             continue
         options = (formats or {}).get(clip["game"], {})
-        stem = title(clip, registry, options.get("fields"), options.get("prefix", True))
+        stem = title(
+            clip, registry, options.get("fields"), options.get("prefix", True), lowercase=lowercase
+        )
         directory = destination
         if group_rating:
             directory /= f"Rating {clip['rating']}" if clip["rating"] else "Unrated"
@@ -146,11 +150,14 @@ def share_clip(
     prefix=True,
     cancelled=lambda: False,
     *,
+    lowercase=True,
     selected_range=False,
     progress=lambda text: None,
 ):
     from .sharing import encode_share
 
     destination = check_destination(destination, folders)
-    stem = custom if custom is not None else title(clip, registry, fields, prefix)
+    stem = (
+        custom if custom is not None else title(clip, registry, fields, prefix, lowercase=lowercase)
+    )
     return encode_share(clip, destination, safe_stem(stem), selected_range, cancelled, progress)

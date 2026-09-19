@@ -135,8 +135,16 @@ def title(
     prefix: bool = True,
     rich: bool = False,
     mainline_separator: str = " ",
+    *,
+    lowercase: bool = True,
+    rich_styles: dict[str, str] | None = None,
 ) -> str:
     import html
+
+    def styled(text, role):
+        if rich and rich_styles:
+            return f'<span style="{rich_styles[role]}">{text}</span>'
+        return text
 
     game = registry.game(clip.get("game"))
     order = game.display_order if game else ["mainline"]
@@ -155,13 +163,22 @@ def title(
         elif isinstance(value, list):
             value = " ".join(value)
         if parts:
-            parts.append(mainline_separator if "mainline" in (previous_key, key) else " ")
+            separator = mainline_separator if "mainline" in (previous_key, key) else " "
+            parts.append(styled(html.escape(separator) if rich else separator, "separator"))
+        value = str(value).lower() if lowercase else str(value)
         if rich:
-            escaped = html.escape(str(value))
-            parts.append(f"<b>{escaped}</b>" if key == "mainline" else escaped)
+            escaped = html.escape(value)
+            if rich_styles:
+                parts.append(styled(escaped, "mainline" if key == "mainline" else "metadata"))
+            else:
+                parts.append(f"<b>{escaped}</b>" if key == "mainline" else escaped)
         else:
-            parts.append(str(value))
+            parts.append(value)
         previous_key = key
     fallback = Path(clip["source_path"]).stem
     result = "".join(parts) or (html.escape(fallback) if rich else fallback)
-    return f"{game.code}_{result}" if game and prefix else result
+    return (
+        styled(html.escape(game.code + "_") if rich else game.code + "_", "prefix") + result
+        if game and prefix
+        else result
+    )

@@ -167,7 +167,12 @@ class ClipDelegate(QStyledItemDelegate):
             QColor(COLORS[{"keep": "success", "discard": "danger"}.get(verdict, "text_muted")])
         )
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(area.left(), detail.center().y() - 3, 6, 6)
+        baseline = (
+            detail.top() + (detail.height() - detail_metrics.height()) / 2 + detail_metrics.ascent()
+        )
+        ink = detail_metrics.tightBoundingRect(text)
+        center_y = baseline + ink.y() + ink.height() / 2
+        painter.drawEllipse(QPointF(area.left() + 3, center_y), 3, 3)
         painter.restore()
 
 
