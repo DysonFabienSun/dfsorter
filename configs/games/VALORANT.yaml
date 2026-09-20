@@ -15,7 +15,7 @@ fields:
   weapon:
     type: enum
     multiple: true
-    values: [Classic, Shorty, Frenzy, Ghost, Bandit, Sheriff, Stinger, Spectre, Bucky, Judge, Bulldog, Guardian, Warden, Phantom, Vandal, Marshal, Outlaw, Operator, Ares, Odin, Headhunter, Tour de Force, Bladestorm, Showstopper, Overdrive]
-    aliases: {hh: Headhunter, op: Operator, tdf: Tour de Force}
+    values: [Classic, Shorty, Frenzy, Ghost, Bandit, Sheriff, Stinger, Spectre, Bucky, Judge, Bulldog, Guardian, Warden, Phantom, Vandal, Marshal, Outlaw, Operator, Ares, Odin, Headhunter, Tour de Force, Bladestorm, Showstopper, Overdrive, Nanoswarm]
+    aliases: {hh: Headhunter, op: Operator, tdf: Tour de Force, nano: Nanoswarm}
 display_order: [clutch, kill, agent, map, weapon, mainline]
-required_for_export: [agent, weapon]
+suggested_fields: [agent, weapon]

@@ -180,11 +180,16 @@ def test_tag_commands_and_brim_alias(registry, catalogue, clips):
         "rating": 2,
     }
     assert parse_command('tag:""', None, registry) == {"tag": None}
+    assert parse_command("[3rd] R2", None, registry) == {"tag": "3rd", "rating": 2}
+    assert parse_command("wpn:M4 [LOW_FPS]", "Battlefield 6", registry) == {
+        "metadata": {"weapon": ["M4"]}, "tag": "LOW_FPS",
+    }
     assert parse_command("wpn:M4 tag:LOW_FPS", "Battlefield 6", registry) == {
         "metadata": {"weapon": ["M4"]},
         "tag": "LOW_FPS",
     }
-    for text in ["tag:", "tag:A tag:B", 'tag:"" tag:A', 'tag:"unclosed']:
+    for text in ["tag:", "tag:A tag:B", 'tag:"" tag:A', 'tag:"unclosed',
+                 "[]", "[audio issue]", "[A] tag:B"]:
         with pytest.raises(ValueError):
             parse_command(text, "VALORANT", registry)
     catalogue.patch(clips[0]["clip_id"], patch)
@@ -396,6 +401,20 @@ def test_export_validation_and_preservation(catalogue, clips, registry, tmp_path
     with pytest.raises(ValueError, match="configured game"):
         export_project(catalogue.clips(), registry, tmp_path / "blocked", catalogue.folders())
     assert not (tmp_path / "blocked").exists()
+
+
+def test_export_minimum_metadata_and_yaml_suggestions(catalogue, clips, registry):
+    clip_id = clips[0]["clip_id"]
+    assert registry.game("VALORANT").suggested_fields == ["agent", "weapon"]
+    catalogue.patch(clip_id, {"triage": "keep", "tag": "3rd", "rating": 3,
+                              "description": "comment"})
+    assert "at least one metadata field or mainline" in validate(
+        [catalogue.clip(clip_id)], registry
+    )[0][1]
+    catalogue.patch(clip_id, {"mainline": "Player clutch"})
+    assert validate([catalogue.clip(clip_id)], registry) == []
+    catalogue.patch(clip_id, {"mainline": None, "metadata": {"kill": 2}})
+    assert validate([catalogue.clip(clip_id)], registry) == []
 
 
 def test_copy_collision_cancel_and_share(catalogue, clips, registry, tmp_path):

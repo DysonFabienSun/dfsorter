@@ -150,7 +150,7 @@ Each config should define at least:
 - aliases/shorthand for structured field values;
 - optional aliases for field prefixes;
 - `display_order`;
-- `required_for_export`.
+- optional `suggested_fields`.
 
 An optional `command_example` string supplies the command bar's muted placeholder for that game when the input is empty. Update it when switching clips, reassigning games or reloading configurations; never insert it as command text. Unknown games or configurations without an example use a generic metadata hint.
 
@@ -249,19 +249,19 @@ VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
 
 `mainline` is visually emphasized in the Editing UI. It remains ordinary text in filenames.
 
-### 7.6 Export Requirements
+### 7.6 Suggested Fields and Export Minimum
 
-Each game config may declare structured fields that must be present before a kept clip may be included in a Project Export.
+Each game config may declare fields worth filling in during review. Missing suggestions show amber `!` markers but do not block Keep + Next or Project Export.
 
 Example:
 
 ```yaml
-required_for_export:
+suggested_fields:
   - agent
   - weapon
 ```
 
-A field being optional in the catalogue does not prevent it from being required for a particular export workflow.
+Keep + Next and Project Export require a configured game and at least one populated structured metadata field or `mainline`. Rating, tag and description do not meet this minimum. Older `required_for_export` keys are interpreted as suggestions for compatibility.
 
 ### 7.7 Configuration Changes and Existing Data
 
@@ -439,7 +439,7 @@ size and mtime require explicit reinspection.
 
 The import workflow is managed from Home and discovers source media while adding or maintaining references in the catalogue.
 
-Capture folders are persisted across application runs.
+Capture folders are persisted across application runs. Successful scheduled or focus-triggered scans do not post status-bar messages; failures still do.
 
 On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, missing-source entries and frozen Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available. Additionally, request quiet incremental scans every 30 seconds and when the application regains focus. Coalesce requests and defer while another background operation or modal dialog is active; retry after it finishes. Quiet scans use the same inspection cache and enabled-folder rules without modal progress or error dialogs. Report failures in the status bar. Preserve selection, viewport anchor, playback, temporary Browse fields and frozen Session membership/order when refreshing results.
 
@@ -542,7 +542,7 @@ The Editing layout provides:
 - player and clip information in the center;
 - collapsible projects on the right, following the normal/maximized visibility rules;
 - command bar at the bottom of the center pane, allowing the left clip list to use the full pane height.
-- a compact footer below the Editing clip list shows Kept, Rejected, Undefined and Total counts for the frozen Session, updating immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
+- a compact footer below the Editing clip list leads with decided progress `(Kept + Rejected)/Total`, followed by rejected count in parentheses, for example `38/50 (5 rejected)`. Update immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
 
 ### 13.1 Clip Display
 
@@ -568,11 +568,13 @@ The `mainline` portion is visually emphasized in the UI. Triage selection reflec
 
 Use a prominent working title, muted structured metadata and source details, a compact five-star control with hover preview and a clear action, and secondary description text shown only when populated; descriptions are entered through the command bar. The tag appears only when populated, as a bold bright-yellow bracketed prefix before the game-code title in clip cards and before the Editing working title (including filename fallbacks). There is no dedicated tag textbox. Commands or **Settings cog → Edit tag…** add, change, or clear it. Escape rich text, retain title elision and full tooltips; generated Share/Export filenames do not include this UI prefix. Unset ratings show red empty star outlines with no background highlight; hover previews remain gold and selecting a rating removes the red treatment. Ratings remain optional, never zero.
 
+For a `3rd` tag (case-insensitive), underline the first word of `mainline` in clip cards and the Editing working title. This is visual-only; generated filenames remain plain.
+
 Description text is secondary and is never automatically appended to the working title. There is no dedicated description editor or Save description button. Set In, Set Out, Clear range and Share icon actions sit on the right of the playback-controls row immediately beneath the video timeline. A vertical divider separates them from the icon-only Add to project + Next action, whose tooltip includes Ctrl+Enter. In/Out state is shown on the timeline without a separate range text display.
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
-At the end of the field checklist row, show a red danger icon and `I/O not set` whenever either range endpoint is missing, or `I/O invalid` for invalid endpoint order. Hide the indicator for a valid range while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
+Immediately left of Set In and Set Out on the playback-controls row, show a red danger icon and `I/O not set` whenever either range endpoint is missing, or `I/O invalid` for invalid endpoint order. Hide the indicator for a valid range while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
 
 ### 13.2 Command-Bar Focus and Playback Keys
 
@@ -599,7 +601,7 @@ The command bar receives one complete string.
 
 The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; the checklist tooltip distinguishes partial previews from complete drafts. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
 
-`tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `tag:LOW_FPS` or `tag:"audio issue"`; consume one token or quoted value, preserving capitalization and trimming outer whitespace. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
+`tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `[LOW_FPS]`, `tag:LOW_FPS` or `tag:"audio issue"`. Bracket syntax accepts one non-empty token without spaces; `[]` and brackets containing spaces are invalid. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. For a valid tag draft matching any library clip case-insensitively, show `[TAG] · Existing` in the command feedback line. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
 
 General syntax:
 
@@ -689,11 +691,12 @@ This command history exists only in memory and does not persist across applicati
 - `Shift+Enter` applies verdict-and-advance in review mode or command-input mode when the command bar is completely empty; it never submits a command. Ignore auto-repeat. Failed validation preserves input focus; a successful action enters review mode. Other text fields retain their normal editing behavior.
 - If the command bar contains any text, including whitespace or a retained draft, Shift+Enter in either mode refuses advancement and prompts the user to enter input mode and press Enter to submit existing commands first.
 - A successful metadata command by itself does **not** change triage.
-- For a non-discarded clip, Shift+Enter requires a configured game and every field in its `required_for_export` list. Missing requirements leave verdict and position unchanged and are listed inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. This is metadata validation; source availability remains an export requirement.
+- For a non-discarded clip, Shift+Enter requires a configured game and at least one populated structured metadata field or `mainline`. Missing metadata leaves verdict and position unchanged and is explained inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. Source availability remains an export requirement.
 - An explicitly discarded clip advances while preserving Discard, even with missing fields, no game or an unavailable source. The empty-command-bar requirement still applies.
 - After applying the legal verdict, advance to the next clip with undefined triage later in frozen Session order, skipping Keep and Discard clips. Do not wrap. If none remains ahead, stay on the current clip and report Session complete only if no Session clips remain undefined; otherwise report that earlier clips remain undefined. Do not delete or replace the Session. Ignore key auto-repeat for advancement.
 - Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
 - Backspace does not automatically advance; the user may then use `Shift+Enter` or ordinary navigation to continue.
+- Immediately after Backspace rejects a clip in review mode, the next non-modifier Enter also applies verdict-and-advance once. Any other key, mouse action or clip change cancels this opportunity.
 - Rating never changes triage.
 - Clicking the visible triage controls may also set Keep/Discard/Undefined directly.
 
@@ -713,7 +716,7 @@ R5
 
 The parser is case-insensitive.
 
-The Editing panel displays the stored rating as a clickable 1-5 star control. The adjacent `x` action and right-click clear the rating.
+The Editing panel displays the stored rating as a clickable 1-5 star control. The adjacent `x` action and right-click clear the rating. A fully valid command draft containing `R1`–`R5` previews faded yellow stars with a slow pulse and temporarily replaces `x` with a disabled clock. Muted lowercase hints beside the stars read `r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic`.
 
 Rating is reference metadata only. It does not automatically Keep, Discard, or prioritize a clip and is not included in ordinary search/filter functionality.
 
@@ -807,7 +810,7 @@ For a Project Export:
 - `keep` clips are candidates for export;
 - `discard` clips are ignored;
 - any clip with undefined triage blocks the entire export;
-- any kept clip missing a field listed in that game's `required_for_export` blocks the entire export;
+- any kept clip with no structured metadata field and no `mainline` blocks the entire export;
 - any kept clip whose source file is unavailable blocks the entire export.
 
 One invalid clip blocks the whole export.

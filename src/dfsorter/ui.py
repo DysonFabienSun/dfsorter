@@ -56,7 +56,7 @@ from PySide6.QtWidgets import (
 
 from .browse import BrowsePage
 from .catalogue import Catalogue
-from .config import Registry, title
+from .config import Registry, has_review_metadata, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
@@ -134,6 +134,7 @@ class Window(QMainWindow):
         self.space_down = False
         self.submit_resume = False
         self.consume_resume_space = False
+        self.reject_enter_armed = False
         self.space_timer = QTimer(self)
         self.space_timer.setSingleShot(True)
         self.space_timer.setInterval(200)
@@ -344,6 +345,9 @@ class Window(QMainWindow):
         self.command_saved_timer.setSingleShot(True)
         self.command_saved_timer.setInterval(1200)
         self.command_saved_timer.timeout.connect(self.update_command_state)
+        self.rating_preview_timer = QTimer(self)
+        self.rating_preview_timer.setInterval(650)
+        self.rating_preview_timer.timeout.connect(self.toggle_rating_preview)
         command_layout.addWidget(self.command)
         self.command_feedback = QLabel()
         self.command_feedback.setTextFormat(Qt.TextFormat.PlainText)
@@ -369,7 +373,11 @@ class Window(QMainWindow):
             policy.setRetainSizeWhenHidden(True)
             widget.setSizePolicy(policy)
             widget.hide()
-            fields_row.addWidget(widget)
+        self.range_warning_slot = QHBoxLayout()
+        self.range_warning_slot.setSpacing(3)
+        self.range_warning_slot.addWidget(self.range_warning_icon)
+        self.range_warning_slot.addWidget(self.range_warning)
+        self.player.controls.insertLayout(1, self.range_warning_slot)
         command_layout.addLayout(fields_row)
         self.command_error = QLabel()
         role(self.command_error, "error")
@@ -553,7 +561,12 @@ class Window(QMainWindow):
         self.rating = Rating()
         self.rating.changed.connect(lambda value: self.edit({"rating": value}))
         stars.addWidget(self.rating)
-        stars.addWidget(tool("x", "Clear rating", lambda: self.edit({"rating": None})))
+        self.rating_clear = tool("x", "Clear rating", lambda: self.edit({"rating": None}))
+        stars.addWidget(self.rating_clear)
+        self.rating_hint = QLabel("r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic")
+        role(self.rating_hint, "muted")
+        self.rating_hint.setToolTip("r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic")
+        stars.addWidget(self.rating_hint)
         stars.addStretch()
         stars.addWidget(tool("circle-help", "Review shortcuts · ?", self.show_shortcuts))
         editing.addLayout(stars)
@@ -842,6 +855,11 @@ class Window(QMainWindow):
         # That automatic focus change must not become a manual Browse selection.
         library_signals_blocked = self.library.blockSignals(True)
         self.current_panel = name
+        self.reject_enter_armed = False
+        if name != "Editing":
+            self.rating_preview_timer.stop()
+            self.rating.command_preview = None
+            self.rating.update()
         self.center.setCurrentWidget(self.pages[name][0])
         self.update_projects_visibility()
         for destination, control in self.nav.items():
@@ -991,8 +1009,8 @@ class Window(QMainWindow):
             counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
             total = len(session["ids"])
             self.session_counts.setText(
-                f"Kept {counts['keep']} · Rejected {counts['discard']}\n"
-                f"Undefined {counts['undefined']} · Total {total}"
+                f"{counts['keep'] + counts['discard']}/{total} "
+                f"({counts['discard']} rejected)"
             )
             self.session_status.setText(
                 f"Position {session['index'] + 1} / {total}\n"
@@ -1049,6 +1067,7 @@ class Window(QMainWindow):
                     lowercase=self.settings.get("lowercase_generated_titles", True),
                     rich_styles=title_styles(card=True),
                     mainline_separator=" | ",
+                    underline_first_mainline_word=(clip.get("tag") or "").strip().casefold() == "3rd",
                 ),
                 "browse_details": browse_details,
                 "game": clip["game"],
@@ -1252,6 +1271,7 @@ class Window(QMainWindow):
         self.submit_resume = False
         self.cancel_space()
         self.current_id = clip_id
+        self.reject_enter_armed = False
         self.pending_in = None
         self.pending_out = None
         self.command.setText(self.drafts.get(clip_id, ""))
@@ -1287,6 +1307,7 @@ class Window(QMainWindow):
                 mainline_separator=" | ",
                 lowercase=self.settings.get("lowercase_generated_titles", True),
                 rich_styles=title_styles(),
+                underline_first_mainline_word=(clip.get("tag") or "").strip().casefold() == "3rd",
             )
         else:
             rendered = html.escape(Path(clip["source_path"]).name)
@@ -1366,7 +1387,7 @@ class Window(QMainWindow):
             )
         self.field_reminder.setToolTip(
             state
-            + " ✓ populated · ! required for export · o optional · x invalid for current configuration."
+            + " ✓ populated · ! suggested · o optional · x invalid for current configuration."
         )
         fields = list(
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
@@ -1401,7 +1422,7 @@ class Window(QMainWindow):
                 mark, color = "x", "danger"
             elif not missing:
                 mark, color = "✓", "success"
-            elif key in game.required_for_export:
+            elif key in game.suggested_fields:
                 mark, color = "!", "warning"
             else:
                 mark, color = "o", "text_muted"
@@ -1492,13 +1513,8 @@ class Window(QMainWindow):
             if not game:
                 self.error("Assign a configured game before Keep + Next, or explicitly Discard.")
                 return
-            missing = [
-                key
-                for key in game.required_for_export
-                if clip["metadata"].get(key) in (None, "", [])
-            ]
-            if missing:
-                self.error("Cannot Keep + Next: missing required fields: " + ", ".join(missing))
+            if not has_review_metadata(clip, game):
+                self.error("Cannot Keep + Next: add at least one metadata field or mainline")
                 return
         try:
             if clip["triage"] != "discard":
@@ -1616,15 +1632,43 @@ class Window(QMainWindow):
                 state = "paused"
         if self.command.property("commandState") != state:
             self.command.setProperty("commandState", state)
-        validation, message = "empty", ""
+        validation, message, patch = "empty", "", {}
         if self.current_id:
             clip = self.catalogue.clip(self.current_id)
-            _, validation, message = preview_command(
+            patch, validation, message = preview_command(
                 self.command.text(),
                 clip["game"],
                 self.registry,
                 submitted=self.command_submitted_error,
             )
+        rating = (
+            patch.get("rating")
+            if validation == "valid" and self.current_panel == "Editing"
+            else None
+        )
+        if self.rating.command_preview != rating:
+            self.rating.command_preview = rating
+            self.rating.command_flash = rating is not None
+            self.rating.update()
+        if rating is None:
+            self.rating_preview_timer.stop()
+        elif not self.rating_preview_timer.isActive():
+            self.rating_preview_timer.start()
+        self.rating_clear.setEnabled(rating is None)
+        self.rating_clear.setIcon(icon("x" if rating is None else "clock"))
+        self.rating_clear.setToolTip(
+            "Clear rating" if rating is None else "Rating pending · press Enter"
+        )
+        self.rating_clear.setAccessibleName(
+            "Clear rating" if rating is None else "Rating pending"
+        )
+        if validation == "valid" and patch.get("tag"):
+            candidate = patch["tag"]
+            if any(
+                (item.get("tag") or "").casefold() == candidate.casefold()
+                for item in self.catalogue.clips()
+            ):
+                message = f"{message} · [{candidate}] · Existing"
         if validation == "empty":
             if self.command_saved_timer.isActive():
                 validation, message = "saved", "Saved"
@@ -1638,6 +1682,10 @@ class Window(QMainWindow):
             self.command.style().unpolish(self.command)
             self.command.style().polish(self.command)
             self.command.update()
+
+    def toggle_rating_preview(self):
+        self.rating.command_flash = not self.rating.command_flash
+        self.rating.update()
 
     def review_mode(self):
         self.submit_resume = False
@@ -1704,7 +1752,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving your draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and its required fields.\nExplicit Discard advances without those requirements.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
@@ -1725,7 +1773,8 @@ class Window(QMainWindow):
             ):
                 event.accept()
                 return True
-        if event.type() == QEvent.Type.MouseButtonPress:
+        if event.type() in {QEvent.Type.MouseButtonPress, QEvent.Type.Wheel}:
+            self.reject_enter_armed = False
             self.submit_resume = False
             self.update_command_state()
             self.cancel_space()
@@ -1761,6 +1810,19 @@ class Window(QMainWindow):
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
+        if self.reject_enter_armed and key not in {
+            Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta,
+        }:
+            self.reject_enter_armed = False
+            if (
+                self.current_panel == "Editing"
+                and not text_editing
+                and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}
+                and modifiers == Qt.KeyboardModifier.NoModifier
+                and not event.isAutoRepeat()
+            ):
+                self.advance_review()
+                return True
         if self.current_panel == "Browse":
             if key == Qt.Key.Key_Escape and self.browse.fullscreen_state is not None:
                 self.browse.set_fullscreen(False)
@@ -1855,6 +1917,8 @@ class Window(QMainWindow):
                     return True
                 if key == Qt.Key.Key_Backspace:
                     self.edit({"triage": "discard"})
+                    if not event.isAutoRepeat():
+                        self.reject_enter_armed = True
                     return True
             if self.current_panel in {"Browse", "Editing"} and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
                 (self.mark_in if event.key() == Qt.Key.Key_I else self.mark_out)()
@@ -2304,11 +2368,13 @@ class Window(QMainWindow):
             self.refresh_library()
             metrics["ui_refresh"] = time.perf_counter() - started
             logging.info("Scan including UI refresh: %s", metrics)
-            self.statusBar().showMessage(
-                f"Scan: {metrics['hits']} cached, {metrics['probes']} inspected, "
-                f"{metrics['warnings']} warnings. " + " · ".join(errors),
-                12000,
-            )
+            if not quiet or errors:
+                self.statusBar().showMessage(
+                    ("Automatic scan: " + " · ".join(errors)) if quiet else
+                    f"Scan: {metrics['hits']} cached, {metrics['probes']} inspected, "
+                    f"{metrics['warnings']} warnings. " + " · ".join(errors),
+                    12000,
+                )
 
         self.background(scan, done, label="Discovering files…", quiet=quiet)
 

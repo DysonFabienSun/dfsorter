@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import title
+from .config import has_review_metadata, title
 
 
 def safe_stem(value: str) -> str:
@@ -34,11 +34,8 @@ def validate(clips, registry):
             if not game:
                 reasons.append("assign a configured game")
             else:
-                reasons.extend(
-                    f"missing required field: {key}"
-                    for key in game.required_for_export
-                    if clip["metadata"].get(key) in (None, "", [])
-                )
+                if not has_review_metadata(clip, game):
+                    reasons.append("add at least one metadata field or mainline")
             if not Path(clip["source_path"]).is_file():
                 reasons.append("source unavailable")
         if reasons:

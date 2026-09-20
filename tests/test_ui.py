@@ -540,11 +540,11 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.current_id == ids[0]
     assert application.focusWidget() is window.command
-    assert "required fields" in window.command_error.text()
+    assert "at least one metadata field or mainline" in window.command_error.text()
     QTest.keyClick(window.command, Qt.Key.Key_Escape)
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.current_id == ids[0]
-    assert "required fields" in window.command_error.text()
+    assert "at least one metadata field or mainline" in window.command_error.text()
     window.command.setFocus()
     window.command.setText("jett vandal")
     QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
@@ -605,6 +605,55 @@ def test_field_checklist_previews_commands_without_saving(window, application, t
     assert "✓&nbsp;tag" in window.field_reminder.text()
 
 
+def test_bracket_tag_rating_preview_and_third_party_title(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.catalogue.patch(ids[0], {"tag": "3RD", "mainline": "Player clutch"})
+    window.panel("Editing")
+    window.render_clip()
+    assert "!&nbsp;agent" in window.field_reminder.text()
+    assert "!&nbsp;weapon" in window.field_reminder.text()
+    assert "<u>player</u> clutch" in window.working_title.text().lower()
+    assert "<u>player</u> clutch" in window.library.item(0).data(CLIP_ROLE)["rich_title"].lower()
+    window.command.setText("[3rd] R4")
+    assert "[3rd] · Existing" in window.command_feedback.text()
+    assert window.rating.command_preview == 4
+    assert not window.rating_clear.isEnabled()
+    assert window.rating_clear.toolTip() == "Rating pending · press Enter"
+    window.command.setText("[3rd] R9")
+    assert window.rating.command_preview is None
+    assert window.rating_clear.isEnabled()
+    window.command.setText("[3rd] R4")
+    window.panel("Session")
+    assert not window.rating_preview_timer.isActive()
+    window.panel("Editing")
+    assert window.rating.command_preview == 4
+    window.submit()
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    assert window.rating.command_preview is None
+
+
+def test_reject_then_enter_is_one_shot(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    second = tmp_path / "captures" / "second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"],
+                            [{"path": str(second), "game": "VALORANT"}])
+    next_id = next(clip["clip_id"] for clip in window.catalogue.clips()
+                   if clip["clip_id"] != ids[0])
+    window.catalogue.create_session([ids[0], next_id], replace=True)
+    window.panel("Editing")
+    QTest.keyClick(window.player, Qt.Key.Key_Backspace)
+    assert window.reject_enter_armed
+    QTest.keyClick(window.player, Qt.Key.Key_Return)
+    assert window.current_id == next_id
+    assert not window.reject_enter_armed
+    QTest.keyClick(window.player, Qt.Key.Key_Backspace)
+    QTest.keyClick(window.player, Qt.Key.Key_Left)
+    assert not window.reject_enter_armed
+    QTest.keyClick(window.player, Qt.Key.Key_Return)
+    assert application.focusWidget() is window.command
+
+
 def test_command_validation_colors_and_save_feedback(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
@@ -650,17 +699,17 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     )
     window.panel("Editing")
     application.processEvents()
-    assert window.session_counts.text() == "Kept 0 · Rejected 0\nUndefined 1 · Total 1"
+    assert window.session_counts.text() == "0/1 (0 rejected)"
     item = window.library.item(0)
     window.edit({"triage": "keep"})
-    assert window.session_counts.text() == "Kept 1 · Rejected 0\nUndefined 0 · Total 1"
+    assert window.session_counts.text() == "1/1 (0 rejected)"
     window.edit({"triage": "discard"})
-    assert window.session_counts.text() == "Kept 0 · Rejected 1\nUndefined 0 · Total 1"
+    assert window.session_counts.text() == "1/1 (1 rejected)"
     assert window.library.item(0) is item
     window.undo()
-    assert "Kept 1" in window.session_counts.text()
+    assert "1/1 (0 rejected)" in window.session_counts.text()
     window.undo()
-    assert "Undefined 1" in window.session_counts.text()
+    assert "0/1 (0 rejected)" in window.session_counts.text()
     assert window.catalogue.state("session")["ids"] == ids
     assert window.description.isHidden()
     assert window.command_history.isHidden()
@@ -1116,6 +1165,10 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     assert window.has_pending_range()
     assert not window.range_warning.isHidden()
     assert window.range_warning.text() == "I/O not set"
+    assert window.player.controls.itemAt(1).layout() is window.range_warning_slot
+    assert window.range_warning.mapToGlobal(QPoint(0, 0)).x() < (
+        window.player.controls.itemAt(2).widget().mapToGlobal(QPoint(0, 0)).x()
+    )
     assert window.command_error.isHidden()
     assert not window.ensure_range_complete()
     assert window.catalogue.clip(ids[0])["in_ms"] is None
@@ -1868,10 +1921,12 @@ def test_auto_scan_discovers_without_modal_or_selection_reset(window, applicatio
     new_source.write_bytes(b"new video")
     assert window.scan_timer.interval() == 30_000
     assert window.scan_timer.isActive()
+    window.statusBar().clearMessage()
     window.scan_timer.timeout.emit()
     assert window.scan_retry_timer.isActive()
     assert wait_for(application, lambda: window.worker is None and window.library.count() == 27)
     assert QApplication.activeModalWidget() is None
+    assert window.statusBar().currentMessage() == ""
     assert window.browse_id == selected_id
     anchor = window.library.itemAt(1, 1)
     assert anchor.data(Qt.ItemDataRole.UserRole) == anchor_id

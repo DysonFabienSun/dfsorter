@@ -100,6 +100,7 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
         return bool(
             re.fullmatch(r"(\d+k|1v\d+|r\d+)", lowered)
             or lowered.startswith("tag:")
+            or lowered.startswith("[")
             or (game and lowered.split(":", 1)[0] in game.prefixes and ":" in lowered)
         )
 
@@ -112,6 +113,10 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
             if not value and not tokens[index].quoted:
                 raise ValueError('tag needs a value; use tag:"" to clear')
             assign("tag", value or None)
+        elif token.startswith("[") or token.endswith("]"):
+            if not re.fullmatch(r"\[[^\[\]\s]+\]", token):
+                raise ValueError("Bracketed tags need one non-empty word without spaces")
+            assign("tag", token[1:-1])
         elif re.fullmatch(r"r\d+", folded):
             rating = int(folded[1:])
             if rating not in range(1, 6):

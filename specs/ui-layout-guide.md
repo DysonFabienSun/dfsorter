@@ -26,10 +26,10 @@ Keep implementation history, screenshots and verification results outside this g
 | Warning | `warning #D9A441`, `warning_muted #3A2D16` |
 | Danger | `danger #D9686A`, `danger_hover #E47D7F`, `danger_muted #3A2022` |
 | Information | `info #6AA9E9` |
-| Rating | `rating_filled #E8C45A`, `rating_hover #F0D16F`, `rating_empty #69717D` |
+| Rating | `rating_filled #E8C45A`, `rating_hover #F0D16F`, `rating_empty #69717D`, pending pulse `#6D5B33`–`#A78C47` |
 | Component colors | `command_focus #141B21`, `command_blue #172B40`, `tag_color #F0D16F`, `timeline_track #3A424D`, `timeline_progress #617080`, `scrollbar_hover #56616F`, `tooltip #11151A` |
 
-Cyan means interaction, focus, selection, active project, playhead or I/O markers. Green means Keep or success; red means Discard, destructive operations or blocking errors. Warning amber means incomplete requirements or unavailable sources. Gold rating tokens are reserved for stars. Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
+Cyan means interaction, focus, selection, active project, playhead or I/O markers. Green means Keep or success; red means Discard, destructive operations or blocking errors. Warning amber means suggested missing metadata or unavailable sources. Gold rating tokens are reserved for stars. Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
 
 ### Typography, spacing and dimensions
 
@@ -60,7 +60,7 @@ Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups,
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Undefined uses pressed-surface/strong-border/secondary-text.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
-- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; rating interactions follow main specs §13.7.
+- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows a faded gold pulse and disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
 - Video is black. Use **7 px timeline groove** with larger hit area. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
 - Tooltips appear after a 200 ms hover delay throughout the application. They use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use bold `#F0D16F` and remain hidden when empty. Valid commands use a subtle blue background `#172B40`; incomplete, invalid and briefly saved commands use warning, danger and success bottom borders respectively. Keyboard focus retains its cyan outline; other command backgrounds stay neutral. Unset rating uses the existing danger color for star outlines only, with no background highlight.
@@ -153,7 +153,7 @@ Working title, wrapping
 Source filename
 Triage / game / project status
 [Keep] [Discard] [Undefined] [Change game]
-Rating stars [Clear]                                                  [Help]
+Rating stars [Clear] [Muted rating hints]                             [Help]
 Structured metadata
 [Description when populated]
 
@@ -162,12 +162,14 @@ Command area: intentional separation from clip information
 Wrapping shortcut hint
 [Command input spanning center]
 Command feedback
-Field checklist                                      [Range warning slot]
+Field checklist
 ```
 
-Retain bottom command area within center column and full-height left list. Existing command-area top margin is `4 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. Feedback line and checklist reserve enough height to prevent baseline jumps; range warning retains its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
+Retain bottom command area within center column and full-height left list. Existing command-area top margin is `4 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. Feedback line and checklist reserve enough height to prevent baseline jumps. Put the range warning immediately left of Set In and Set Out in the player controls row and retain its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
 
 Triage/rating groups remain compact and left aligned; help action anchors right. Description uses selectable plain text on separate row. Functional behavior and field availability follow main specs §13.
+
+Place new panel information in an existing row where practical. A new row can cause conspicuous vertical movement when its content appears or disappears.
 
 ## 6. Qt implementation patterns
 

@@ -9,4 +9,4 @@ fields:
     multiple: true
     prefixes: [wpn]
 display_order: [kill, weapon, mainline]
-required_for_export: []
+suggested_fields: []

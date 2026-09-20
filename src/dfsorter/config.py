@@ -11,7 +11,7 @@ class Game:
     code: str
     fields: dict
     display_order: list[str]
-    required_for_export: list[str]
+    suggested_fields: list[str]
     values: dict[str, tuple[str, str]]
     prefixes: dict[str, str]
     command_example: str = ""
@@ -100,13 +100,13 @@ class Registry:
                     raise ValueError(f"Alias conflicts with reserved token: {alias}")
                 values[folded] = target
         order = raw["display_order"]
-        required = raw.get("required_for_export", [])
-        if not isinstance(order, list) or not isinstance(required, list):
-            raise ValueError("display_order and required_for_export must be lists")
+        suggested = raw.get("suggested_fields", raw.get("required_for_export", []))
+        if not isinstance(order, list) or not isinstance(suggested, list):
+            raise ValueError("display_order and suggested_fields must be lists")
         if len(order) != len(set(order)) or any(key not in {*fields, "mainline"} for key in order):
             raise ValueError("Invalid display_order")
-        if any(key not in fields for key in required):
-            raise ValueError("Unknown required_for_export field")
+        if any(key not in fields for key in suggested):
+            raise ValueError("Unknown suggested_fields field")
         aliases = [name, *raw.get("aliases", [])]
         if name in self.games or any(game.code == code for game in self.games.values()):
             raise ValueError("Duplicate game name or display code")
@@ -116,7 +116,7 @@ class Registry:
         if not isinstance(command_example, str):
             raise ValueError("command_example must be text")
         self.games[name] = Game(
-            name, code, fields, order, required, values, prefixes, command_example
+            name, code, fields, order, suggested, values, prefixes, command_example
         )
         for alias in aliases:
             self.aliases[alias.casefold()] = name
@@ -126,6 +126,21 @@ class Registry:
 
     def game(self, name: str | None) -> Game | None:
         return self.games.get(name)
+
+
+def has_review_metadata(clip: dict, game: Game) -> bool:
+    def populated(value):
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, list):
+            return any(populated(item) for item in value)
+        return value is not None
+
+    return bool((clip.get("mainline") or "").strip()) or any(
+        populated(value)
+        for key, value in clip.get("metadata", {}).items()
+        if key in game.fields
+    )
 
 
 def title(
@@ -138,6 +153,7 @@ def title(
     *,
     lowercase: bool = True,
     rich_styles: dict[str, str] | None = None,
+    underline_first_mainline_word: bool = False,
 ) -> str:
     import html
 
@@ -168,6 +184,8 @@ def title(
         value = str(value).lower() if lowercase else str(value)
         if rich:
             escaped = html.escape(value)
+            if key == "mainline" and underline_first_mainline_word:
+                escaped = re.sub(r"^(\s*)(\S+)", r"\1<u>\2</u>", escaped)
             if rich_styles:
                 parts.append(styled(escaped, "mainline" if key == "mainline" else "metadata"))
             else:

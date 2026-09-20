@@ -188,6 +188,8 @@ class Rating(QWidget):
         super().__init__()
         self.value = None
         self.preview = None
+        self.command_preview = None
+        self.command_flash = False
         self.step = SIZES["rating"] + SIZES["rating_gap"]
         self.setFixedSize(self.step * 5, SIZES["normal"])
         self.setMouseTracking(True)
@@ -196,13 +198,19 @@ class Rating(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        unrated = self.value is None and self.preview is None
-        value = self.preview if self.preview is not None else (self.value or 0)
+        pending = self.command_preview is not None and self.preview is None
+        unrated = self.value is None and self.preview is None and not pending
+        value = self.preview if self.preview is not None else (
+            self.command_preview if pending else (self.value or 0)
+        )
         for position in range(5):
             color = "rating_hover" if self.preview is not None else "rating_filled"
+            tint = COLORS[color if position < value else "danger" if unrated else "rating_empty"]
+            if pending and position < value:
+                tint = COLORS["rating_pending_high" if self.command_flash else "rating_pending_low"]
             icon(
                 "star",
-                COLORS[color if position < value else "danger" if unrated else "rating_empty"],
+                tint,
                 fill=position < value,
                 size=SIZES["rating"],
             ).paint(painter, QRect(position * self.step + 2, 5, SIZES["rating"], SIZES["rating"]))

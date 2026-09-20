@@ -38,6 +38,8 @@ COLORS = {
     "rating_filled": "#E8C45A",
     "rating_hover": "#F0D16F",
     "rating_empty": "#69717D",
+    "rating_pending_low": "#6D5B33",
+    "rating_pending_high": "#A78C47",
     "command_focus": "#141B21",
     "tag_color": "#F0D16F",
     "command_blue": "#172B40",
