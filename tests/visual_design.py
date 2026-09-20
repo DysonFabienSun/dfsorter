@@ -59,7 +59,7 @@ def main():
         folder.refresh_library()
         folder.show()
         folder.resize(1400, 900)
-        for panel in ("Home", "Import", "Session", "Editing", "Export", "Config"):
+        for panel in ("Home", "Session", "Editing", "Export", "Config"):
             folder.panel(panel)
             QTest.qWait(100)
             folder.grab().save(str(destination / f"{panel.lower()}.png"))

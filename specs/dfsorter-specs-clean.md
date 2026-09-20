@@ -318,15 +318,14 @@ Resetting clip metadata must never modify or delete the source video. Destructiv
 
 ### 9.3 Panel Navigation
 
-At the top of the window, provide a restrained seven-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
+At the top of the window, provide a restrained six-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
 
 1. Home
 2. Browse
-3. Import
-4. Session
-5. Editing
-6. Export
-7. Config
+3. Session
+4. Editing
+5. Export
+6. Config
 
 The panel-navigation row and settings cog are present on every panel.
 
@@ -346,7 +345,6 @@ The exact content of each pane depends on the active panel.
 | --- | --- | --- | --- | --- |
 | Home | Library reference | Capture-folder management | Projects | Hidden |
 | Browse | All library clips, search, game filter, date-order toggle | Video, working title, filename, inline Share | Hidden | Hidden |
-| Import | Library reference | Shortcut to capture folders on Home | Projects | Hidden |
 | Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
 | Editing | Locked session queue | Video + clip metadata | Projects | Visible |
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
@@ -390,7 +388,7 @@ Ratings are deliberately **not** searchable or filterable in the initial design.
 
 Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
 
-Show a folder list with readable scanning state, clip/game counts, average duration, and three controls: **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings or Import; Import links to Home. Hide the inactive command bar on Home.
+Show a folder list with readable scanning state, clip/game counts, average duration, and three controls: **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
 
 Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
@@ -408,7 +406,7 @@ Initialize temporary I/O from saved markers. Either endpoint may be changed firs
 
 Inline Share contains a required custom title, output folder/picker, whole/selected-range selector, timing summary and Share action. Default to a valid selected range, otherwise whole clip. No generated-name field or game-prefix controls. Whitespace-only titles disable Share. Reuse existing Share encoding, filename sanitization, collision avoidance, destination restrictions, cancellation and cleanup; pass a snapshot of temporary markers without saving them. Remember the output folder in application settings. Missing sources remain visible with unavailable playback/sharing, except successfully explicitly deleted sources, which are hidden from Browse across restarts. Store deletion visibility separately from clip metadata, keyed by stable clip ID. Keep hidden clips eligible for migration/relinking with all metadata and project/session references intact. Clear the deletion marker when the current source path exists again, including after relinking; failed or cancelled deletions never hide a clip. Browse also offers Delete source… for the selected clip regardless of triage, with explicit permanent-deletion confirmation defaulting to Cancel. Reuse source identity and file-change checks; retain catalogue records and project/session references as unavailable without changing triage.
 
-## 11. Import Panel
+## 11. Media ingestion and scanning
 
 ### Incremental media inspection
 

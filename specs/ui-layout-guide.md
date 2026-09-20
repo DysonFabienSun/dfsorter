@@ -71,7 +71,7 @@ Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups,
 ### Navigation and workspace
 
 ```text
-Home  Browse  Import  Session  Editing  Export  Config   [stretch]   Undo Redo   Projects   Settings
+Home  Browse  Session  Editing  Export  Config   [stretch]   Undo Redo   Projects   Settings
 ------------------------------------------------------------------------------------------------
 Left pane                  | Center: page/player and information                  | Projects
 ```

@@ -156,7 +156,7 @@ class Window(QMainWindow):
         navigation.setContentsMargins(SIZES["panel_padding"], 0, 4, 0)
         navigation.setSpacing(0)
         self.nav = {}
-        for name in ["Home", "Browse", "Import", "Session", "Editing", "Export", "Config"]:
+        for name in ["Home", "Browse", "Session", "Editing", "Export", "Config"]:
             self.nav[name] = button(name, lambda checked=False, name=name: self.panel(name))
             self.nav[name].setObjectName("navigation")
             self.nav[name].setCheckable(True)
@@ -424,7 +424,7 @@ class Window(QMainWindow):
         QTimer.singleShot(0, self.rescan)
 
     def build_pages(self):
-        for name in ["Home", "Browse", "Import", "Session", "Editing", "Export", "Config"]:
+        for name in ["Home", "Browse", "Session", "Editing", "Export", "Config"]:
             widget, layout = page()
             self.pages[name] = (widget, layout)
             self.center.addWidget(widget)
@@ -490,10 +490,6 @@ class Window(QMainWindow):
         note.setWordWrap(True)
         role(note, "secondary")
         home.addWidget(note)
-        importing = self.pages["Import"][1]
-        importing.addWidget(QLabel("Capture folders are managed on Home."))
-        importing.addWidget(button("Manage capture folders", lambda: self.panel("Home")))
-        importing.addStretch()
         session = self.pages["Session"][1]
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)

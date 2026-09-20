@@ -74,7 +74,8 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     before = catalogue_dump(window)
     history = list(window.catalogue.undo_stack)
     window.panel("Browse")
-    assert list(window.nav)[:3] == ["Home", "Browse", "Import"]
+    assert list(window.nav) == ["Home", "Browse", "Session", "Editing", "Export", "Config"]
+    assert list(window.pages) == list(window.nav)
     assert window.catalogue.state("session") is None
     assert window.library.count() == 3
     for index in range(window.library.count()):
@@ -1462,7 +1463,7 @@ def test_folder_dialogs_and_background_scan(window, application, tmp_path, monke
         return True
 
     monkeypatch.setattr(window, "confirm", confirm)
-    window.panel("Import")
+    window.panel("Home")
     window.add_folder()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1
@@ -1524,7 +1525,7 @@ def test_all_panel_layouts(window, application, tmp_path):
     window.refresh_references()
     artifact = ROOT / "cache/verification"
     artifact.mkdir(parents=True, exist_ok=True)
-    for name in ["Home", "Import", "Session", "Export", "Config"]:
+    for name in ["Home", "Session", "Export", "Config"]:
         window.panel(name)
         if name == "Export":
             window.export_project.setCurrentIndex(window.export_project.findData(project))
@@ -1594,7 +1595,7 @@ def test_next_undefined_navigation_is_editing_only(window, application, tmp_path
     assert "No undefined clips ahead" in window.statusBar().currentMessage()
     window.navigate(-3)
     assert window.command.text() == "draft"
-    for panel in ["Home", "Import", "Session", "Export", "Config"]:
+    for panel in ["Home", "Session", "Export", "Config"]:
         window.panel(panel)
         assert window.session_header.isHidden()
 
@@ -1614,7 +1615,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
         "Reset window and panes",
         "Exit",
     } <= actions.keys()
-    window.panel("Import")
+    window.panel("Session")
     actions["Capture folders…"].trigger()
     assert window.current_panel == "Home"
     assert window.folders.isVisible()
@@ -1679,7 +1680,7 @@ def test_history_controls_availability(window, tmp_path):
     available(True, False)
     while window.catalogue.undo_stack:
         window.undo()
-    window.panel("Import")
+    window.panel("Home")
     project = window.catalogue.save_project("History controls")
     window.refresh_references()
     window.projects.setCurrentRow(0)

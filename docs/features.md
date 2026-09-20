@@ -190,7 +190,7 @@ process cleanup and the existing regression suite.
 
 ## Capture-folder management on Home
 
-- [x] Home owns capture folders with Add folder, Rescan and More controls. The cog retains its menu: Capture folders opens Home; Settings retains General and Projects, opening on General. Import links to Home instead of duplicating the controls. Home no longer shows an inactive command bar.
+- [x] Home owns capture folders with Add folder, Rescan and More controls. The cog retains its menu: Capture folders opens Home; Settings retains General and Projects, opening on General. Redundant Import navigation and shortcut page removed; Home remains the capture-folder entry point. Home no longer shows an inactive command bar.
 - [x] More contains Pause/Resume scanning, Relink folder, Remove folder and advanced Rebuild media information. Rescan reuses valid cached inspections; rebuilding forces inspection for all enabled folders. Folder descriptions and tooltips explain scope and session behavior.
 - [x] Relink validates destination/collisions and previews found/unavailable file counts. Remove uses one confirmation, backs up SQLite first, and deletes only catalogue data and references. Legacy unlinked entries remain discoverable for reviewed cleanup. Session cleanup is transactional and preserves a surviving current clip.
 - [x] Nine focused checks passed in 2.69 seconds, covering Home/settings navigation, removal/cancellation/backup, retained source files, session position, disabled folders, migration collisions and scan caching. Ruff passes. Inspected the Home screenshot; no full-suite or codec playback reruns.
