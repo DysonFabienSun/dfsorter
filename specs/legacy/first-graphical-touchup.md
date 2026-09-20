@@ -1,3 +1,5 @@
+> Archived historical feedback. Not implementation guidance. Current authorities: [main specification](../dfsorter-specs-clean.md) and [UI Layout Guide](../ui-layout-guide.md). References below retain original historical context.
+
 # Feedback
 
 ## Approved implementation decisions
