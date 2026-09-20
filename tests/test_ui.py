@@ -1308,7 +1308,7 @@ def test_page_reveal_waits_and_delays_indicator(window, application):
 
 
 @pytest.mark.parametrize("panel", ["Editing", "Export"])
-def test_clip_click_keeps_list_and_scroll(window, application, tmp_path, monkeypatch, panel):
+def test_clip_click_keeps_list_and_positions_selection(window, application, tmp_path, monkeypatch, panel):
     root = tmp_path / "LongLibrary"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
@@ -1341,7 +1341,6 @@ def test_clip_click_keeps_list_and_scroll(window, application, tmp_path, monkeyp
     item = window.library.item(65)
     window.library.scrollToItem(item, window.library.ScrollHint.PositionAtCenter)
     application.processEvents()
-    scroll = window.library.verticalScrollBar().value()
     for row in (65, 66, 67):
         target = window.library.item(row)
         QTest.mouseClick(
@@ -1350,7 +1349,7 @@ def test_clip_click_keeps_list_and_scroll(window, application, tmp_path, monkeyp
             pos=window.library.visualItemRect(target).center(),
         )
         application.processEvents()
-        assert window.library.verticalScrollBar().value() == scroll
+        assert abs(window.library.visualItemRect(window.library.item(row - 1)).top()) <= 1
         assert window.library.item(65) is item
         assert window.transition_scope == "clip"
         assert not window.transition_cover.geometry().intersects(window.left.geometry())
@@ -1374,6 +1373,41 @@ def test_clip_click_keeps_list_and_scroll(window, application, tmp_path, monkeyp
         assert window.current_id == ids[68]
         assert window.catalogue.state("session")["index"] == 68
         assert window.library.item(65) is item
+        assert abs(window.library.visualItemRect(window.library.item(67)).top()) <= 1
+
+
+@pytest.mark.parametrize("panel", ["Browse", "Session", "Editing", "Export"])
+def test_selected_clip_is_first_or_second_visible_card(window, application, tmp_path, panel):
+    root = tmp_path / "SelectionLibrary"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder,
+        [{"path": str(root / f"clip-{index:03}.mp4"), "game": "VALORANT"} for index in range(25)],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    if panel == "Editing":
+        window.catalogue.create_session(ids)
+    elif panel == "Export":
+        project = window.catalogue.save_project("Selection project")
+        for clip_id in ids:
+            window.catalogue.patch(clip_id, {}, membership=(project, True))
+        window.refresh_references()
+        window.export_project.setCurrentIndex(window.export_project.findData(project))
+    window.panel(panel)
+    application.processEvents()
+    if window.library.currentRow() != 0:
+        window.library.setCurrentRow(0)
+    application.processEvents()
+    assert window.library.visualItemRect(window.library.item(0)).top() == 0
+    for row in (15, 24):
+        window.library.setCurrentRow(row)
+        application.processEvents()
+        assert abs(window.library.visualItemRect(window.library.item(row - 1)).top()) <= 1
+        assert window.library.visualItemRect(window.library.item(row)).top() > 0
+    window.refresh_library()
+    application.processEvents()
+    assert abs(window.library.visualItemRect(window.library.item(23)).top()) <= 1
 
 
 def test_library_rebuild_keeps_viewport(window, application, tmp_path):

@@ -830,6 +830,8 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
+        if hasattr(self, "library"):
+            QTimer.singleShot(0, self.position_selected_clip)
 
     def panel(self, name):
         if not self.ensure_range_complete():
@@ -880,10 +882,7 @@ class Window(QMainWindow):
         self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
         self.refresh_library()
-        if entering_browse:
-            self.library.scrollToTop()
-            if self.library.currentItem() is not None:
-                self.library.scrollToItem(self.library.currentItem())
+        QTimer.singleShot(0, self.position_selected_clip)
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
@@ -1102,6 +1101,22 @@ class Window(QMainWindow):
         self.browse.player.previous_button.setEnabled(row > 0)
         self.browse.player.next_button.setEnabled(0 <= row < self.library.count() - 1)
 
+    def position_selected_clip(self):
+        row = self.library.currentRow()
+        if row < 0:
+            return
+        self.library.doItemsLayout()
+        scrollbar = self.library.verticalScrollBar()
+        offset = scrollbar.value()
+        anchor = self.library.item(max(0, row - 1))
+        target = self.library.visualItemRect(anchor).top() + offset
+        last = self.library.visualItemRect(self.library.item(self.library.count() - 1))
+        content_bottom = last.bottom() + offset + 1
+        natural_maximum = max(0, content_bottom - self.library.viewport().height())
+        # Allow trailing blank space so even the final clip can occupy row two.
+        scrollbar.setMaximum(max(natural_maximum, target))
+        scrollbar.setValue(target)
+
     def refresh_library(self):
         self.update_history_controls()
         if getattr(self, "settings_dialog", None) is not None:
@@ -1209,6 +1224,7 @@ class Window(QMainWindow):
                     break
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
+            self.position_selected_clip()
             if self.current_panel == "Browse":
                 self.browse_id = current
                 self.browse.load(self.catalogue.clip(current) if current else None)
@@ -1233,8 +1249,9 @@ class Window(QMainWindow):
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
+        self.position_selected_clip()
 
-    def switch_editing_clip(self, clip_id, ensure_visible=False):
+    def switch_editing_clip(self, clip_id):
         if clip_id == self.current_id:
             return
         if not self.ensure_range_complete():
@@ -1257,8 +1274,7 @@ class Window(QMainWindow):
                 self.library.blockSignals(True)
                 self.library.setCurrentItem(item)
                 self.library.blockSignals(False)
-                if ensure_visible:
-                    self.library.scrollToItem(item)
+                self.position_selected_clip()
         self.refresh_session_status()
         self.begin_page_transition("clip")
         self.load_clip(clip_id)
@@ -1531,7 +1547,7 @@ class Window(QMainWindow):
                 None,
             )
             if next_id is not None:
-                self.switch_editing_clip(next_id, ensure_visible=True)
+                self.switch_editing_clip(next_id)
             else:
                 self.render_clip()
                 self.refresh_session_status(clips)
@@ -1563,7 +1579,7 @@ class Window(QMainWindow):
             None,
         )
         if next_id is not None:
-            self.switch_editing_clip(next_id, ensure_visible=True)
+            self.switch_editing_clip(next_id)
         else:
             self.statusBar().showMessage("No undefined clips ahead in this session.", 12000)
 
@@ -1577,7 +1593,7 @@ class Window(QMainWindow):
         if not session:
             return
         index = max(0, min(len(session["ids"]) - 1, session["index"] + offset))
-        self.switch_editing_clip(session["ids"][index], ensure_visible=True)
+        self.switch_editing_clip(session["ids"][index])
 
     def active_player(self):
         if self.current_panel == "Browse":
