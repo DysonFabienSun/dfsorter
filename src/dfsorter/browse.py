@@ -30,6 +30,7 @@ class BrowsePage(QWidget):
     def __init__(self, window):
         super().__init__()
         self.window = window
+        self.fullscreen_state = None
         self.clip = None
         self.in_ms = self.out_ms = None
         self.initial_range = False
@@ -39,6 +40,10 @@ class BrowsePage(QWidget):
         self.player.previous.connect(lambda: window.navigate(-1))
         self.player.next.connect(lambda: window.navigate(1))
         layout.addWidget(self.player, 1)
+        self.details = QWidget()
+        layout.addWidget(self.details)
+        layout = QVBoxLayout(self.details)
+        layout.setContentsMargins(0, 0, 0, 0)
         self.working_title = QLabel()
         self.working_title.setWordWrap(True)
         self.working_title.setObjectName("workingTitle")
@@ -69,6 +74,8 @@ class BrowsePage(QWidget):
             control = tool(icon_name, label, callback)
             self.player.controls.addWidget(control)
             self.marker_buttons.append(control)
+        self.fullscreen_button = tool("maximize", "Fullscreen · F11", self.toggle_fullscreen)
+        self.player.controls.addWidget(self.fullscreen_button)
         form = QGridLayout()
         form.setVerticalSpacing(10)
         form.setHorizontalSpacing(6)
@@ -117,6 +124,45 @@ class BrowsePage(QWidget):
         self.player.media.durationChanged.connect(self.refresh_range)
         self.refresh_range()
 
+    def toggle_fullscreen(self):
+        self.set_fullscreen(self.fullscreen_state is None)
+
+    def set_fullscreen(self, enabled):
+        window = self.window
+        if enabled == (self.fullscreen_state is not None):
+            return
+        if enabled:
+            if window.current_panel != "Browse":
+                return
+            widgets = [window.navigation_strip, window.left, window.statusBar(), self.details]
+            layouts = [window.splitter.parentWidget().layout(), self.parentWidget().layout(),
+                       self.layout(), self.player.layout()]
+            self.fullscreen_state = (
+                window.windowState(), window.saveGeometry(), window.splitter.sizes(),
+                [(widget, not widget.isHidden()) for widget in widgets],
+                [(layout, layout.contentsMargins()) for layout in layouts],
+            )
+            for widget in widgets:
+                widget.hide()
+            for layout in layouts:
+                layout.setContentsMargins(0, 0, 0, 0)
+            window.showFullScreen()
+        else:
+            state, geometry, sizes, widgets, layouts = self.fullscreen_state
+            self.fullscreen_state = None
+            window.setWindowState(state)
+            window.restoreGeometry(geometry)
+            for widget, visible in widgets:
+                widget.setVisible(visible)
+            for layout, margins in layouts:
+                layout.setContentsMargins(margins)
+            window.splitter.setSizes(sizes)
+        self.fullscreen_button.setIcon(icon("minimize" if enabled else "maximize"))
+        label = "Exit fullscreen · Esc / F11" if enabled else "Fullscreen · F11"
+        self.fullscreen_button.setToolTip(label)
+        self.fullscreen_button.setAccessibleName(label)
+        self.player.setFocus()
+
     def load(self, clip):
         if clip and self.clip and clip["clip_id"] == self.clip["clip_id"]:
             return
@@ -138,6 +184,7 @@ class BrowsePage(QWidget):
         self.filename.setText(Path(self.clip["source_path"]).name if self.clip else "")
 
     def leave(self):
+        self.set_fullscreen(False)
         self.clip = None
         self.in_ms = self.out_ms = None
         self.custom_title.clear()

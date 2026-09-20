@@ -1913,3 +1913,56 @@ def test_browse_form_alignment_and_title_style(window, application):
         assert title_right == mode_right
         assert browse.custom_title.width() > browse.destination.width() == 480
         assert browse.working_title.font() == window.working_title.font()
+
+
+@pytest.mark.parametrize("maximized", [False, True])
+def test_browse_fullscreen_restores_player_and_window(window, application, tmp_path, maximized):
+    add_clips(window, tmp_path, valid=True)
+    if maximized:
+        window.showMaximized()
+        application.processEvents()
+    window.panel("Browse")
+    application.processEvents()
+    browse = window.browse
+    player = browse.player
+    assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
+    surface_id = int(player.video.winId())
+    clip_id = browse.clip["clip_id"]
+    browse.custom_title.setText("Share draft")
+    browse.in_ms, browse.out_ms = 100, 200
+    sizes = window.splitter.sizes()
+    geometry = window.geometry()
+    playback_state = player.media.playbackState()
+    position = player.media.position()
+    browse.fullscreen_button.click()
+    application.processEvents()
+    assert window.isFullScreen()
+    assert window.navigation_strip.isHidden() and window.left.isHidden()
+    assert browse.details.isHidden() and window.statusBar().isHidden()
+    assert player.isVisible() and browse.fullscreen_button.isVisible()
+    assert int(player.video.winId()) == surface_id
+    assert player.media.playbackState() == playback_state
+    assert player.media.position() == position
+    QTest.keyClick(player, Qt.Key.Key_Escape)
+    application.processEvents()
+    assert not window.isFullScreen()
+    assert window.isMaximized() == maximized
+    assert window.geometry() == geometry
+    assert window.splitter.sizes() == sizes
+    assert window.navigation_strip.isVisible() and window.left.isVisible()
+    assert browse.details.isVisible()
+    assert browse.custom_title.text() == "Share draft"
+    assert (browse.in_ms, browse.out_ms) == (100, 200)
+    assert browse.clip["clip_id"] == clip_id
+    QTest.keyClick(player, Qt.Key.Key_F11)
+    assert window.isFullScreen()
+    QTest.keyClick(player, Qt.Key.Key_F11)
+    assert not window.isFullScreen()
+    browse.fullscreen_button.click()
+    window.panel("Home")
+    assert not window.isFullScreen()
+    assert browse.fullscreen_state is None
+    for panel in ["Editing", "Export"]:
+        window.panel(panel)
+        QTest.keyClick(window.active_player(), Qt.Key.Key_F11)
+        assert not window.isFullScreen()

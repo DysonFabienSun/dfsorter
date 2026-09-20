@@ -1761,6 +1761,14 @@ class Window(QMainWindow):
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
+        if self.current_panel == "Browse":
+            if key == Qt.Key.Key_Escape and self.browse.fullscreen_state is not None:
+                self.browse.set_fullscreen(False)
+                return True
+            if key == Qt.Key.Key_F11 and modifiers == Qt.KeyboardModifier.NoModifier:
+                if not event.isAutoRepeat():
+                    self.browse.toggle_fullscreen()
+                return True
         if key == Qt.Key.Key_Space and self.consume_resume_space:
             return True
         if key == Qt.Key.Key_Escape and self.current_panel == "Editing":

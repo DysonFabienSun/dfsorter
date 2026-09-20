@@ -327,7 +327,7 @@ At the top of the window, provide a restrained six-destination navigation strip 
 5. Export
 6. Config
 
-The panel-navigation row and settings cog are present on every panel.
+The panel-navigation row and settings cog are present on every panel except during Browse player fullscreen.
 
 ### 9.4 Pane Layout
 
@@ -395,6 +395,8 @@ Legacy clips whose folders were previously unregistered appear as an **Unlinked 
 ---
 
 ### 10.1 Browse Panel
+
+Only Browse provides player fullscreen. Its transport-row Fullscreen button or F11 toggles fullscreen; Esc exits. Hide navigation, library, status bar, titles and Share form while retaining video, timeline and playback/range controls. Preserve the loaded clip, playback position/state and temporary range. Restore prior window geometry, normal/maximized state and pane sizes on exit; leaving Browse exits fullscreen. Editing and Export have no fullscreen action.
 
 Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including every triage state and clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
 

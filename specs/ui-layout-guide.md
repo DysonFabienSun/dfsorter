@@ -104,7 +104,7 @@ Secondary heading, active-project accent, expanding list and compact icon toolba
 
 ## 4. Video and playback controls
 
-Reuse [Player](../src/dfsorter/playback.py) across Browse, Editing and Export. Do not build separate transport variants for equivalent actions.
+Reuse [Player](../src/dfsorter/playback.py) across Browse, Editing and Export. Do not build separate transport variants for equivalent actions. Browse alone adds a trailing fullscreen icon action using shared tool-button styling: maximize to enter, minimize to exit. Fullscreen retains the existing player and controls with surrounding UI and outer padding hidden.
 
 ```text
 Video surface                                     [expands]

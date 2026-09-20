@@ -238,3 +238,8 @@ Browse layout: enlarged working title with square red delete icon alongside; fix
 Browse spacing: matching 10 px gaps around the Share form; 480 px output path input and custom title spanning the folder/Share row to align right edges.
 
 Browse consistency fix: shared Editing title typography, divider above Share form, and grid-based textbox alignment verified at two window widths.
+
+## Browse player fullscreen
+
+- [x] Browse-only fullscreen action, F11 toggle and Esc exit. Existing video surface and transport controls remain in place; surrounding UI is hidden. Prior window state, geometry and pane sizes return on exit. Leaving Browse exits fullscreen.
+- [x] Four focused checks passed: normal/maximized restoration with real video, Browse layout and form alignment. Changed Python files pass Ruff. Windows startup diagnostic `0x8001010d` appeared without preventing test completion.
