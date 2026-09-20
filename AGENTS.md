@@ -23,6 +23,11 @@
 - Verify affected components against their counterparts, including relevant enabled, disabled, hover, selection, and empty states. Use the smallest relevant checks; distinguish window resizing from display scaling when assessing layout.
 - Do not turn a focused UI task into an unsolicited application-wide redesign. Preserve existing approved styling and flag unrelated inconsistencies for separate work.
 
+## Application Language
+
+- Describe all application features and behavior in an impersonal manner. Do not address the user with "you", "your", or related second-person forms in labels, descriptions, tooltips, dialogs, help text, or status/error messages.
+- Refer directly to recordings, files, folders, drafts, and application state; for example, use "original files" instead of "your original files" and "folders no longer tracked" instead of "folders you stopped tracking".
+
 ## Icon Assets
 
 - The main Lucide icon library is `node_modules/lucide-static/icons` relative to this repository. Search it when choosing icons; available choices are not limited to the existing application assets.

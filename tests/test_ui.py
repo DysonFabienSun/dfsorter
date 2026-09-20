@@ -1735,7 +1735,7 @@ def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatc
     dialog.close()
 
 
-def test_browse_entry_selects_newest(window, tmp_path):
+def test_browse_entry_selects_newest(window, tmp_path, application):
     add_clips(window, tmp_path)
     window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"], [
         {"path": str(tmp_path / "captures" / "second.mp4"), "game": None}
@@ -1743,9 +1743,16 @@ def test_browse_entry_selects_newest(window, tmp_path):
     clips = window.catalogue.clips()
     for index, clip in enumerate(clips):
         window.media_info[clip["source_path"]] = {"created": f"2026-09-{index + 1:02}T12:00:00Z"}
-    window.panel("Browse")
+    window.catalogue.patch(clips[-1]["clip_id"], {"triage": "keep"})
+    window.panel("Home")
+    application.processEvents()
+    assert window.library.count() == 1
+    window.nav["Browse"].click()
+    application.processEvents()
     newest = clips[-1]["clip_id"]
     assert window.browse_id == newest
+    assert window.browse_selected_id is None
+    assert window.library.count() == 2
     window.panel("Home")
     window.media_info[clips[0]["source_path"]] = {"created": "2026-09-30T12:00:00Z"}
     window.panel("Browse")

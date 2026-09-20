@@ -129,7 +129,8 @@ def stylesheet():
         QPushButton[role="discard"]:checked { background: %(danger_muted)s; color: %(danger)s; border-color: %(danger)s; }
         QPushButton[role="undefined"]:checked { background: %(bg_surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
         QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 1px solid %(accent_focus)s; }
-        QToolButton#settingsMenuButton::menu-indicator { image: none; width: 0px; }
+        QToolButton#settingsMenuButton::menu-indicator,
+        QToolButton#captureFolderMenuButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QWidget#navigationStrip { background: %(bg_panel)s; border-bottom: 1px solid %(separator)s; }
         QToolButton[navUtility="true"] { padding: 3px 2px 1px 2px; }

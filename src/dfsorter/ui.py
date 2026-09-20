@@ -435,7 +435,7 @@ class Window(QMainWindow):
         role(home_title, "heading")
         home.addWidget(home_title)
         explanation = QLabel(
-            "Add folders containing your recordings. Rescan finds new clips; your original files stay untouched."
+            "Add folders containing recordings. Rescan finds new clips; original files stay untouched."
         )
         explanation.setWordWrap(True)
         role(explanation, "secondary")
@@ -451,6 +451,7 @@ class Window(QMainWindow):
         )
         folder_controls.addWidget(self.rescan_button)
         self.folder_more = QToolButton()
+        self.folder_more.setObjectName("captureFolderMenuButton")
         self.folder_more.setText("More…")
         self.folder_menu = QMenu(self.folder_more)
         self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
@@ -484,7 +485,7 @@ class Window(QMainWindow):
         note = QLabel(
             "Right-click a folder to pause or resume scanning; select More for other actions. "
             "Paused folders stay in the library but are excluded "
-            "from new sessions. Unlinked clips are saved entries from folders you stopped tracking."
+            "from new sessions. Unlinked clips are saved entries from folders no longer tracked."
         )
         note.setWordWrap(True)
         role(note, "secondary")
@@ -841,6 +842,9 @@ class Window(QMainWindow):
             self.browse_newest = True
             self.browse_sort.setToolTip("Newest first · Switch to oldest first")
             self.browse_sort.setAccessibleName("Newest first · Switch to oldest first")
+        # Hiding focused filters can select an item from the outgoing page's list.
+        # That automatic focus change must not become a manual Browse selection.
+        library_signals_blocked = self.library.blockSignals(True)
         self.current_panel = name
         self.center.setCurrentWidget(self.pages[name][0])
         self.update_projects_visibility()
@@ -859,6 +863,7 @@ class Window(QMainWindow):
             if name in {"Browse", "Editing"}
             else QListWidget.SelectionMode.ExtendedSelection
         )
+        self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
         self.refresh_library()
         if entering_browse:
