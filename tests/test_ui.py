@@ -314,6 +314,63 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
     settings.close()
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_home_folder_context_toggle(window, application, tmp_path, enabled):
+    ids = add_clips(window, tmp_path)
+    session = window.catalogue.state("session")
+    target = window.catalogue.folders()[0]["folder_id"]
+    other_path = tmp_path / "other-captures"
+    other_path.mkdir()
+    other = window.catalogue.add_folder(other_path)
+    window.catalogue.enable_folder(target, enabled)
+    window.refresh_references()
+    window.panel("Home")
+    items = {
+        window.folders.item(i).data(Qt.ItemDataRole.UserRole): window.folders.item(i)
+        for i in range(window.folders.count())
+    }
+    window.folders.setCurrentItem(items[other])
+    position = window.folders.visualItemRect(items[target]).center()
+    window.folders.customContextMenuRequested.emit(position)
+    application.processEvents()
+    menu = window.folder_context_menu
+    assert menu.isVisible()
+    assert window.selected_id(window.folders) == target
+    assert [action.text() for action in menu.actions()] == [
+        "Pause scanning" if enabled else "Resume scanning"
+    ]
+    action = menu.actions()[0]
+    assert action.isEnabled()
+    QTest.mouseClick(menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center())
+    folders = {folder["folder_id"]: folder for folder in window.catalogue.folders()}
+    assert bool(folders[target]["enabled"]) is not enabled
+    assert folders[other]["enabled"]
+    assert window.catalogue.clip(ids[0]) is not None
+    assert window.catalogue.state("session") == session
+    assert ("Scanning paused" if enabled else "Scanning on") in window.folders.currentItem().text()
+
+
+def test_home_folder_context_guards(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    window.panel("Home")
+    menu = window.folder_context_menu
+    window.folders.customContextMenuRequested.emit(QPoint(-1, -1))
+    assert not menu.isVisible()
+    item = window.folders.item(0)
+    position = window.folders.visualItemRect(item).center()
+    window.worker = object()
+    try:
+        window.folders.customContextMenuRequested.emit(position)
+        assert menu.isVisible()
+        assert not menu.actions()[0].isEnabled()
+        menu.hide()
+    finally:
+        window.worker = None
+    item.setData(Qt.ItemDataRole.UserRole, "__unlinked__")
+    window.folders.customContextMenuRequested.emit(position)
+    assert not menu.isVisible()
+
+
 def test_home_removes_folder_entries_after_confirmation(window, application, tmp_path, monkeypatch):
     ids = add_clips(window, tmp_path)
     source = Path(window.catalogue.clip(ids[0])["source_path"])

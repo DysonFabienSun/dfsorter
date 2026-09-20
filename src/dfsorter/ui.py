@@ -466,9 +466,15 @@ class Window(QMainWindow):
         self.folders = QListWidget()
         self.folders.setMinimumHeight(120)
         self.folders.setWordWrap(True)
+        self.folder_context_menu = QMenu(self.folders)
+        self.folder_context_menu.addAction(self.folder_toggle_action)
+        self.folder_context_menu.setToolTipsVisible(True)
+        self.folders.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.folders.customContextMenuRequested.connect(self.show_folder_context_menu)
         home.addWidget(self.folders, 1)
         note = QLabel(
-            "Select a folder for More actions. Paused folders stay in the library but are excluded "
+            "Right-click a folder to pause or resume scanning; select More for other actions. "
+            "Paused folders stay in the library but are excluded "
             "from new sessions. Unlinked clips are saved entries from folders you stopped tracking."
         )
         note.setWordWrap(True)
@@ -2246,6 +2252,14 @@ class Window(QMainWindow):
             )
 
         self.background(scan, done, label="Discovering files…")
+
+    def show_folder_context_menu(self, position):
+        item = self.folders.itemAt(position)
+        if item is None or item.data(Qt.ItemDataRole.UserRole) == "__unlinked__":
+            return
+        self.folders.setCurrentItem(item)
+        self.update_folder_actions()
+        self.folder_context_menu.popup(self.folders.viewport().mapToGlobal(position))
 
     def update_folder_actions(self):
         folder_id = self.selected_id(self.folders)

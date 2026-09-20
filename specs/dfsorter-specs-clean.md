@@ -72,6 +72,8 @@ A missing source file does **not** cause its database entry to be deleted. It re
 
 Removing a capture folder requires explicit confirmation and removes its catalogue entries, cached media information, and project/session references. Save a database backup first. Original source files are never deleted. Pause scanning is the reversible alternative that retains the folder and its clips.
 
+On Home, right-clicking a capture folder selects it and opens a context menu containing only Pause scanning (enabled folders) or Resume scanning (paused folders), using the same action as More. Disable the action during background operations. Empty list space and unlinked catalogue entries have no folder context menu.
+
 ---
 
 ## 5. Core Clip Data
