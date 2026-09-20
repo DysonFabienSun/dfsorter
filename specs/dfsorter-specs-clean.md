@@ -574,7 +574,7 @@ Description text is secondary and is never automatically appended to the working
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
-Immediately left of Set In and Set Out on the playback-controls row, show a red danger icon and `I/O not set` whenever either range endpoint is missing, or `I/O invalid` for invalid endpoint order. Hide the indicator for a valid range while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
+Immediately left of Set In and Set Out on the playback-controls row, show a red danger icon and `I/O not set` when exactly one range endpoint is set, or `I/O invalid` for invalid endpoint order. Hide the indicator when neither endpoint is set or the range is valid, while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
 
 ### 13.2 Command-Bar Focus and Playback Keys
 

@@ -1154,6 +1154,8 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
 def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
+    assert window.range_warning.isHidden()
+    assert window.range_warning_icon.isHidden()
     position = [0]
     monkeypatch.setattr(window.player.media, "position", lambda: position[0])
 
@@ -1201,8 +1203,8 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     mark("out", 1000)
     window.clear_range()
     assert window.ensure_range_complete()
-    assert not window.range_warning.isHidden()
-    assert window.range_warning.text() == "I/O not set"
+    assert window.range_warning.isHidden()
+    assert window.range_warning_icon.isHidden()
     assert window.player.seek.pending_out is None
     assert window.catalogue.clip(ids[0])["out_ms"] is None
 

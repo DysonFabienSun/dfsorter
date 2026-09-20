@@ -1977,9 +1977,10 @@ class Window(QMainWindow):
 
     def update_range_warning(self):
         start, end = self.range_endpoints() if self.current_id else (None, None)
+        has_endpoint = start is not None or end is not None
         missing = start is None or end is None
         visible = self.current_panel == "Editing" and bool(self.current_id)
-        visible = visible and (missing or not 0 <= start < end)
+        visible = visible and has_endpoint and (missing or not 0 <= start < end)
         self.range_warning.setText("I/O not set" if missing else "I/O invalid")
         self.range_warning.setToolTip(
             "Set both In and Out to complete the range."
