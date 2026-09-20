@@ -126,7 +126,7 @@ def test_tag_column_migration_preserves_catalogue(catalogue, clips, version):
     assert migrated.clips() == before
     assert migrated.state("session") == session
     assert migrated.member_ids(project) == {clip_id}
-    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 4
+    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 5
     assert Catalogue(catalogue.path).clips() == before
     migrated.patch(clip_id, {"tag": "Highlight"})
     migrated.undo()

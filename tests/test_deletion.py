@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import delete_original, delete_reviewed, preview
 
 
@@ -67,6 +68,7 @@ def test_partial_failure_cancel_and_missing(catalogue, clips):
 
     results = delete_reviewed(catalogue, reviewed, denied)
     assert len(calls) == 2
+    assert not catalogue.hidden_deleted_ids()
     assert all(status.startswith("Skipped / failed") for path, status in results)
     results = delete_reviewed(catalogue, reviewed, denied, cancelled=lambda: True)
     assert all(status == "Cancelled; not deleted" for path, status in results)
@@ -115,3 +117,46 @@ def test_selected_source_delete_preserves_catalogue(catalogue, clips):
     assert not Path(clips[0]["source_path"]).exists()
     assert Path(clips[1]["source_path"]).exists()
     assert catalogue.clips() == snapshot
+
+
+def test_version_four_upgrade_retains_missing_sources(catalogue, clips):
+    Path(clips[0]["source_path"]).unlink()
+    catalogue.create_session([clip["clip_id"] for clip in clips])
+    session = catalogue.state("session")
+    with catalogue.connection() as database:
+        database.execute("DROP TABLE deleted_sources")
+        database.execute("PRAGMA user_version=4")
+    restarted = Catalogue(catalogue.path)
+    assert restarted.clips() == clips
+    assert restarted.state("session") == session
+    assert restarted.hidden_deleted_ids() == set()
+    assert restarted.rows("PRAGMA user_version")[0]["user_version"] == 5
+
+
+@pytest.mark.parametrize("available_at_relink", [False, True])
+def test_deleted_source_restart_and_migration(catalogue, clips, tmp_path, available_at_relink):
+    clip_id = clips[0]["clip_id"]
+    catalogue.patch(clip_id, {"mainline": "Retained", "triage": "keep", "in_ms": 10, "out_ms": 20})
+    catalogue.create_session([clip_id])
+    project = catalogue.save_project("Retained project")
+    with catalogue.connection() as database:
+        database.execute("INSERT INTO members VALUES (?, ?)", (project, clip_id))
+    before = catalogue.clip(clip_id)
+    result = delete_reviewed(catalogue, preview(catalogue, clip_id=clip_id), require_discard=False)
+    assert result[0][1] == "Deleted"
+    restarted = Catalogue(catalogue.path)
+    assert restarted.hidden_deleted_ids() == {clip_id}
+    destination = tmp_path / "migrated"
+    destination.mkdir()
+    if available_at_relink:
+        (destination / Path(before["source_path"]).name).write_bytes(b"restored video")
+    restarted.migrate(restarted.folders()[0]["folder_id"], destination)
+    assert restarted.hidden_deleted_ids() == (set() if available_at_relink else {clip_id})
+    restored = Path(restarted.clip(clip_id)["source_path"])
+    restored.write_bytes(b"restored video")
+    assert restarted.hidden_deleted_ids() == set()
+    assert restarted.clip(clip_id) == {**before, "source_path": str(restored)}
+    assert restarted.member_ids(project) == {clip_id}
+    assert restarted.state("session")["ids"] == [clip_id]
+    restored.unlink()
+    assert Catalogue(catalogue.path).hidden_deleted_ids() == set()

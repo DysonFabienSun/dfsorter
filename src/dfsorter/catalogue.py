@@ -25,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 4:
+            if version > 5:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -57,6 +57,9 @@ class Catalogue:
                     PRIMARY KEY(project_id, clip_id)
                 );
                 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS deleted_sources (
+                    clip_id TEXT PRIMARY KEY REFERENCES clips ON DELETE CASCADE
+                );
                 CREATE TABLE IF NOT EXISTS media_cache (
                     path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
                     duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
@@ -92,7 +95,18 @@ class Catalogue:
                     "CREATE UNIQUE INDEX IF NOT EXISTS folder_path_identity "
                     "ON folders(path COLLATE NOCASE)"
                 )
-            database.execute("PRAGMA user_version = 4")
+            database.execute("PRAGMA user_version = 5")
+
+    def hidden_deleted_ids(self):
+        """Hide intentional deletions until their current (possibly relinked) source returns."""
+        rows = self.rows("SELECT clip_id, source_path FROM deleted_sources JOIN clips USING(clip_id)")
+        restored = {row["clip_id"] for row in rows if Path(row["source_path"]).is_file()}
+        if restored:
+            with self.connection() as database:
+                database.executemany(
+                    "DELETE FROM deleted_sources WHERE clip_id=?", [(clip_id,) for clip_id in restored]
+                )
+        return {row["clip_id"] for row in rows} - restored
 
     def media_cache(self):
         return {row["path"]: row for row in self.rows("SELECT * FROM media_cache")}
@@ -305,6 +319,7 @@ class Catalogue:
             )
             database.executemany("UPDATE clips SET source_path=? WHERE clip_id=?", updates)
             database.execute("UPDATE folders SET path=? WHERE folder_id=?", (new, folder_id))
+        self.hidden_deleted_ids()
 
     def projects(self):
         return self.rows("SELECT * FROM projects ORDER BY name COLLATE NOCASE")

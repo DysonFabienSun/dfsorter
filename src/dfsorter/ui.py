@@ -127,6 +127,7 @@ class Window(QMainWindow):
         self.current_panel = "Home"
         self.browse_newest = True
         self.browse_id = None
+        self.browse_selected_id = None
         self.history = defaultdict(list)
         self.drafts = {}
         self.pane_overrides = {}
@@ -403,6 +404,14 @@ class Window(QMainWindow):
             player.loading_started.connect(lambda player=player: self.player_loading(player))
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_settings_menu()
+        self.scan_timer = QTimer(self)
+        self.scan_timer.setInterval(30_000)
+        self.scan_timer.timeout.connect(self.request_auto_scan)
+        self.scan_retry_timer = QTimer(self)
+        self.scan_retry_timer.setSingleShot(True)
+        self.scan_retry_timer.setInterval(1000)
+        self.scan_retry_timer.timeout.connect(self.auto_scan)
+        self.scan_timer.start()
         QApplication.instance().installEventFilter(self)
         QApplication.instance().focusChanged.connect(self.command_focus_changed)
         self.player.media.playbackStateChanged.connect(self.command_playback_changed)
@@ -828,7 +837,7 @@ class Window(QMainWindow):
             self.browse.leave()
         entering_browse = name == "Browse" and self.current_panel != "Browse"
         if entering_browse:
-            self.browse_id = None
+            self.browse_id = self.browse_selected_id
             self.browse_newest = True
             self.browse_sort.setToolTip("Newest first · Switch to oldest first")
             self.browse_sort.setAccessibleName("Newest first · Switch to oldest first")
@@ -854,6 +863,8 @@ class Window(QMainWindow):
         self.refresh_library()
         if entering_browse:
             self.library.scrollToTop()
+            if self.library.currentItem() is not None:
+                self.library.scrollToItem(self.library.currentItem())
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
@@ -1087,6 +1098,11 @@ class Window(QMainWindow):
                 ids = self.catalogue.member_ids(self.export_project.currentData())
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
             elif self.current_panel == "Browse":
+                hidden = self.catalogue.hidden_deleted_ids()
+                clips = [
+                    clip for clip in clips
+                    if clip["clip_id"] not in hidden
+                ]
                 clips = query_clips(clips, self.browse_search.text(), self.registry)
                 game = self.browse_game.currentData()
                 if game is not None:
@@ -1190,6 +1206,7 @@ class Window(QMainWindow):
         if self.current_panel == "Browse":
             self.cancel_space()
             self.browse_id = clip_id
+            self.browse_selected_id = clip_id
             self.browse.load(self.catalogue.clip(clip_id))
             self.update_browse_navigation()
         elif self.current_panel == "Editing":
@@ -1690,6 +1707,8 @@ class Window(QMainWindow):
         )
 
     def eventFilter(self, watched: QObject, event):
+        if event.type() == QEvent.Type.ApplicationActivate:
+            self.request_auto_scan()
         if (
             event.type() in {QEvent.Type.Resize, QEvent.Type.Move}
             and watched in (self.center, self.command_area)
@@ -2107,12 +2126,31 @@ class Window(QMainWindow):
         if self.current_panel == "Editing":
             self.render_clip()
 
-    def background(self, function, done, label="Working…"):
+    def background(self, function, done, label="Working…", *, quiet=False):
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
         self.worker = Worker(function)
         results = []
+        if quiet:
+            self.worker.succeeded.connect(results.append)
+            self.worker.failed.connect(
+                lambda message: self.statusBar().showMessage(f"Automatic scan: {message}", 12000)
+            )
+
+            def finished_quietly():
+                self.worker.deleteLater()
+                self.worker = None
+                if results:
+                    try:
+                        done(results[0])
+                    except Exception as error:
+                        logging.exception("Automatic scan refresh failed")
+                        self.statusBar().showMessage(f"Automatic scan: {error}", 12000)
+
+            self.worker.finished.connect(finished_quietly)
+            self.worker.start()
+            return
         progress = QProgressDialog(label, "Cancel", 0, 0, self)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
@@ -2227,7 +2265,18 @@ class Window(QMainWindow):
     def reinspect(self):
         self.rescan(force=True)
 
-    def rescan(self, force=False):
+    def request_auto_scan(self):
+        if not self.scan_retry_timer.isActive():
+            self.scan_retry_timer.start()
+
+    def auto_scan(self):
+        if self.worker is not None or QApplication.activeModalWidget() is not None:
+            self.scan_retry_timer.start()
+            return
+        self.rescan(quiet=True)
+
+    def rescan(self, force=False, *, quiet=False):
+        self.scan_retry_timer.stop()
         if not any(folder["enabled"] for folder in self.catalogue.folders()):
             return
 
@@ -2240,6 +2289,7 @@ class Window(QMainWindow):
         def done(result):
             found, errors, metrics = result
             started = time.perf_counter()
+            self.catalogue.hidden_deleted_ids()
             self.remember_media(found)
             self.refresh_references()
             self.refresh_library()
@@ -2251,7 +2301,7 @@ class Window(QMainWindow):
                 12000,
             )
 
-        self.background(scan, done, label="Discovering files…")
+        self.background(scan, done, label="Discovering files…", quiet=quiet)
 
     def show_folder_context_menu(self, position):
         item = self.folders.itemAt(position)
@@ -2628,6 +2678,8 @@ class Window(QMainWindow):
         self.player.media.shutdown()
         self.export_player.media.shutdown()
         self.browse.player.media.shutdown()
+        self.scan_timer.stop()
+        self.scan_retry_timer.stop()
         QApplication.instance().removeEventFilter(self)
         event.accept()
 

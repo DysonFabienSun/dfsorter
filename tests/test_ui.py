@@ -1746,21 +1746,54 @@ def test_browse_entry_selects_newest(window, tmp_path):
     window.panel("Browse")
     newest = clips[-1]["clip_id"]
     assert window.browse_id == newest
+    window.panel("Home")
+    window.media_info[clips[0]["source_path"]] = {"created": "2026-09-30T12:00:00Z"}
+    window.panel("Browse")
+    newest = clips[0]["clip_id"]
+    assert window.browse_id == newest
     window.toggle_browse_sort()
     window.library.setCurrentRow(0)
     assert window.browse_id != newest
+    selected = window.browse_id
+    window.panel("Home")
+    window.panel("Browse")
+    assert window.browse_id == selected
+    assert window.browse.clip["clip_id"] == selected
+    assert window.browse_newest
+    assert window.library.visualItemRect(window.library.currentItem()).intersects(
+        window.library.viewport().rect()
+    )
+    # A fresh window has no remembered manual selection.
+    restarted = Window(tmp_path)
+    try:
+        restarted.media_info = window.media_info.copy()
+        restarted.panel("Browse")
+        assert restarted.browse_id == newest
+    finally:
+        restarted.close()
+    with window.catalogue.connection() as database:
+        database.execute("INSERT INTO deleted_sources VALUES (?)", (selected,))
     window.panel("Home")
     window.panel("Browse")
     assert window.browse_id == newest
-    assert window.browse_newest
 
 
-def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch):
+@pytest.mark.parametrize("remaining", [False, True])
+def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch, remaining):
     from PySide6.QtWidgets import QMessageBox
 
     add_clips(window, tmp_path)
+    if remaining:
+        second = tmp_path / "second"
+        second.mkdir()
+        second_source = second / "second.mp4"
+        second_source.write_bytes(b"video")
+        folder = window.catalogue.add_folder(second)
+        window.catalogue.ingest(folder, [{"path": str(second_source), "game": None}])
     window.panel("Browse")
     source = Path(window.browse.clip["source_path"])
+    deleted_id = window.browse_id
+    count = window.library.count()
     before = catalogue_dump(window)
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: QMessageBox.StandardButton.Cancel)
     window.browse.delete_button.click()
@@ -1770,8 +1803,93 @@ def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch):
     window.browse.delete_button.click()
     assert wait_for(application, lambda: window.worker is None)
     assert not source.exists()
-    assert catalogue_dump(window) == before
-    assert not window.browse.delete_button.isEnabled()
+    assert [
+        line for line in catalogue_dump(window)
+        if not line.startswith('INSERT INTO "deleted_sources"')
+    ] == before
+    assert window.library.count() == count - 1
+    assert deleted_id not in {
+        window.library.item(index).data(Qt.ItemDataRole.UserRole)
+        for index in range(window.library.count())
+    }
+    assert window.browse_id != deleted_id
+    if remaining:
+        assert window.browse.clip["clip_id"] == window.browse_id
+    else:
+        assert window.browse.clip is None
+        assert window.browse_id is None
+        assert not window.browse.delete_button.isEnabled()
+    window.panel("Home")
+    window.catalogue = Catalogue(window.catalogue.path)
+    window.panel("Browse")
+    assert window.library.count() == count - 1
+    restarted = Window(tmp_path)
+    restarted.show()
+    try:
+        application.processEvents()
+        assert wait_for(application, lambda: restarted.worker is None)
+        restarted.panel("Browse")
+        assert restarted.library.count() == count - 1
+        assert restarted.browse_id != deleted_id
+    finally:
+        restarted.close()
+    source.write_bytes(b"restored")
+    window.refresh_library()
+    assert window.library.count() == count
+
+
+def test_auto_scan_discovers_without_modal_or_selection_reset(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    folder = window.catalogue.folders()[0]
+    sources = []
+    for index in range(25):
+        path = tmp_path / "captures" / f"existing-{index}.mp4"
+        path.write_bytes(b"video")
+        sources.append({"path": str(path), "game": None})
+    window.catalogue.ingest(folder["folder_id"], sources)
+    window.panel("Browse")
+    window.library.setCurrentRow(15)
+    window.library.scrollToItem(window.library.currentItem())
+    anchor = window.library.itemAt(1, 1)
+    anchor_id = anchor.data(Qt.ItemDataRole.UserRole)
+    anchor_offset = window.library.visualItemRect(anchor).top()
+    selected_id = window.browse_id
+    window.browse.custom_title.setText("Keep draft")
+    original_clip = window.browse.clip
+    new_source = tmp_path / "captures" / "new.mp4"
+    new_source.write_bytes(b"new video")
+    assert window.scan_timer.interval() == 30_000
+    assert window.scan_timer.isActive()
+    window.scan_timer.timeout.emit()
+    assert window.scan_retry_timer.isActive()
+    assert wait_for(application, lambda: window.worker is None and window.library.count() == 27)
+    assert QApplication.activeModalWidget() is None
+    assert window.browse_id == selected_id
+    anchor = window.library.itemAt(1, 1)
+    assert anchor.data(Qt.ItemDataRole.UserRole) == anchor_id
+    assert window.library.visualItemRect(anchor).top() == anchor_offset
+    assert window.browse.clip is original_clip
+    assert window.browse.custom_title.text() == "Keep draft"
+    assert window.catalogue.state("session")["ids"] == ids
+
+
+def test_auto_scan_defers_busy_and_modal_and_runs_on_focus(window, application, monkeypatch):
+    calls = []
+    monkeypatch.setattr(window, "rescan", lambda **kwargs: calls.append(kwargs))
+    window.worker = object()
+    window.auto_scan()
+    assert not calls
+    assert window.scan_retry_timer.isActive()
+    window.worker = None
+    monkeypatch.setattr(QApplication, "activeModalWidget", lambda: window)
+    window.auto_scan()
+    assert not calls
+    monkeypatch.setattr(QApplication, "activeModalWidget", lambda: None)
+    window.scan_retry_timer.stop()
+    window.eventFilter(application, QEvent(QEvent.Type.ApplicationActivate))
+    assert window.scan_retry_timer.isActive()
+    assert wait_for(application, lambda: bool(calls))
+    assert calls == [{"quiet": True}]
 
 
 def test_browse_form_alignment_and_title_style(window, application):

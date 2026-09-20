@@ -185,6 +185,9 @@ def delete_reviewed(
                 if signature(source_stat(candidate.path)) != candidate.signature:
                     raise ValueError("File changed since preview; review again")
                 delete_file(candidate.path, candidate.signature)
+                database.execute(
+                    "INSERT OR IGNORE INTO deleted_sources VALUES (?)", (candidate.clip_id,)
+                )
             results.append((candidate.path, "Deleted"))
         except (OSError, ValueError) as error:
             results.append((candidate.path, f"Skipped / failed: {error}"))
