@@ -208,12 +208,14 @@ class Window(QMainWindow):
         navigation.addSpacing(8)
         outer.addWidget(self.navigation_strip)
         self.splitter = QSplitter()
-        self.splitter.setHandleWidth(1)
+        self.splitter.setObjectName("workspaceSplitter")
+        self.splitter.setHandleWidth(5)
         workspace, workspace_layout = page()
         workspace_layout.setSpacing(0)
         workspace_layout.addWidget(self.splitter)
         outer.addWidget(workspace, 1)
         self.left, left_layout = page()
+        self.left.setObjectName("clipLibraryPane")
         left_layout.setContentsMargins(8, 4, 8, 4)
         role(self.left, "sidebar")
         self.search = QLineEdit()
@@ -280,6 +282,7 @@ class Window(QMainWindow):
             "Next undefined clip · Jump ahead without changing verdicts (no wrap)",
             self.navigate_next_undefined,
         )
+        self.next_undefined_button.setProperty("sessionAction", True)
         session_header_layout.addWidget(self.next_undefined_button)
         self.session_header.hide()
         left_layout.addWidget(self.session_header)

@@ -46,6 +46,9 @@ THEMES = {
         "component_timeline_progress": "#087F8C",
         "component_volume_track": "#D5E7E9",
         "component_volume_progress": "#3D929B",
+        "component_clip_scrollbar_track": "#D5E7E9",
+        "component_clip_scrollbar_thumb": "#3D929B",
+        "component_clip_scrollbar_thumb_hover": "#087F8C",
         "component_scrollbar": "#CDD5DC",
         "component_scrollbar_hover": "#AEB8C1",
         "component_tooltip": "#252B33",
@@ -95,6 +98,9 @@ THEMES = {
         "component_timeline_progress": "#43B6C3",
         "component_volume_track": "#29434A",
         "component_volume_progress": "#3698A3",
+        "component_clip_scrollbar_track": "#29434A",
+        "component_clip_scrollbar_thumb": "#3698A3",
+        "component_clip_scrollbar_thumb_hover": "#43B6C3",
         "component_scrollbar": "#3A424D",
         "component_scrollbar_hover": "#515C67",
         "component_tooltip": "#11151A",
@@ -167,6 +173,7 @@ def stylesheet():
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
+        QWidget#clipLibraryPane { border-radius: 7px; }
         QWidget[role="transparent"] { background: transparent; }
         QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 5px; }
         QWidget[role="divider"] { background: %(border_subtle)s; }
@@ -204,6 +211,7 @@ def stylesheet():
         QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 2px solid %(focus)s; }
         QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
+        QToolButton[sessionAction="true"] { padding: 4px 2px 0px 2px; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
         QToolButton[navUtility="true"] { padding: 3px 2px 1px 2px; }
         QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx; font-weight: 500; padding: 0px 16px; min-height: 32px; }
@@ -227,8 +235,8 @@ def stylesheet():
         QTabBar::tab { background: transparent; color: %(text_secondary)s; padding: 6px 12px; border-bottom: 2px solid transparent; }
         QTabBar::tab:hover { background: %(surface_hover)s; color: %(text_primary)s; }
         QTabBar::tab:selected { color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }
-        QSplitter::handle { background: %(border_subtle)s; }
-        QSplitter::handle:hover { background: %(border_strong)s; }
+        QSplitter#workspaceSplitter::handle { background: transparent; }
+        QSplitter#workspaceSplitter::handle:hover { background: %(border_subtle)s; }
         QSlider::groove:horizontal { height: 4px; background: %(component_volume_track)s; border-radius: 2px; }
         QSlider::sub-page:horizontal { background: %(component_volume_progress)s; border-radius: 2px; }
         QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: %(accent_default)s; border-radius: 3px; }
@@ -242,6 +250,10 @@ def stylesheet():
         QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; }
         QScrollBar::handle { background: %(component_scrollbar)s; border-radius: 3px; min-height: 24px; min-width: 24px; }
         QScrollBar::handle:hover { background: %(component_scrollbar_hover)s; }
+        QWidget#clipLibraryPane QScrollBar:vertical { background: %(component_clip_scrollbar_track)s; }
+        QWidget#clipLibraryPane QScrollBar::handle { background: %(component_clip_scrollbar_thumb)s; }
+        QWidget#clipLibraryPane QScrollBar::handle:hover { background: %(component_clip_scrollbar_thumb_hover)s; }
+        QWidget#clipLibraryPane QScrollBar::add-page, QWidget#clipLibraryPane QScrollBar::sub-page { background: %(component_clip_scrollbar_track)s; }
         QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
         QToolTip { background: %(component_tooltip)s; border: 1px solid %(border_default)s; color: %(component_tooltip_text)s; padding: 6px 8px; border-radius: 4px; }

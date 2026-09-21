@@ -74,6 +74,8 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `component.timelineProgress` | `#087F8C` | Elapsed timeline section |
 | `component.volumeTrack` | `#D5E7E9` | Quiet teal volume remainder |
 | `component.volumeProgress` | `#3D929B` | Current volume level |
+| `component.clipScrollbarTrack` | `#D5E7E9` | Left-pane clip-list scrollbar track |
+| `component.clipScrollbarThumb` | `#3D929B` | Left-pane clip-list scrollbar thumb |
 | `component.scrollbar` | `#CDD5DC` | Neutral scrollbar thumb |
 | `component.tooltip` | `#252B33` | Tooltip surface |
 
@@ -121,6 +123,8 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `component.timelineProgress` | `#43B6C3` | Elapsed timeline section |
 | `component.volumeTrack` | `#29434A` | Quiet teal volume remainder |
 | `component.volumeProgress` | `#3698A3` | Current volume level |
+| `component.clipScrollbarTrack` | `#29434A` | Left-pane clip-list scrollbar track |
+| `component.clipScrollbarThumb` | `#3698A3` | Left-pane clip-list scrollbar thumb |
 | `component.scrollbar` | `#3A424D` | Neutral scrollbar thumb |
 | `component.tooltip` | `#11151A` | Tooltip surface |
 

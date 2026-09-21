@@ -85,6 +85,12 @@ def test_player_volume_geometry_and_media_colors(window, application):
     assert abs(volume_center - time_center) <= 1
     assert COLORS["component_timeline_progress"] == COLORS["accent_default"]
     assert COLORS["component_volume_progress"] != COLORS["component_timeline_progress"]
+    assert COLORS["component_clip_scrollbar_track"] != COLORS["component_timeline_track"]
+    assert COLORS["component_clip_scrollbar_thumb"] != COLORS["component_clip_scrollbar_track"]
+    assert (
+        THEMES["dark"]["component_clip_scrollbar_thumb"]
+        != THEMES["dark"]["component_clip_scrollbar_track"]
+    )
     assert THEMES["light"]["component_volume_track"] != THEMES["light"]["border_default"]
 
 
@@ -847,6 +853,10 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.add_project_next.parentWidget() is window.player
     application.processEvents()
     assert window.library_error.isHidden()
+    assert window.left.objectName() == "clipLibraryPane"
+    assert window.splitter.objectName() == "workspaceSplitter"
+    assert window.splitter.handleWidth() == 5
+    assert window.next_undefined_button.property("sessionAction") is True
     assert window.session_header.geometry().bottom() < window.library.geometry().top()
     assert window.left.height() == window.center_column.height()
     assert window.session_counts.geometry().bottom() >= window.left.height() - 8
