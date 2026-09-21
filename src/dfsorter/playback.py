@@ -18,9 +18,9 @@ def start_offset_seconds(settings):
 class VideoSurface(QWidget):
     def __init__(self):
         super().__init__()
-        self.setStyleSheet(f"background: {COLORS['bg_video']};")
+        self.setObjectName("videoSurface")
         palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(COLORS["bg_video"]))
+        palette.setColor(QPalette.ColorRole.Window, QColor(COLORS["surface_video"]))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
         self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors)
@@ -28,6 +28,42 @@ class VideoSurface(QWidget):
 
     def clear(self):
         self.update()
+
+
+class AspectVideoContainer(QWidget):
+    """Fit the native video surface without asking libmpv to add black bars."""
+
+    def __init__(self, surface):
+        super().__init__()
+        self.surface = surface
+        self.aspect_ratio = None
+        surface.setParent(self)
+
+    def set_video_size(self, width, height):
+        self.aspect_ratio = width / height if width > 0 and height > 0 else None
+        self.layout_surface()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.layout_surface()
+
+    def layout_surface(self):
+        bounds = self.rect()
+        if not self.aspect_ratio or bounds.width() <= 0 or bounds.height() <= 0:
+            self.surface.setGeometry(bounds)
+            return
+        if bounds.width() / bounds.height() > self.aspect_ratio:
+            height = bounds.height()
+            width = round(height * self.aspect_ratio)
+        else:
+            width = bounds.width()
+            height = round(width / self.aspect_ratio)
+        self.surface.setGeometry(
+            bounds.x() + (bounds.width() - width) // 2,
+            bounds.y() + (bounds.height() - height) // 2,
+            width,
+            height,
+        )
 
 
 class RangeSlider(QSlider):
@@ -69,14 +105,14 @@ class RangeSlider(QSlider):
         if start is not None and end is not None:
             left = 8 + int((self.width() - 16) * start / self.maximum())
             width = int((self.width() - 16) * (end - start) / self.maximum())
-            tint = QColor(COLORS["accent"])
+            tint = QColor(COLORS["accent_default"])
             tint.setAlphaF(0.18)
             painter.fillRect(left, self.height() // 2 - 3, width, SIZES["timeline"], tint)
         for value, color, label in [
-            (start, COLORS["accent_focus"], "I"),
-            (end, COLORS["accent_focus"], "O"),
-            (self.pending_in, COLORS["accent"], "·I"),
-            (self.pending_out, COLORS["accent"], "·O"),
+            (start, COLORS["focus"], "I"),
+            (end, COLORS["focus"], "O"),
+            (self.pending_in, COLORS["accent_default"], "·I"),
+            (self.pending_out, COLORS["accent_default"], "·O"),
         ]:
             if value is None:
                 continue
@@ -99,14 +135,12 @@ class Player(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         layout = QVBoxLayout(self)
         self.video = VideoSurface()
-        video_container = QWidget()
-        video_container.setStyleSheet(f"background: {COLORS['bg_video']};")
-        video_layout = QVBoxLayout(video_container)
-        video_layout.setContentsMargins(0, 0, 0, 0)
-        video_layout.addWidget(self.video)
-        self.video.setMinimumSize(260, 150)
-        layout.addWidget(video_container, 1)
+        self.video_container = AspectVideoContainer(self.video)
+        self.video_container.setObjectName("videoContainer")
+        self.video_container.setMinimumSize(260, 150)
+        layout.addWidget(self.video_container, 1)
         self.media = MpvBackend(self.video, self)
+        self.media.videoSizeChanged.connect(self.video_container.set_video_size)
         self.audio = self.media
         self.audio.setVolume(0.6)
         self.seek = RangeSlider()
@@ -123,9 +157,9 @@ class Player(QWidget):
         layout.addWidget(self.seek)
         self.fast_indicator = QLabel(">>>")
         self.fast_indicator.setTextFormat(Qt.TextFormat.RichText)
+        self.fast_indicator.setObjectName("fastIndicator")
         self.fast_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fast_indicator.setFont(font("sm", "bold"))
-        self.fast_indicator.setStyleSheet(f"color: {COLORS['accent']}; background: transparent;")
         self.fast_indicator.setAccessibleName("Fast-forward 3×")
         indicator_policy = self.fast_indicator.sizePolicy()
         indicator_policy.setRetainSizeWhenHidden(True)
@@ -149,15 +183,17 @@ class Player(QWidget):
             lambda muted: self.mute.setIcon(icon("volume-x" if muted else "volume-2"))
         )
         controls.addWidget(self.mute)
-        volume = QSlider(Qt.Orientation.Horizontal)
-        volume.setRange(0, 100)
-        volume.setValue(60)
-        volume.setMaximumWidth(100)
-        volume.setAccessibleName("Volume")
-        volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
-        controls.addWidget(volume)
+        self.volume = QSlider(Qt.Orientation.Horizontal)
+        self.volume.setObjectName("volume")
+        self.volume.setRange(0, 100)
+        self.volume.setValue(60)
+        self.volume.setFixedHeight(18)
+        self.volume.setMaximumWidth(100)
+        self.volume.setAccessibleName("Volume")
+        self.volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
+        controls.addWidget(self.volume, 0, Qt.AlignmentFlag.AlignVCenter)
         self.time = QLabel("0:00 / 0:00")
-        controls.addWidget(self.time)
+        controls.addWidget(self.time, 0, Qt.AlignmentFlag.AlignVCenter)
         controls.addStretch()
         self.controls = QHBoxLayout()
         self.controls.addStretch()
@@ -332,7 +368,7 @@ class Player(QWidget):
             self.media.play()
 
     def animate_fast_indicator(self):
-        colors = [COLORS["accent_focus"], COLORS["accent"], COLORS["text_disabled"]]
+        colors = [COLORS["focus"], COLORS["accent_default"], COLORS["text_disabled"]]
         self.fast_indicator.setText(
             "".join(
                 f'<span style="color:{colors[(self.fast_indicator_phase - index) % 3]}">&gt;</span>'

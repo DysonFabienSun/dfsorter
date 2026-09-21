@@ -52,6 +52,42 @@ def wait_for(application, predicate, timeout=12):
     return False
 
 
+def test_video_surface_fits_landscape_and_portrait_sources(application):
+    from PySide6.QtWidgets import QWidget
+
+    from dfsorter.playback import AspectVideoContainer
+
+    surface = QWidget()
+    container = AspectVideoContainer(surface)
+    container.resize(1000, 500)
+    container.show()
+    application.processEvents()
+    try:
+        container.set_video_size(1920, 1080)
+        assert surface.geometry().getRect() == (55, 0, 889, 500)
+        container.set_video_size(1080, 1920)
+        assert surface.geometry().getRect() == (359, 0, 281, 500)
+        container.set_video_size(0, 0)
+        assert surface.geometry() == container.rect()
+    finally:
+        container.close()
+
+
+def test_player_volume_geometry_and_media_colors(window, application):
+    from dfsorter.theme import COLORS, THEMES
+
+    window.panel("Browse")
+    application.processEvents()
+    player = window.browse.player
+    assert player.volume.height() == 18
+    volume_center = player.volume.mapTo(player, player.volume.rect().center()).y()
+    time_center = player.time.mapTo(player, player.time.rect().center()).y()
+    assert abs(volume_center - time_center) <= 1
+    assert COLORS["component_timeline_progress"] == COLORS["accent_default"]
+    assert COLORS["component_volume_progress"] != COLORS["component_timeline_progress"]
+    assert THEMES["light"]["component_volume_track"] != THEMES["light"]["border_default"]
+
+
 def catalogue_dump(window):
     with window.catalogue.connection() as database:
         return list(database.iterdump())
@@ -61,10 +97,13 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     root = tmp_path / "browse-captures"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
-    window.catalogue.ingest(folder, [
-        {"path": str(root / f"clip-{index}.mp4"), "game": "VALORANT" if index else None}
-        for index in range(3)
-    ])
+    window.catalogue.ingest(
+        folder,
+        [
+            {"path": str(root / f"clip-{index}.mp4"), "game": "VALORANT" if index else None}
+            for index in range(3)
+        ],
+    )
     ids = [clip["clip_id"] for clip in window.catalogue.clips()]
     window.catalogue.patch(ids[0], {"triage": "keep"})
     window.catalogue.patch(ids[1], {"triage": "discard"})
@@ -108,11 +147,19 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     window.navigate(-1)
     assert window.browse_id == ids[0]
     for action in [
-        lambda: window.edit({"triage": "discard"}), window.undo,
-        lambda: window.undo(True), window.reset_metadata, window.edit_tag,
-        window.new_project, window.delete_project, window.activate_project,
-        lambda: window.membership(True), lambda: window.create_session("all"),
-        window.end_session, window.delete_rejected, lambda: window.save_range(10, 20),
+        lambda: window.edit({"triage": "discard"}),
+        window.undo,
+        lambda: window.undo(True),
+        window.reset_metadata,
+        window.edit_tag,
+        window.new_project,
+        window.delete_project,
+        window.activate_project,
+        lambda: window.membership(True),
+        lambda: window.create_session("all"),
+        window.end_session,
+        window.delete_rejected,
+        lambda: window.save_range(10, 20),
     ]:
         action()
     window.browse_game.setCurrentIndex(window.browse_game.findData("VALORANT"))
@@ -149,7 +196,9 @@ def test_browse_temporary_range_and_share(window, application, tmp_path, monkeyp
     assert browse.in_ms == 800
     assert browse.custom_title.text() == "My Custom 中文 Clip"
     calls = []
-    monkeypatch.setattr("dfsorter.browse.share_clip", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        "dfsorter.browse.share_clip", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     work = []
     monkeypatch.setattr(window, "background", lambda function, done: work.append(function))
     browse.share()
@@ -227,14 +276,22 @@ def test_browse_runtime_failure_reveals_page(window, application, tmp_path, monk
 def test_browse_layout(window, application, tmp_path):
     ids = add_clips(window, tmp_path, valid=True)
     clip = window.catalogue.clip(ids[0])
-    window.catalogue.patch(ids[0], {
-        "mainline": "残局 中文 English — accurate shot", "triage": "keep",
-        "metadata": {"agent": "Jett", "weapon": ["Vandal", "Sheriff"], "kill": 3},
-        "in_ms": 500, "out_ms": 1500,
-    })
-    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"], [
-        {"path": str(tmp_path / "captures" / "unavailable.mp4"), "game": None},
-    ])
+    window.catalogue.patch(
+        ids[0],
+        {
+            "mainline": "残局 中文 English — accurate shot",
+            "triage": "keep",
+            "metadata": {"agent": "Jett", "weapon": ["Vandal", "Sheriff"], "kill": 3},
+            "in_ms": 500,
+            "out_ms": 1500,
+        },
+    )
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"],
+        [
+            {"path": str(tmp_path / "captures" / "unavailable.mp4"), "game": None},
+        ],
+    )
     window.media_info[clip["source_path"]] = {"created": "2026-09-20T00:00:00Z"}
     window.panel("Browse")
     window.browse.custom_title.setText("Weekend highlights — 精选")
@@ -250,7 +307,13 @@ def test_browse_layout(window, application, tmp_path):
         QTest.qWait(200)
         browse = window.browse
         assert browse.player.video.height() >= 150
-        assert browse.share_button.mapTo(browse, QPoint(0, browse.share_button.height())).y() <= browse.height()
+        assert browse.player.media._video_size == (320, 180)
+        surface = browse.player.video.geometry()
+        assert abs(surface.width() * 180 - surface.height() * 320) <= 320
+        assert (
+            browse.share_button.mapTo(browse, QPoint(0, browse.share_button.height())).y()
+            <= browse.height()
+        )
         assert browse.custom_title.width() > 200
         assert window.right.isHidden()
         # Capture the composed desktop region: HWND capture omits D3D child surfaces.
@@ -430,6 +493,57 @@ def test_playback_preferences_persist(window, application):
     finally:
         restarted.close()
         application.processEvents()
+
+
+def test_theme_switching_and_persistence(window, application):
+    import yaml
+
+    from dfsorter.theme import COLORS, THEMES
+
+    settings = SettingsDialog(window)
+    assert settings.theme.currentData() == "light"
+    assert COLORS["surface_canvas"] == THEMES["light"]["surface_canvas"]
+    assert (
+        len(
+            {
+                COLORS["surface_canvas"],
+                COLORS["surface_workspace"],
+                COLORS["surface_sidebar"],
+            }
+        )
+        == 3
+    )
+    assert window.left.property("role") == "sidebar"
+    assert window.right.property("role") == "sidebar"
+    assert window.shortcut_hint.property("role") == "helper"
+    assert window.theme_button.toolTip() == "Switch to dark mode"
+
+    settings.theme.setCurrentIndex(settings.theme.findData("dark"))
+    application.processEvents()
+    assert COLORS["surface_canvas"] == THEMES["dark"]["surface_canvas"]
+    assert window.theme_button.toolTip() == "Switch to light mode"
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["theme"] == "dark"
+    settings.close()
+
+    restarted = Window(window.root)
+    try:
+        assert restarted.settings["theme"] == "dark"
+        assert restarted.theme_button.toolTip() == "Switch to light mode"
+        assert COLORS["surface_canvas"] == THEMES["dark"]["surface_canvas"]
+    finally:
+        restarted.close()
+        application.processEvents()
+
+    window.set_theme("light")
+    settings = SettingsDialog(window)
+    settings.theme.setCurrentIndex(settings.theme.findData("system"))
+    assert window.settings["theme"] == "system"
+    resolved_before_toggle = COLORS["surface_canvas"]
+    settings.close()
+    window.theme_button.click()
+    assert window.settings["theme"] in {"light", "dark"}
+    assert COLORS["surface_canvas"] != resolved_before_toggle
+    window.set_theme("light")
 
 
 def add_clips(window, tmp_path, valid=False, codec="libx264"):
@@ -636,10 +750,12 @@ def test_reject_then_enter_is_one_shot(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     second = tmp_path / "captures" / "second.mp4"
     second.write_bytes(b"test")
-    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"],
-                            [{"path": str(second), "game": "VALORANT"}])
-    next_id = next(clip["clip_id"] for clip in window.catalogue.clips()
-                   if clip["clip_id"] != ids[0])
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"], [{"path": str(second), "game": "VALORANT"}]
+    )
+    next_id = next(
+        clip["clip_id"] for clip in window.catalogue.clips() if clip["clip_id"] != ids[0]
+    )
     window.catalogue.create_session([ids[0], next_id], replace=True)
     window.panel("Editing")
     QTest.keyClick(window.player, Qt.Key.Key_Backspace)
@@ -959,9 +1075,7 @@ def test_real_playback(window, application, tmp_path, codec):
     artifact.mkdir(parents=True, exist_ok=True)
     window.grab().save(str(artifact / f"editing-{codec}.png"))
     window.screen().grabWindow(int(window.winId())).save(str(artifact / f"screen-{codec}.png"))
-    player.media.frame_image().save(
-        str(artifact / f"decoded-video-{codec}.png")
-    )
+    player.media.frame_image().save(str(artifact / f"decoded-video-{codec}.png"))
     left_width, _, right_width = window.splitter.sizes()
     window.showMaximized()
     QTest.qWait(300)
@@ -1310,7 +1424,9 @@ def test_page_reveal_waits_and_delays_indicator(window, application):
 
 
 @pytest.mark.parametrize("panel", ["Editing", "Export"])
-def test_clip_click_keeps_list_and_positions_selection(window, application, tmp_path, monkeypatch, panel):
+def test_clip_click_keeps_list_and_positions_selection(
+    window, application, tmp_path, monkeypatch, panel
+):
     root = tmp_path / "LongLibrary"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
@@ -1533,7 +1649,9 @@ def test_game_change_confirmation_and_undo(window, application, tmp_path, monkey
 
 
 @pytest.mark.parametrize("folder_name, game", [("VALORANT", "VALORANT"), ("NVIDIA", None)])
-def test_folder_dialogs_and_background_scan(window, application, tmp_path, monkeypatch, folder_name, game):
+def test_folder_dialogs_and_background_scan(
+    window, application, tmp_path, monkeypatch, folder_name, game
+):
     from PySide6.QtWidgets import QFileDialog
 
     captures = tmp_path / folder_name
@@ -1545,6 +1663,7 @@ def test_folder_dialogs_and_background_scan(window, application, tmp_path, monke
         "getItem",
         lambda *args, **kwargs: ("Automatic (nearest recognized ancestor)", True),
     )
+
     def confirm(message):
         # Reproduce a modal dialog processing worker-finished events.
         QTest.qWait(100)
@@ -1748,7 +1867,7 @@ def test_history_controls_availability(window, tmp_path):
     available(False, False)
     for control in (window.undo_button, window.redo_button):
         for mode, color in [
-            (QIcon.Mode.Normal, COLORS["history_available"]),
+            (QIcon.Mode.Normal, COLORS["text_secondary"]),
             (QIcon.Mode.Disabled, COLORS["text_disabled"]),
         ]:
             image = control.icon().pixmap(16, 16, mode).toImage()
@@ -1827,9 +1946,10 @@ def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatc
 
 def test_browse_entry_selects_newest(window, tmp_path, application):
     add_clips(window, tmp_path)
-    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"], [
-        {"path": str(tmp_path / "captures" / "second.mp4"), "game": None}
-    ])
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"],
+        [{"path": str(tmp_path / "captures" / "second.mp4"), "game": None}],
+    )
     clips = window.catalogue.clips()
     for index, clip in enumerate(clips):
         window.media_info[clip["source_path"]] = {"created": f"2026-09-{index + 1:02}T12:00:00Z"}
@@ -1901,7 +2021,8 @@ def test_browse_delete_confirmation(window, application, tmp_path, monkeypatch, 
     assert wait_for(application, lambda: window.worker is None)
     assert not source.exists()
     assert [
-        line for line in catalogue_dump(window)
+        line
+        for line in catalogue_dump(window)
         if not line.startswith('INSERT INTO "deleted_sources"')
     ] == before
     assert window.library.count() == count - 1

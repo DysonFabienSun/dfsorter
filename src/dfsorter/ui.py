@@ -64,8 +64,17 @@ from .parsing import parse_command, preview_command, query_clips, requests_disca
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
-from .theme import COLORS, SIZES, apply_theme, role, title_styles
-from .widgets import CLIP_ROLE, ClipDelegate, Rating, icon, tag_prefix, tool
+from .theme import COLORS, SIZES, apply_theme, resolved_scheme, role, title_styles
+from .widgets import (
+    CLIP_ROLE,
+    ClipDelegate,
+    Rating,
+    icon,
+    refresh_icons,
+    set_icon,
+    tag_prefix,
+    tool,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -123,6 +132,9 @@ class Window(QMainWindow):
             except (OSError, ValueError, yaml.YAMLError) as error:
                 self.registry.errors.append(f"Settings: {error}")
                 self.settings = {}
+        if self.settings.get("theme") not in {"system", "light", "dark"}:
+            self.settings["theme"] = "light"
+        apply_theme(QApplication.instance(), self.settings["theme"])
         self.current_id = None
         self.current_panel = "Home"
         self.browse_newest = True
@@ -166,24 +178,31 @@ class Window(QMainWindow):
         navigation.addStretch()
         self.undo_button = tool("undo-2", "Undo · Ctrl+Z", lambda: self.undo(False))
         self.redo_button = tool("redo-2", "Redo · Ctrl+Shift+Z", lambda: self.undo(True))
-        self.undo_button.setIcon(icon("undo-2", COLORS["history_available"]))
-        self.redo_button.setIcon(icon("redo-2", COLORS["history_available"]))
         self.update_history_controls()
         navigation.addWidget(self.undo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
         navigation.addWidget(self.redo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(16)
         self.projects_toggle = button("Projects", self.toggle_projects)
-        self.projects_toggle.setIcon(icon("folder-open"))
+        set_icon(self.projects_toggle, "folder-open")
         self.projects_toggle.setToolTip("Show / hide Projects")
         self.projects_toggle.setAccessibleName("Show / hide Projects")
         self.projects_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.projects_toggle.setCheckable(True)
         self.projects_toggle.setFixedHeight(SIZES["toolbar"])
         navigation.addWidget(self.projects_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
-        navigation.addSpacing(8)
+        navigation.addSpacing(4)
+        self.theme_button = tool("moon", "Switch to dark mode", self.toggle_theme)
+        self.theme_button.setProperty("navUtility", True)
+        navigation.addWidget(self.theme_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(4)
         self.settings_button = tool("settings", "Settings and actions", lambda: None)
-        for control in (self.undo_button, self.redo_button, self.settings_button):
+        for control in (
+            self.undo_button,
+            self.redo_button,
+            self.theme_button,
+            self.settings_button,
+        ):
             control.setProperty("navUtility", True)
         navigation.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(8)
@@ -196,12 +215,15 @@ class Window(QMainWindow):
         outer.addWidget(workspace, 1)
         self.left, left_layout = page()
         left_layout.setContentsMargins(8, 4, 8, 4)
-        role(self.left, "panel")
+        role(self.left, "sidebar")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search or game:VAL agent:Jett kill:>=4")
         self.search.returnPressed.connect(self.refresh_library)
         left_layout.addWidget(self.search)
         self.filters, filter_layout = page()
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(8)
+        role(self.filters, "transparent")
         self.triage_filter = QComboBox()
         self.triage_filter.addItems(
             ["Hide discarded", "All triage", "Undefined", "Keep", "Discard"]
@@ -219,6 +241,8 @@ class Window(QMainWindow):
         left_layout.addWidget(self.filters)
         self.browse_filters, browse_filters_layout = page()
         browse_filters_layout.setContentsMargins(0, 0, 0, 0)
+        browse_filters_layout.setSpacing(8)
+        role(self.browse_filters, "transparent")
         self.browse_search = QLineEdit()
         self.browse_search.setPlaceholderText("Search clips")
         self.browse_search.returnPressed.connect(self.refresh_library)
@@ -232,7 +256,9 @@ class Window(QMainWindow):
         browse_title = QLabel("Library clips")
         role(browse_title, "paneHeading")
         browse_header.addWidget(browse_title, 1)
-        self.browse_sort = tool("arrow-down-up", "Newest first · Switch to oldest first", self.toggle_browse_sort)
+        self.browse_sort = tool(
+            "arrow-down-up", "Newest first · Switch to oldest first", self.toggle_browse_sort
+        )
         browse_header.addWidget(self.browse_sort)
         browse_filters_layout.addLayout(browse_header)
         left_layout.addWidget(self.browse_filters)
@@ -283,7 +309,7 @@ class Window(QMainWindow):
         self.pages = {}
         self.build_pages()
         self.right, right_layout = page()
-        role(self.right, "panel")
+        role(self.right, "sidebar")
         self.active_label = QLabel()
         role(self.active_label, "secondary")
         self.active_label.setWordWrap(True)
@@ -323,7 +349,7 @@ class Window(QMainWindow):
         self.splitter.splitterMoved.connect(self.panes_resized)
         self.command_area, command_layout = page()
         self.command_area.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        command_layout.setContentsMargins(12, 4 + self.fontMetrics().lineSpacing(), 12, 4)
+        command_layout.setContentsMargins(12, 8 + self.fontMetrics().lineSpacing(), 12, 4)
         command_layout.setSpacing(4)
         self.command_history = QLabel()
         role(self.command_history, "muted")
@@ -333,7 +359,7 @@ class Window(QMainWindow):
         self.shortcut_hint = QLabel(
             "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · Ctrl+Enter Add to project + Next · ? Shortcuts"
         )
-        self.shortcut_hint.setObjectName("muted")
+        role(self.shortcut_hint, "helper")
         self.shortcut_hint.setWordWrap(True)
         command_layout.addWidget(self.shortcut_hint)
         self.command = QLineEdit()
@@ -365,9 +391,11 @@ class Window(QMainWindow):
         fields_row = QHBoxLayout()
         fields_row.addWidget(self.field_reminder, 1)
         self.range_warning_icon = QLabel()
-        self.range_warning_icon.setPixmap(icon("triangle-alert", COLORS["danger"], size=12).pixmap(12, 12))
+        self.range_warning_icon.setPixmap(
+            icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
+        )
         self.range_warning = QLabel("I/O not set")
-        self.range_warning.setStyleSheet(f"color: {COLORS['danger']}; font-size: 11px;")
+        role(self.range_warning, "error")
         for widget in (self.range_warning_icon, self.range_warning):
             policy = widget.sizePolicy()
             policy.setRetainSizeWhenHidden(True)
@@ -390,9 +418,6 @@ class Window(QMainWindow):
         self.transition_scope = "page"
         self.transition_cover = QWidget(central)
         self.transition_cover.setObjectName("pageLoading")
-        self.transition_cover.setStyleSheet(
-            f"QWidget#pageLoading {{ background: {COLORS['bg_app']}; }}"
-        )
         cover_layout = QVBoxLayout(self.transition_cover)
         cover_layout.addStretch()
         self.loading_label = QLabel("Loading…")
@@ -406,12 +431,14 @@ class Window(QMainWindow):
         self.loading_indicator_timer.setInterval(1000)
         self.loading_indicator_timer.timeout.connect(self.loading_label.show)
         self.command_cover = QWidget(self.command_area)
-        self.command_cover.setStyleSheet(f"background: {COLORS['bg_app']};")
+        self.command_cover.setObjectName("commandCover")
         self.command_cover.hide()
         for player in (self.player, self.export_player, self.browse.player):
             player.loading_started.connect(lambda player=player: self.player_loading(player))
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_settings_menu()
+        self.update_theme_button()
+        QApplication.instance().styleHints().colorSchemeChanged.connect(self.system_theme_changed)
         self.scan_timer = QTimer(self)
         self.scan_timer.setInterval(30_000)
         self.scan_timer.timeout.connect(self.request_auto_scan)
@@ -482,6 +509,7 @@ class Window(QMainWindow):
         folder_controls.addStretch()
         home.addLayout(folder_controls)
         self.folders = QListWidget()
+        self.folders.setProperty("contentSurface", "secondary")
         self.folders.setMinimumHeight(120)
         self.folders.setWordWrap(True)
         self.folder_context_menu = QMenu(self.folders)
@@ -496,12 +524,25 @@ class Window(QMainWindow):
             "from new sessions. Unlinked clips are saved entries from folders no longer tracked."
         )
         note.setWordWrap(True)
-        role(note, "secondary")
+        role(note, "muted")
         home.addWidget(note)
         session = self.pages["Session"][1]
+        session_group = QWidget()
+        session_group.setMaximumWidth(440)
+        role(session_group, "group")
+        session_setup = QVBoxLayout(session_group)
+        session_setup.setContentsMargins(16, 16, 16, 16)
+        session_setup.setSpacing(12)
+        session_heading = QLabel("Session setup")
+        role(session_heading, "sectionHeading")
+        session_setup.addWidget(session_heading)
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)
-        session.addWidget(self.session_status)
+        role(self.session_status, "secondary")
+        session_setup.addWidget(self.session_status)
+        scope_label = QLabel("Scope")
+        role(scope_label, "muted")
+        session_setup.addWidget(scope_label)
         self.session_count = QSpinBox()
         self.session_count.setRange(1, 1000000)
         self.session_count.setValue(50)
@@ -523,10 +564,24 @@ class Window(QMainWindow):
             session_choices.addWidget(control)
         session_choices.addWidget(self.session_count)
         session_choices.addStretch()
-        session.addLayout(session_choices)
-        session.addWidget(button("Create Session", lambda: self.create_session(self.session_mode)))
-        session.addWidget(button("Resume session", lambda: self.panel("Editing")))
-        session.addWidget(button("End session", self.end_session))
+        session_setup.addLayout(session_choices)
+        session_setup.addWidget(
+            button("Create Session", lambda: self.create_session(self.session_mode))
+        )
+        session_divider = QWidget()
+        session_divider.setFixedHeight(1)
+        role(session_divider, "divider")
+        session_setup.addWidget(session_divider)
+        existing_heading = QLabel("Existing session")
+        role(existing_heading, "muted")
+        session_setup.addWidget(existing_heading)
+        existing_actions = QHBoxLayout()
+        existing_actions.setSpacing(8)
+        existing_actions.addWidget(button("Resume session", lambda: self.panel("Editing")))
+        existing_actions.addWidget(button("End session", self.end_session))
+        existing_actions.addStretch()
+        session_setup.addLayout(existing_actions)
+        session.addWidget(session_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         session.addStretch()
         editing = self.pages["Editing"][1]
         self.player = Player(self.settings)
@@ -598,7 +653,7 @@ class Window(QMainWindow):
             controls.addWidget(tool(names[text], label, callback))
         project_separator = QWidget()
         project_separator.setFixedSize(1, 20)
-        project_separator.setStyleSheet(f"background: {COLORS['separator']};")
+        role(project_separator, "divider")
         controls.addWidget(project_separator, 0, Qt.AlignmentFlag.AlignVCenter)
         self.add_project_next = tool(
             "folder-plus",
@@ -608,6 +663,12 @@ class Window(QMainWindow):
         self.add_project_next.setEnabled(False)
         controls.addWidget(self.add_project_next)
         exporting = self.pages["Export"][1]
+        export_heading = QLabel("Project export")
+        role(export_heading, "heading")
+        exporting.addWidget(export_heading)
+        export_explanation = QLabel("Copy eligible project clips without changing original files.")
+        role(export_explanation, "secondary")
+        exporting.addWidget(export_explanation)
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
         exporting.addWidget(self.export_project)
@@ -634,6 +695,14 @@ class Window(QMainWindow):
         self.export_button = button("Export project", self.run_export)
         exporting.addWidget(self.export_button)
         configuration = self.pages["Config"][1]
+        config_heading = QLabel("Game configurations")
+        role(config_heading, "heading")
+        configuration.addWidget(config_heading)
+        config_explanation = QLabel(
+            "Review loaded game definitions or open the YAML folder to edit them."
+        )
+        role(config_explanation, "secondary")
+        configuration.addWidget(config_explanation)
         self.config_status = QPlainTextEdit()
         self.config_status.setReadOnly(True)
         configuration.addWidget(self.config_status)
@@ -662,7 +731,12 @@ class Window(QMainWindow):
             name, callback, shortcut = entry
             action = QAction(name, self)
             action.triggered.connect(callback)
-            if name in {"Settings…", "Reset clip metadata…", "Edit tag…", "Delete rejected originals…"}:
+            if name in {
+                "Settings…",
+                "Reset clip metadata…",
+                "Edit tag…",
+                "Delete rejected originals…",
+            }:
                 self.browse_write_actions.append(action)
             if shortcut:
                 action.setShortcut(shortcut)
@@ -696,6 +770,46 @@ class Window(QMainWindow):
         dialog.exec()
         self.settings_dialog = None
         dialog.deleteLater()
+
+    def update_theme_button(self):
+        scheme = resolved_scheme(QApplication.instance(), self.settings.get("theme", "light"))
+        target = "dark" if scheme == "light" else "light"
+        icon_name = "moon" if target == "dark" else "sun"
+        label = f"Switch to {target} mode"
+        set_icon(self.theme_button, icon_name)
+        self.theme_button.setToolTip(label)
+        self.theme_button.setAccessibleName(label)
+
+    def toggle_theme(self):
+        scheme = resolved_scheme(QApplication.instance(), self.settings.get("theme", "light"))
+        self.set_theme("dark" if scheme == "light" else "light")
+
+    def set_theme(self, mode, *, persist=True):
+        if mode not in {"system", "light", "dark"}:
+            raise ValueError(f"Unknown theme: {mode}")
+        self.settings["theme"] = mode
+        if persist:
+            self.save_settings()
+        apply_theme(QApplication.instance(), mode)
+        refresh_icons(self)
+        self.range_warning_icon.setPixmap(
+            icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
+        )
+        self.update_theme_button()
+        self.refresh_references()
+        self.refresh_title_presentation()
+        clip = self.catalogue.clip(self.current_id) if self.current_id else None
+        if clip:
+            self.render_field_reminder(clip, self.registry.game(clip["game"]))
+        for player in (self.player, self.export_player, self.browse.player):
+            player.seek.update()
+            player.fast_indicator.update()
+        self.rating.update()
+        self.update()
+
+    def system_theme_changed(self, _scheme):
+        if self.settings.get("theme") == "system":
+            self.set_theme("system", persist=False)
 
     def delete_rejected(self):
         if self.current_panel == "Browse":
@@ -816,7 +930,10 @@ class Window(QMainWindow):
     def reveal_page(self, generation):
         if generation != self.transition_generation or not self.transition_pending:
             return
-        if self.current_panel in {"Browse", "Editing", "Export"} and self.active_player().awaiting_frame:
+        if (
+            self.current_panel in {"Browse", "Editing", "Export"}
+            and self.active_player().awaiting_frame
+        ):
             return
         self.loading_indicator_timer.stop()
         self.transition_pending = False
@@ -902,7 +1019,7 @@ class Window(QMainWindow):
         for project in projects:
             item = QListWidgetItem(project["name"])
             if project["project_id"] == active:
-                item.setIcon(icon("check", COLORS["accent"]))
+                item.setIcon(icon("check", COLORS["accent_default"]))
             item.setToolTip(
                 project["name"] + (" · Active project" if project["project_id"] == active else "")
             )
@@ -968,9 +1085,9 @@ class Window(QMainWindow):
             text = f"{folder['path']}\n"
             games = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
             text += (
-                f"{'Scanning on' if folder['enabled'] else 'Scanning paused'} · {len(ids)} clips"
+                f"{'Scanning on' if folder['enabled'] else 'Scanning paused'} · {len(ids)} clips\n"
             )
-            text += f" · {games} · Average {average}"
+            text += f"{games or 'No detected games'}\nAverage {average}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
             self.folders.addItem(item)
@@ -1008,8 +1125,7 @@ class Window(QMainWindow):
             counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
             total = len(session["ids"])
             self.session_counts.setText(
-                f"{counts['keep'] + counts['discard']}/{total} "
-                f"({counts['discard']} rejected)"
+                f"{counts['keep'] + counts['discard']}/{total} ({counts['discard']} rejected)"
             )
             self.session_status.setText(
                 f"Position {session['index'] + 1} / {total}\n"
@@ -1038,19 +1154,26 @@ class Window(QMainWindow):
 
             captured = self.browse_sort_key(clip)[0]
             try:
-                captured = datetime.fromisoformat(captured.replace("Z", "+00:00")).astimezone().strftime(
-                    "%Y-%m-%d %H:%M:%S"
+                captured = (
+                    datetime.fromisoformat(captured.replace("Z", "+00:00"))
+                    .astimezone()
+                    .strftime("%Y-%m-%d %H:%M:%S")
                 )
             except ValueError:
                 captured = captured or "Date unavailable"
             source = Path(clip["source_path"])
             folder_name = next(
-                (Path(folder["path"]).name for folder in self.catalogue.folders()
-                 if source.is_relative_to(Path(folder["path"]))),
+                (
+                    Path(folder["path"]).name
+                    for folder in self.catalogue.folders()
+                    if source.is_relative_to(Path(folder["path"]))
+                ),
                 "Unlinked",
             )
             browse_details = f"{captured} · {folder_name}"
-        details = browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}"
+        details = (
+            browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}"
+        )
         item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])
         item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
@@ -1066,7 +1189,8 @@ class Window(QMainWindow):
                     lowercase=self.settings.get("lowercase_generated_titles", True),
                     rich_styles=title_styles(card=True),
                     mainline_separator=" | ",
-                    underline_first_mainline_word=(clip.get("tag") or "").strip().casefold() == "3rd",
+                    underline_first_mainline_word=(clip.get("tag") or "").strip().casefold()
+                    == "3rd",
                 ),
                 "browse_details": browse_details,
                 "game": clip["game"],
@@ -1134,10 +1258,7 @@ class Window(QMainWindow):
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
             elif self.current_panel == "Browse":
                 hidden = self.catalogue.hidden_deleted_ids()
-                clips = [
-                    clip for clip in clips
-                    if clip["clip_id"] not in hidden
-                ]
+                clips = [clip for clip in clips if clip["clip_id"] not in hidden]
                 clips = query_clips(clips, self.browse_search.text(), self.registry)
                 game = self.browse_game.currentData()
                 if game is not None:
@@ -1331,7 +1452,7 @@ class Window(QMainWindow):
                 f' <span style="color:{COLORS["text_secondary"]}; font-size:12px; font-weight:400">'
                 "— Working title not set</span>"
             )
-        rendered = f'<span style="color:{COLORS["text_working_title"]}">{rendered}</span>'
+        rendered = f'<span style="color:{COLORS["text_secondary"]}">{rendered}</span>'
         self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
 
     def render_clip(self):
@@ -1402,8 +1523,7 @@ class Window(QMainWindow):
                 else "Partial command preview; finish or correct the command before saving."
             )
         self.field_reminder.setToolTip(
-            state
-            + " ✓ populated · ! suggested · o optional · x invalid for current configuration."
+            state + " ✓ populated · ! suggested · o optional · x invalid for current configuration."
         )
         fields = list(
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
@@ -1435,11 +1555,11 @@ class Window(QMainWindow):
                 else:
                     valid = isinstance(value, str)
             if not valid:
-                mark, color = "x", "danger"
+                mark, color = "x", "status_danger"
             elif not missing:
-                mark, color = "✓", "success"
+                mark, color = "✓", "status_success"
             elif key in game.suggested_fields:
-                mark, color = "!", "warning"
+                mark, color = "!", "status_warning"
             else:
                 mark, color = "o", "text_muted"
             entries.append(
@@ -1675,9 +1795,7 @@ class Window(QMainWindow):
         self.rating_clear.setToolTip(
             "Clear rating" if rating is None else "Rating pending · press Enter"
         )
-        self.rating_clear.setAccessibleName(
-            "Clear rating" if rating is None else "Rating pending"
-        )
+        self.rating_clear.setAccessibleName("Clear rating" if rating is None else "Rating pending")
         if validation == "valid" and patch.get("tag"):
             candidate = patch["tag"]
             if any(
@@ -1820,14 +1938,18 @@ class Window(QMainWindow):
         if self.current_panel not in {"Browse", "Editing", "Export"}:
             return super().eventFilter(watched, event)
         focus = (
-            watched if isinstance(watched, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
+            watched
+            if isinstance(watched, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
             else QApplication.focusWidget()
         )
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
         if self.reject_enter_armed and key not in {
-            Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta,
+            Qt.Key.Key_Shift,
+            Qt.Key.Key_Control,
+            Qt.Key.Key_Alt,
+            Qt.Key.Key_Meta,
         }:
             self.reject_enter_armed = False
             if (
@@ -1936,7 +2058,10 @@ class Window(QMainWindow):
                     if not event.isAutoRepeat():
                         self.reject_enter_armed = True
                     return True
-            if self.current_panel in {"Browse", "Editing"} and event.key() in {Qt.Key.Key_I, Qt.Key.Key_O}:
+            if self.current_panel in {"Browse", "Editing"} and event.key() in {
+                Qt.Key.Key_I,
+                Qt.Key.Key_O,
+            }:
                 (self.mark_in if event.key() == Qt.Key.Key_I else self.mark_out)()
                 return True
         if (
@@ -1984,7 +2109,8 @@ class Window(QMainWindow):
         self.range_warning.setText("I/O not set" if missing else "I/O invalid")
         self.range_warning.setToolTip(
             "Set both In and Out to complete the range."
-            if missing else "In must be earlier than Out."
+            if missing
+            else "In must be earlier than Out."
         )
         self.range_warning.setVisible(visible)
         self.range_warning_icon.setVisible(visible)
@@ -2387,8 +2513,9 @@ class Window(QMainWindow):
             logging.info("Scan including UI refresh: %s", metrics)
             if not quiet or errors:
                 self.statusBar().showMessage(
-                    ("Automatic scan: " + " · ".join(errors)) if quiet else
-                    f"Scan: {metrics['hits']} cached, {metrics['probes']} inspected, "
+                    ("Automatic scan: " + " · ".join(errors))
+                    if quiet
+                    else f"Scan: {metrics['hits']} cached, {metrics['probes']} inspected, "
                     f"{metrics['warnings']} warnings. " + " · ".join(errors),
                     12000,
                 )
@@ -2773,6 +2900,12 @@ class Window(QMainWindow):
         self.scan_timer.stop()
         self.scan_retry_timer.stop()
         QApplication.instance().removeEventFilter(self)
+        try:
+            QApplication.instance().styleHints().colorSchemeChanged.disconnect(
+                self.system_theme_changed
+            )
+        except RuntimeError:
+            pass
         event.accept()
 
 

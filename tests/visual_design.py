@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.ui import ROOT, Window, style_application
 
 
@@ -23,8 +24,7 @@ def main():
     application = QApplication([])
     style_application(application)
     scale = os.environ.get("QT_SCALE_FACTOR", "1")
-    destination = ROOT / "cache/verification/design" / scale
-    destination.mkdir(parents=True, exist_ok=True)
+    destination = ROOT / "cache/verification/facelift" / scale
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         shutil.copytree(ROOT / "configs", root / "configs")
@@ -59,34 +59,48 @@ def main():
         folder.refresh_library()
         folder.show()
         folder.resize(1400, 900)
-        for panel in ("Home", "Session", "Editing", "Export", "Config"):
-            folder.panel(panel)
+        for theme in ("light", "dark"):
+            target = destination / theme
+            target.mkdir(parents=True, exist_ok=True)
+            folder.showNormal()
+            folder.resize(1400, 900)
+            folder.set_theme(theme)
+            for panel in ("Home", "Browse", "Session", "Editing", "Export", "Config"):
+                folder.panel(panel)
+                if panel in {"Browse", "Editing", "Export"}:
+                    folder.active_player().awaiting_frame = False
+                    folder.queue_page_reveal()
+                QTest.qWait(100)
+                folder.grab().save(str(target / f"{panel.lower()}.png"))
+            folder.panel("Editing")
+            folder.command.setFocus()
             QTest.qWait(100)
-            folder.grab().save(str(destination / f"{panel.lower()}.png"))
-        folder.panel("Editing")
-        folder.command.setFocus()
-        QTest.qWait(100)
-        folder.grab().save(str(destination / "focused.png"))
-        folder.splitter.setSizes([260, 1100, 0])
-        QTest.qWait(100)
-        folder.grab().save(str(destination / "narrow.png"))
-        folder.showMaximized()
-        QTest.qWait(150)
-        folder.grab().save(str(destination / "maximized.png"))
-        dialog = QDialog(folder)
-        dialog.setWindowTitle("Project name")
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Rename project"))
-        layout.addWidget(QLineEdit("Montage — 精选"))
-        layout.addWidget(
-            QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            folder.grab().save(str(target / "focused.png"))
+            folder.splitter.setSizes([260, 1100, 0])
+            QTest.qWait(100)
+            folder.grab().save(str(target / "narrow.png"))
+            folder.showMaximized()
+            QTest.qWait(150)
+            folder.grab().save(str(target / "maximized.png"))
+            dialog = QDialog(folder)
+            dialog.setWindowTitle("Project name")
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel("Rename project"))
+            layout.addWidget(QLineEdit("Montage — 精选"))
+            layout.addWidget(
+                QDialogButtonBox(
+                    QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+                )
             )
-        )
-        dialog.show()
-        QTest.qWait(100)
-        dialog.grab().save(str(destination / "dialog.png"))
-        dialog.close()
+            dialog.show()
+            QTest.qWait(100)
+            dialog.grab().save(str(target / "dialog.png"))
+            dialog.close()
+            settings = SettingsDialog(folder)
+            settings.show()
+            QTest.qWait(100)
+            settings.grab().save(str(target / "settings.png"))
+            settings.close()
         folder.close()
         application.processEvents()
     print(destination)

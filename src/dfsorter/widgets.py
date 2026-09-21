@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPixmap, QTextDocument, QTextLayout
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QToolButton, QWidget
+from PySide6.QtWidgets import QAbstractButton, QStyle, QStyledItemDelegate, QToolButton, QWidget
 
 from .theme import COLORS, SIZES, font
 
@@ -19,7 +19,7 @@ def tag_prefix(clip, rich=False):
         return ""
     text = f"[{value}]"
     if rich:
-        return f'<b style="color:{COLORS["tag_color"]}">{html.escape(text)}</b> '
+        return f'<b style="color:{COLORS["tag"]}">{html.escape(text)}</b> '
     return text + " "
 
 
@@ -30,7 +30,7 @@ def icon(name, color=None, fill=False, size=24):
     for mode, state, tint in [
         (QIcon.Mode.Normal, QIcon.State.Off, color or COLORS["text_secondary"]),
         (QIcon.Mode.Active, QIcon.State.Off, color or COLORS["text_primary"]),
-        (QIcon.Mode.Normal, QIcon.State.On, color or COLORS["accent"]),
+        (QIcon.Mode.Normal, QIcon.State.On, color or COLORS["accent_default"]),
         (QIcon.Mode.Active, QIcon.State.On, color or COLORS["accent_hover"]),
         (QIcon.Mode.Disabled, QIcon.State.Off, COLORS["text_disabled"]),
         (QIcon.Mode.Disabled, QIcon.State.On, COLORS["text_disabled"]),
@@ -49,9 +49,24 @@ def icon(name, color=None, fill=False, size=24):
     return result
 
 
+def set_icon(control, name, color_role=None):
+    control.setProperty("iconName", name)
+    control.setProperty("iconColorRole", color_role)
+    control.setIcon(icon(name, COLORS[color_role] if color_role else None))
+
+
+def refresh_icons(root):
+    icon.cache_clear()
+    for control in root.findChildren(QAbstractButton):
+        name = control.property("iconName")
+        if name:
+            color_role = control.property("iconColorRole")
+            control.setIcon(icon(name, COLORS[color_role] if color_role else None))
+
+
 def tool(name, label, callback):
     control = QToolButton()
-    control.setIcon(icon(name))
+    set_icon(control, name)
     size = (
         SIZES["icon_lg"]
         if name in {"play", "pause", "skip-back", "skip-forward", "volume-2"}
@@ -83,22 +98,24 @@ class ClipDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
-        painter.setBrush(
-            QColor(
-                COLORS[
-                    "accent_selection"
-                    if selected
-                    else "bg_surface_hover"
-                    if hovered
-                    else "bg_panel_alt"
-                ]
-            )
-        )
-        painter.setPen(QColor(COLORS["accent_focus" if focused else "border_subtle"]))
-        painter.drawRoundedRect(card, 3, 3)
+        if selected or hovered:
+            painter.setBrush(QColor(COLORS["accent_selection" if selected else "surface_hover"]))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(card, 3, 3)
+        else:
+            painter.setPen(QColor(COLORS["border_subtle"]))
+            painter.drawLine(card.left() + 8, card.bottom(), card.right() - 8, card.bottom())
+        if focused:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QColor(COLORS["focus"]))
+            painter.drawRoundedRect(card, 3, 3)
         if selected:
             painter.fillRect(
-                card.left() + 1, card.top() + 4, 2, card.height() - 8, QColor(COLORS["accent"])
+                card.left() + 1,
+                card.top() + 4,
+                2,
+                card.height() - 8,
+                QColor(COLORS["accent_default"]),
             )
         title_font = font("md", base=option.font)
         detail_font = font("xs", base=option.font)
@@ -155,21 +172,28 @@ class ClipDelegate(QStyledItemDelegate):
         text = game + status
         if data.get("browse_details") is not None:
             text = detail_metrics.elidedText(
-                data["browse_details"], Qt.TextElideMode.ElideRight,
+                data["browse_details"],
+                Qt.TextElideMode.ElideRight,
                 max(0, detail.width() - detail_metrics.horizontalAdvance(warning)),
             )
         painter.setClipRect(card)
         painter.setPen(QColor(COLORS["text_secondary"]))
         painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)
         if warning:
-            painter.setPen(QColor(COLORS["warning"]))
+            painter.setPen(QColor(COLORS["status_warning"]))
             painter.drawText(
                 detail.adjusted(detail_metrics.horizontalAdvance(text), 0, 0, 0),
                 Qt.AlignmentFlag.AlignVCenter,
                 warning,
             )
         painter.setBrush(
-            QColor(COLORS[{"keep": "success", "discard": "danger"}.get(verdict, "text_muted")])
+            QColor(
+                COLORS[
+                    {"keep": "status_success", "discard": "status_danger"}.get(
+                        verdict, "text_muted"
+                    )
+                ]
+            )
         )
         painter.setPen(Qt.PenStyle.NoPen)
         baseline = (
@@ -199,13 +223,14 @@ class Rating(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         pending = self.command_preview is not None and self.preview is None
-        unrated = self.value is None and self.preview is None and not pending
-        value = self.preview if self.preview is not None else (
-            self.command_preview if pending else (self.value or 0)
+        value = (
+            self.preview
+            if self.preview is not None
+            else (self.command_preview if pending else (self.value or 0))
         )
         for position in range(5):
             color = "rating_hover" if self.preview is not None else "rating_filled"
-            tint = COLORS[color if position < value else "danger" if unrated else "rating_empty"]
+            tint = COLORS[color if position < value else "rating_empty"]
             if pending and position < value:
                 tint = COLORS["rating_pending_high" if self.command_flash else "rating_pending_low"]
             icon(

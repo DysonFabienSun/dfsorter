@@ -8,8 +8,21 @@ from pathlib import Path
 
 import pytest
 
-from dfsorter.mpv_backend import audio_mix_graph, load_mpv
+from dfsorter.mpv_backend import audio_mix_graph, display_size, load_mpv
 from dfsorter.output import copy_one
+
+
+@pytest.mark.parametrize(
+    ("parameters", "expected"),
+    [
+        ({"dw": 1920, "dh": 1080}, (1920, 1080)),
+        ({"dw": 1080.0, "dh": 1920.0}, (1080, 1920)),
+        ({"w": 1920, "h": 1080}, (0, 0)),
+        (None, (0, 0)),
+    ],
+)
+def test_display_size_uses_display_corrected_dimensions(parameters, expected):
+    assert display_size(parameters) == expected
 
 
 @pytest.mark.parametrize("tracks", [1, 2, 3])
@@ -37,11 +50,24 @@ def test_live_mix_preserves_stereo_and_track_timing(tmp_path, tracks):
     output = tmp_path / "mixed.wav"
     mpv = load_mpv()
     engine = mpv.MPV(
-        config=False, vo="null", video=False, ao="pcm", ao_pcm_file=str(output),
-        audio_channels="stereo", audio_samplerate=48000, audio_format="s16",
-        load_scripts=False, osc=False, ytdl=False,
-        load_stats_overlay=False, load_console=False, load_osd_console=False,
-        load_auto_profiles=False, load_select=False, load_positioning=False, load_commands=False,
+        config=False,
+        vo="null",
+        video=False,
+        ao="pcm",
+        ao_pcm_file=str(output),
+        audio_channels="stereo",
+        audio_samplerate=48000,
+        audio_format="s16",
+        load_scripts=False,
+        osc=False,
+        ytdl=False,
+        load_stats_overlay=False,
+        load_console=False,
+        load_osd_console=False,
+        load_auto_profiles=False,
+        load_select=False,
+        load_positioning=False,
+        load_commands=False,
         lavfi_complex=audio_mix_graph(list(range(1, tracks + 1))),
     )
     try:
@@ -56,9 +82,13 @@ def test_live_mix_preserves_stereo_and_track_timing(tmp_path, tracks):
         samples = array.array("h", audio.readframes(audio.getnframes()))
 
     def amplitude(channel, frequency, start=0.8, end=1.2):
-        values = samples[round(start * rate) * 2 + channel:round(end * rate) * 2:2]
-        real = sum(value * math.cos(2 * math.pi * frequency * n / rate) for n, value in enumerate(values))
-        imag = sum(value * math.sin(2 * math.pi * frequency * n / rate) for n, value in enumerate(values))
+        values = samples[round(start * rate) * 2 + channel : round(end * rate) * 2 : 2]
+        real = sum(
+            value * math.cos(2 * math.pi * frequency * n / rate) for n, value in enumerate(values)
+        )
+        imag = sum(
+            value * math.sin(2 * math.pi * frequency * n / rate) for n, value in enumerate(values)
+        )
         return math.hypot(real, imag) / len(values)
 
     assert amplitude(0, 400) > 100

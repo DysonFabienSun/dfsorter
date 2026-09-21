@@ -27,8 +27,7 @@ def audio_mix_graph(track_ids):
     if len(track_ids) < 2:
         return ""
     filters = [
-        f"[aid{track}]aresample=48000:async=1:first_pts=0,"
-        f"aformat=channel_layouts=stereo[a{index}]"
+        f"[aid{track}]aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo[a{index}]"
         for index, track in enumerate(track_ids)
     ]
     inputs = "".join(f"[a{index}]" for index in range(len(track_ids)))
@@ -37,6 +36,18 @@ def audio_mix_graph(track_ids):
         "dropout_transition=0:normalize=1[ao]"
     )
     return ";".join(filters)
+
+
+def display_size(parameters):
+    """Return libmpv's display-corrected video size, or no size while unavailable."""
+    if not isinstance(parameters, dict):
+        return (0, 0)
+    try:
+        width = round(float(parameters.get("dw", 0)))
+        height = round(float(parameters.get("dh", 0)))
+    except (TypeError, ValueError):
+        return (0, 0)
+    return (width, height) if width > 0 and height > 0 else (0, 0)
 
 
 class MpvBackend(QObject):
@@ -48,6 +59,7 @@ class MpvBackend(QObject):
     errorOccurred = Signal(object, str)
     mutedChanged = Signal(bool)
     frameReady = Signal()
+    videoSizeChanged = Signal(int, int)
     _event = Signal(int, str, object)
 
     def __init__(self, surface, parent=None):
@@ -65,6 +77,7 @@ class MpvBackend(QObject):
         self._state = QMediaPlayer.PlaybackState.StoppedState
         self._status = QMediaPlayer.MediaStatus.NoMedia
         self._audio = False
+        self._video_size = (0, 0)
         self._prepared = False
         self._seeking = False
         self._event.connect(self._receive, Qt.ConnectionType.QueuedConnection)
@@ -74,9 +87,11 @@ class MpvBackend(QObject):
         self._source = source
         self._duration = self._position = 0
         self._audio = self._prepared = False
+        self._video_size = (0, 0)
         self._seeking = False
         self.durationChanged.emit(0)
         self.positionChanged.emit(0)
+        self.videoSizeChanged.emit(0, 0)
         if source.isEmpty():
             self._set_status(QMediaPlayer.MediaStatus.NoMedia)
             return
@@ -103,15 +118,32 @@ class MpvBackend(QObject):
         # COM state. Create and destroy each instance on its own lifecycle thread.
         self._lifecycle = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mpv-lifecycle")
         engine = self._lifecycle.submit(
-            mpv.MPV, wid=str(int(self.surface.winId())),
-            config=False, input_default_bindings=False, input_vo_keyboard=False,
-            osc=False, idle=True, keep_open=True, pause=True,
-            load_scripts=False, load_auto_profiles=False, load_osd_console=False, ytdl=False,
-            load_stats_overlay=False, load_console=False, load_select=False,
-            load_positioning=False, load_commands=False, focus_on="never",
-            hwdec="auto-safe", audio_channels="stereo",
-            vo="gpu", gpu_api="d3d11" if os.name == "nt" else "auto",
-            volume=self._volume * 100, mute=self._muted, speed=self._rate,
+            mpv.MPV,
+            wid=str(int(self.surface.winId())),
+            config=False,
+            input_default_bindings=False,
+            input_vo_keyboard=False,
+            osc=False,
+            idle=True,
+            keep_open=True,
+            pause=True,
+            load_scripts=False,
+            load_auto_profiles=False,
+            load_osd_console=False,
+            ytdl=False,
+            load_stats_overlay=False,
+            load_console=False,
+            load_select=False,
+            load_positioning=False,
+            load_commands=False,
+            focus_on="never",
+            hwdec="auto-safe",
+            audio_channels="stereo",
+            vo="gpu",
+            gpu_api="d3d11" if os.name == "nt" else "auto",
+            volume=self._volume * 100,
+            mute=self._muted,
+            speed=self._rate,
         ).result()
         self.engine = engine
 
@@ -123,7 +155,7 @@ class MpvBackend(QObject):
             with self._entry_lock:
                 self._event_generation = self._entries.get(event.data.playlist_entry_id, -1)
 
-        for prop in ("time-pos", "duration", "eof-reached"):
+        for prop in ("time-pos", "duration", "eof-reached", "video-out-params"):
             engine.observe_property(prop, lambda name, value: send(name, value))
 
         @engine.event_callback("file-loaded")
@@ -133,7 +165,11 @@ class MpvBackend(QObject):
             try:
                 tracks = [track["id"] for track in engine.track_list if track["type"] == "audio"]
                 engine.lavfi_complex = audio_mix_graph(tracks)
-                send("loaded", (bool(tracks), engine.duration or 0))
+                try:
+                    size = display_size(engine.command("get_property", "video-out-params"))
+                except Exception:
+                    size = (0, 0)
+                send("loaded", (bool(tracks), engine.duration or 0, size))
             except Exception as error:
                 send("error", f"Audio mixing failed: {error}")
 
@@ -151,9 +187,10 @@ class MpvBackend(QObject):
         if generation != self.generation:
             return
         if name == "loaded":
-            self._audio, duration = value
+            self._audio, duration, size = value
             self._duration = round(duration * 1000)
             self.durationChanged.emit(self._duration)
+            self._set_video_size(size)
             self._prepared = True
             self._set_status(QMediaPlayer.MediaStatus.LoadedMedia)
         elif name == "ready" and self._prepared:
@@ -168,6 +205,8 @@ class MpvBackend(QObject):
         elif name == "eof-reached" and value:
             self._set_state(QMediaPlayer.PlaybackState.StoppedState)
             self._set_status(QMediaPlayer.MediaStatus.EndOfMedia)
+        elif name == "video-out-params":
+            self._set_video_size(display_size(value))
         elif name == "error":
             self._prepared = False
             if self.engine:
@@ -175,6 +214,11 @@ class MpvBackend(QObject):
             self._set_state(QMediaPlayer.PlaybackState.StoppedState)
             self._set_status(QMediaPlayer.MediaStatus.InvalidMedia)
             self.errorOccurred.emit(QMediaPlayer.Error.ResourceError, value)
+
+    def _set_video_size(self, size):
+        if size != (0, 0) and size != self._video_size:
+            self._video_size = size
+            self.videoSizeChanged.emit(*size)
 
     def _set_state(self, state):
         self._state = state

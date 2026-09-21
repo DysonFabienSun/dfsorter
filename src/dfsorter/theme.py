@@ -1,53 +1,112 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PySide6.QtWidgets import QProxyStyle, QStyle
 
-COLORS = {
-    "bg_app": "#1E2228",
-    "bg_panel": "#181C22",
-    "bg_panel_alt": "#15191F",
-    "bg_surface": "#252B33",
-    "bg_surface_hover": "#2D3540",
-    "bg_surface_pressed": "#343E4A",
-    "bg_input": "#12161C",
-    "bg_video": "#000000",
-    "border_subtle": "#2B323C",
-    "border_default": "#3A4350",
-    "border_strong": "#4B5665",
-    "separator": "#303741",
-    "text_primary": "#E6E9ED",
-    "text_secondary": "#A9B0BA",
-    "history_available": "#B8BFC9",
-    "text_working_title": "#C7CDD5",
-    "text_muted": "#77808C",
-    "text_disabled": "#59616C",
-    "text_inverse": "#111317",
-    "accent": "#41B8C7",
-    "accent_hover": "#56C9D7",
-    "accent_pressed": "#3096A4",
-    "accent_muted": "#17373D",
-    "accent_selection": "#244A53",
-    "accent_focus": "#59D2E2",
-    "success": "#62C98D",
-    "success_muted": "#1C3A2A",
-    "warning": "#D9A441",
-    "warning_muted": "#3A2D16",
-    "danger": "#D9686A",
-    "danger_hover": "#E47D7F",
-    "danger_muted": "#3A2022",
-    "info": "#6AA9E9",
-    "rating_filled": "#E8C45A",
-    "rating_hover": "#F0D16F",
-    "rating_empty": "#69717D",
-    "rating_pending_low": "#6D5B33",
-    "rating_pending_high": "#A78C47",
-    "command_focus": "#141B21",
-    "tag_color": "#F0D16F",
-    "command_blue": "#172B40",
-    "timeline_track": "#3A424D",
-    "timeline_progress": "#617080",
-    "scrollbar_hover": "#56616F",
-    "tooltip": "#11151A",
+THEMES = {
+    "light": {
+        "surface_canvas": "#F3F5F7",
+        "surface_workspace": "#FFFFFF",
+        "surface_sidebar": "#F8F9FA",
+        "surface_panel": "#FFFFFF",
+        "surface_subtle": "#F6F8FA",
+        "surface_control": "#FFFFFF",
+        "surface_hover": "#EDF1F3",
+        "surface_pressed": "#E4E9ED",
+        "surface_video": "#000000",
+        "text_primary": "#1F252B",
+        "text_secondary": "#4F5B66",
+        "text_muted": "#65717C",
+        "text_disabled": "#A3ABB3",
+        "text_inverse": "#FFFFFF",
+        "border_default": "#C8D1D9",
+        "border_subtle": "#DEE5EA",
+        "border_strong": "#AEB8C1",
+        "accent_default": "#087F8C",
+        "accent_hover": "#066E79",
+        "accent_pressed": "#055E68",
+        "accent_soft": "#E2F2F4",
+        "accent_soft_hover": "#D4EAED",
+        "accent_selection": "#D9EFF1",
+        "focus": "#087F8C",
+        "status_success": "#247A4B",
+        "status_success_soft": "#E6F4EC",
+        "status_warning": "#9A6700",
+        "status_warning_soft": "#FFF4D6",
+        "status_danger": "#C83C43",
+        "status_danger_hover": "#AD3037",
+        "status_danger_soft": "#FBEAEC",
+        "status_info": "#316DCA",
+        "rating_filled": "#A66A00",
+        "rating_hover": "#C17C00",
+        "rating_empty": "#7C8791",
+        "rating_pending_low": "#B9A269",
+        "rating_pending_high": "#A66A00",
+        "component_command_valid": "#EAF2FB",
+        "component_timeline_track": "#C7E0E3",
+        "component_timeline_progress": "#087F8C",
+        "component_volume_track": "#D5E7E9",
+        "component_volume_progress": "#3D929B",
+        "component_scrollbar": "#CDD5DC",
+        "component_scrollbar_hover": "#AEB8C1",
+        "component_tooltip": "#252B33",
+        "component_tooltip_text": "#F1F4F6",
+        "tag": "#A66A00",
+    },
+    "dark": {
+        "surface_canvas": "#181C21",
+        "surface_workspace": "#1F242B",
+        "surface_sidebar": "#1B2026",
+        "surface_panel": "#1F242B",
+        "surface_subtle": "#252B33",
+        "surface_control": "#20262D",
+        "surface_hover": "#2A313A",
+        "surface_pressed": "#303842",
+        "surface_video": "#000000",
+        "text_primary": "#F1F4F6",
+        "text_secondary": "#BEC6CD",
+        "text_muted": "#8E99A4",
+        "text_disabled": "#626C76",
+        "text_inverse": "#111317",
+        "border_default": "#39424C",
+        "border_subtle": "#2D343D",
+        "border_strong": "#515C67",
+        "accent_default": "#43B6C3",
+        "accent_hover": "#58C2CD",
+        "accent_pressed": "#32A4B1",
+        "accent_soft": "#173D43",
+        "accent_soft_hover": "#1B4850",
+        "accent_selection": "#20515A",
+        "focus": "#4CC1CE",
+        "status_success": "#62C98D",
+        "status_success_soft": "#1C3A2A",
+        "status_warning": "#D9A441",
+        "status_warning_soft": "#3A2D16",
+        "status_danger": "#EF6A70",
+        "status_danger_hover": "#FF8086",
+        "status_danger_soft": "#48252A",
+        "status_info": "#6AA9E9",
+        "rating_filled": "#E8C45A",
+        "rating_hover": "#F0D16F",
+        "rating_empty": "#69717D",
+        "rating_pending_low": "#6D5B33",
+        "rating_pending_high": "#A78C47",
+        "component_command_valid": "#172B40",
+        "component_timeline_track": "#23434A",
+        "component_timeline_progress": "#43B6C3",
+        "component_volume_track": "#29434A",
+        "component_volume_progress": "#3698A3",
+        "component_scrollbar": "#3A424D",
+        "component_scrollbar_hover": "#515C67",
+        "component_tooltip": "#11151A",
+        "component_tooltip_text": "#F1F4F6",
+        "tag": "#E8C45A",
+    },
 }
+
+# Custom painters import this object. Mutating it keeps those references current.
+COLORS = dict(THEMES["light"])
+ACTIVE_SCHEME = "light"
+
 FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "lg": 16, "xl": 20, "xxl": 26}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
@@ -59,7 +118,7 @@ SIZES = {
     "toolbar": 28,
     "nav": 34,
     "card": 48,
-    "card_gap": 4,
+    "card_gap": 1,
     "panel_padding": 12,
     "timeline": 7,
     "icon_xs": 12,
@@ -86,106 +145,112 @@ def role(widget, value):
     widget.update()
 
 
+def resolved_scheme(application, mode):
+    mode = str(mode or "light").casefold()
+    if mode not in {"system", "light", "dark"}:
+        mode = "light"
+    if mode == "system":
+        return "dark" if application.styleHints().colorScheme() == Qt.ColorScheme.Dark else "light"
+    return mode
+
+
 def stylesheet():
     values = {**COLORS, **SIZES, **{f"font_{key}": value for key, value in FONT_SIZES.items()}}
     return (
         """
-        QWidget { background: %(bg_app)s; color: %(text_primary)s; }
+        QWidget { background: %(surface_workspace)s; color: %(text_primary)s; }
+        QMainWindow { background: %(surface_canvas)s; }
+        QWidget#videoSurface { background: %(surface_video)s; }
+        QWidget#videoContainer { background: %(surface_canvas)s; }
+        QWidget#pageLoading, QWidget#commandCover { background: %(surface_canvas)s; }
         QLabel { background: transparent; }
-        QWidget[role="panel"] { background: %(bg_panel)s; }
+        QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
+        QWidget[role="panel"] { background: %(surface_panel)s; }
+        QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
+        QWidget[role="transparent"] { background: transparent; }
+        QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 5px; }
+        QWidget[role="divider"] { background: %(border_subtle)s; }
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
+        QLabel[role="helper"] { color: %(text_muted)s; font-size: %(font_xs)spx; }
         QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
-        QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="sectionHeading"], QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
         QLabel#workingTitle { font-size: %(font_lg)spx; font-weight: 600; }
         QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {
-            background: %(bg_input)s; border: 1px solid %(border_subtle)s;
+            background: %(surface_control)s; border: 1px solid %(border_default)s;
             border-radius: 4px; padding: 4px 8px; selection-background-color: %(accent_selection)s;
             selection-color: %(text_primary)s;
         }
         QLineEdit, QComboBox, QSpinBox { min-height: 18px; }
-        QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover {
-            border-color: %(border_default)s;
-        }
-        QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
-            border-color: %(accent_focus)s;
-        }
-        QLineEdit#command:focus { background: %(command_focus)s; border-color: %(accent_focus)s; }
-        QLineEdit#command[validationState="valid"] { background: %(command_blue)s; }
-        QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(warning)s; }
-        QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(danger)s; }
-        QLineEdit#command[validationState="saved"] { border-bottom: 2px solid %(success)s; }
-        QPushButton, QToolButton {
-            background: %(bg_surface)s; border: 1px solid %(border_default)s;
-            border-radius: 4px; padding: 4px 8px; min-height: 18px;
-        }
-        QPushButton:hover, QToolButton:hover { background: %(bg_surface_hover)s; }
-        QPushButton:pressed, QToolButton:pressed { background: %(bg_surface_pressed)s; }
-        QPushButton:checked, QToolButton:checked { background: %(accent_muted)s; border-color: %(accent)s; }
-        QPushButton[role="primary"] { background: %(accent_muted)s; border-color: %(accent)s; }
-        QPushButton[role="primary"]:hover { background: %(accent_selection)s; }
-        QPushButton[role="danger"] { color: %(danger)s; border-color: %(danger)s; background: %(danger_muted)s; }
-        QPushButton[role="danger"]:hover { color: %(danger_hover)s; }
-        QPushButton[role="keep"]:checked { background: %(success_muted)s; color: %(success)s; border-color: %(success)s; }
-        QPushButton[role="discard"]:checked { background: %(danger_muted)s; color: %(danger)s; border-color: %(danger)s; }
-        QPushButton[role="undefined"]:checked { background: %(bg_surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
-        QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 1px solid %(accent_focus)s; }
-        QToolButton#settingsMenuButton::menu-indicator,
-        QToolButton#captureFolderMenuButton::menu-indicator { image: none; width: 0px; }
+        QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(border_strong)s; }
+        QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
+        QLineEdit#command[validationState="valid"] { background: %(component_command_valid)s; }
+        QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(status_warning)s; }
+        QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(status_danger)s; }
+        QLineEdit#command[validationState="saved"] { border-bottom: 2px solid %(status_success)s; }
+        QPushButton, QToolButton { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 4px; padding: 5px 9px; min-height: 18px; }
+        QPushButton:hover, QToolButton:hover { background: %(surface_hover)s; }
+        QPushButton:pressed, QToolButton:pressed { background: %(surface_pressed)s; }
+        QPushButton:checked, QToolButton:checked { background: %(accent_soft)s; border-color: %(accent_default)s; }
+        QPushButton[role="primary"] { background: %(accent_default)s; color: %(text_inverse)s; border-color: %(accent_default)s; font-weight: 600; }
+        QPushButton[role="primary"]:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; }
+        QPushButton[role="primary"]:pressed { background: %(accent_pressed)s; border-color: %(accent_pressed)s; }
+        QPushButton[role="danger"], QToolButton[role="danger"] { color: %(status_danger)s; border-color: %(border_default)s; background: %(status_danger_soft)s; }
+        QPushButton[role="danger"]:hover, QToolButton[role="danger"]:hover { color: %(status_danger_hover)s; border-color: %(status_danger)s; }
+        QPushButton[role="keep"]:checked { background: %(status_success_soft)s; color: %(status_success)s; border-color: %(status_success)s; }
+        QPushButton[role="discard"]:checked { background: %(status_danger_soft)s; color: %(status_danger)s; border-color: %(status_danger)s; }
+        QPushButton[role="undefined"]:checked { background: %(surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
+        QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 2px solid %(focus)s; }
+        QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
-        QWidget#navigationStrip { background: %(bg_panel)s; border-bottom: 1px solid %(separator)s; }
+        QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
         QToolButton[navUtility="true"] { padding: 3px 2px 1px 2px; }
-        QPushButton#navigation {
-            background: transparent; border: 1px solid transparent;
-            border-top: 2px solid transparent; border-bottom: 1px solid %(separator)s;
-            border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx;
-            font-weight: 500; padding: 0px 16px; min-height: 33px;
-        }
-        QPushButton#navigation:hover { color: %(text_primary)s; background: %(bg_surface)s; }
-        QPushButton#navigation:checked {
-            background: %(bg_app)s; color: %(text_primary)s; font-weight: 600;
-            border-left-color: %(separator)s; border-right-color: %(separator)s;
-            border-top-color: %(accent)s; border-bottom-color: %(bg_app)s;
-        }
-        QPushButton#navigation:disabled {
-            background: transparent; color: %(text_disabled)s;
-            border-top-color: transparent; border-left-color: transparent;
-            border-right-color: transparent;
-        }
-        QListWidget { background: %(bg_panel)s; border: none; padding: 4px; outline: none; }
-        QListWidget::item { padding: 4px; }
+        QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx; font-weight: 500; padding: 0px 16px; min-height: 32px; }
+        QPushButton#navigation:hover { color: %(text_primary)s; background: %(surface_hover)s; }
+        QPushButton#navigation:checked { background: transparent; color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }
+        QPushButton#navigation:disabled { background: transparent; color: %(text_disabled)s; border-bottom-color: transparent; }
+        QListWidget { background: %(surface_workspace)s; border: none; padding: 4px; outline: none; }
+        QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
+        QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
+        QListWidget::item { padding: 2px 4px; }
         QListWidget::item:selected { background: %(accent_selection)s; color: %(text_primary)s; }
-        QListWidget::item:hover { background: %(bg_surface_hover)s; }
-        QComboBox QAbstractItemView { background: %(bg_panel)s; selection-background-color: %(accent_selection)s; }
-        QMenuBar, QMenu { background: %(bg_panel)s; }
+        QListWidget::item:hover { background: %(surface_hover)s; }
+        QComboBox QAbstractItemView { background: %(surface_panel)s; selection-background-color: %(accent_selection)s; }
+        QMenuBar, QMenu { background: %(surface_panel)s; }
         QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }
         QMenu { border: 1px solid %(border_default)s; }
         QMenu::item { padding: 6px 24px; }
         QMenu::item:selected, QMenuBar::item:selected { background: %(accent_selection)s; }
-        QMenu::separator { height: 1px; background: %(separator)s; margin: 4px 8px; }
-        QSplitter::handle { background: %(separator)s; }
+        QMenu::separator { height: 1px; background: %(border_subtle)s; margin: 4px 8px; }
+        QTabWidget::pane { border: 1px solid %(border_subtle)s; background: %(surface_panel)s; }
+        QTabBar::tab { background: transparent; color: %(text_secondary)s; padding: 6px 12px; border-bottom: 2px solid transparent; }
+        QTabBar::tab:hover { background: %(surface_hover)s; color: %(text_primary)s; }
+        QTabBar::tab:selected { color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }
+        QSplitter::handle { background: %(border_subtle)s; }
         QSplitter::handle:hover { background: %(border_strong)s; }
-        QSlider::groove:horizontal { height: 4px; background: %(timeline_track)s; border-radius: 2px; }
-        QSlider#timeline::groove:horizontal { height: %(timeline)spx; border-radius: 3px; }
-        QSlider::sub-page:horizontal { background: %(timeline_progress)s; border-radius: 2px; }
-        QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: %(accent)s; border-radius: 3px; }
+        QSlider::groove:horizontal { height: 4px; background: %(component_volume_track)s; border-radius: 2px; }
+        QSlider::sub-page:horizontal { background: %(component_volume_progress)s; border-radius: 2px; }
+        QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: %(accent_default)s; border-radius: 3px; }
         QSlider::handle:horizontal:hover { background: %(accent_hover)s; }
+        QSlider#timeline::groove:horizontal { height: %(timeline)spx; background: %(component_timeline_track)s; border-radius: 3px; }
+        QSlider#timeline::sub-page:horizontal { background: %(component_timeline_progress)s; border-radius: 3px; }
+        QSlider#volume::groove:horizontal { height: 3px; background: %(component_volume_track)s; border-radius: 1px; }
+        QSlider#volume::sub-page:horizontal { background: %(component_volume_progress)s; border-radius: 1px; }
+        QSlider#volume::handle:horizontal { width: 10px; margin: -4px 0; border-radius: 3px; }
         QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
         QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; }
-        QScrollBar::handle { background: %(timeline_track)s; border-radius: 3px; min-height: 24px; min-width: 24px; }
-        QScrollBar::handle:hover { background: %(scrollbar_hover)s; }
+        QScrollBar::handle { background: %(component_scrollbar)s; border-radius: 3px; min-height: 24px; min-width: 24px; }
+        QScrollBar::handle:hover { background: %(component_scrollbar_hover)s; }
         QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-        QToolTip { background: %(tooltip)s; border: 1px solid %(border_default)s;
-            color: %(text_primary)s; padding: 6px 8px; border-radius: 4px; }
-        QWidget[role="error"] { color: %(danger)s; }
-        QWidget[role="warning"] { color: %(warning)s; }
-        QWidget[role="success"] { color: %(success)s; }
-        QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled,
-        QSpinBox:disabled { background: %(bg_panel)s; border-color: %(border_subtle)s; color: %(text_disabled)s; }
+        QToolTip { background: %(component_tooltip)s; border: 1px solid %(border_default)s; color: %(component_tooltip_text)s; padding: 6px 8px; border-radius: 4px; }
+        QWidget[role="error"] { color: %(status_danger)s; }
+        QWidget[role="warning"] { color: %(status_warning)s; }
+        QWidget[role="success"] { color: %(status_success)s; }
+        QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled { background: %(surface_subtle)s; border-color: %(border_subtle)s; color: %(text_disabled)s; }
         QLabel:disabled, QMenu::item:disabled, QMenuBar::item:disabled { color: %(text_disabled)s; }
-    """
+        """
         % values
     )
 
@@ -197,7 +262,12 @@ class ApplicationStyle(QProxyStyle):
         return super().styleHint(hint, option, widget, returnData)
 
 
-def apply_theme(application):
+def apply_theme(application, mode="light"):
+    global ACTIVE_SCHEME
+    ACTIVE_SCHEME = resolved_scheme(application, mode)
+    COLORS.clear()
+    COLORS.update(THEMES[ACTIVE_SCHEME])
+    application.setProperty("appearanceMode", str(mode or "light").casefold())
     application.setStyle(ApplicationStyle("Fusion"))
     available = set(QFontDatabase.families())
     family = next(
@@ -206,19 +276,19 @@ def apply_theme(application):
     application.setFont(font(base=QFont(family)))
     palette = QPalette()
     for name, token in {
-        "Window": "bg_app",
+        "Window": "surface_canvas",
         "WindowText": "text_primary",
-        "Base": "bg_input",
-        "AlternateBase": "bg_panel_alt",
+        "Base": "surface_control",
+        "AlternateBase": "surface_subtle",
         "Text": "text_primary",
-        "Button": "bg_surface",
+        "Button": "surface_control",
         "ButtonText": "text_primary",
         "Highlight": "accent_selection",
         "HighlightedText": "text_primary",
         "PlaceholderText": "text_muted",
-        "ToolTipBase": "tooltip",
-        "ToolTipText": "text_primary",
-        "Link": "accent",
+        "ToolTipBase": "component_tooltip",
+        "ToolTipText": "component_tooltip_text",
+        "Link": "accent_default",
     }.items():
         palette.setColor(getattr(QPalette.ColorRole, name), QColor(COLORS[token]))
     for name in ("Text", "WindowText", "ButtonText", "PlaceholderText"):
@@ -229,6 +299,7 @@ def apply_theme(application):
         )
     application.setPalette(palette)
     application.setStyleSheet(stylesheet())
+    return ACTIVE_SCHEME
 
 
 def title_styles(card=False):
@@ -236,7 +307,7 @@ def title_styles(card=False):
     large = FONT_SIZES["md" if card else "lg"]
     return {
         "prefix": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
-        "metadata": f"color:{COLORS['text_working_title']}; font-size:{small}px; font-weight:400",
+        "metadata": f"color:{COLORS['text_secondary']}; font-size:{small}px; font-weight:400",
         "separator": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
         "mainline": f"color:{COLORS['text_primary']}; font-size:{large}px; font-weight:700",
     }

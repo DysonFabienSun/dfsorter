@@ -8,28 +8,149 @@ This guide owns reusable visual rules. [Main specification](dfsorter-specs-clean
 
 Browse and Editing are reference compositions. Inspect current implementations and equivalent controls before changes; incidental local styling is not permission to duplicate it. [Shared theme](../src/dfsorter/theme.py) owns implementation tokens, fonts, palette and QSS; [shared widgets](../src/dfsorter/widgets.py) own icons, clip cards and rating presentation. Reuse these primitives. Changes to approved values require coordinated guide/theme updates.
 
-Use restrained neutral-dark desktop styling: dense, flat, low-saturation surfaces, subtle borders, quiet sidebars, strong alignment and large video area. Avoid gradients, oversized controls, pill buttons, neon styling, large rounded cards and unnecessary panel borders. Compact clip cards are intentional border exceptions.
+Use restrained, slightly cool desktop styling in both light and dark modes: dense,
+low-saturation surfaces, subtle borders, quiet sidebars, strong alignment and a large video
+area. Light mode is the primary design reference; dark mode expresses the same hierarchy
+rather than inverting it mechanically. Avoid gradients, oversized controls, pill buttons,
+neon styling, large rounded cards, pervasive shadows and unnecessary panel borders. The
+result should resemble a polished productivity/media tool, not a consumer streaming app or
+web dashboard.
 
 Keep implementation history, screenshots and verification results outside this guide. Record completed work and user acceptance separately in [feature tracking](../docs/features.md). [First graphical touchup](legacy/first-graphical-touchup.md) is archival motivation only, never implementation authority.
 
 ## 2. Visual foundations
 
-### Color tokens
+### Semantic color model
 
-| Role | Tokens and values |
-| --- | --- |
-| Backgrounds | `bg_app #1E2228`, `bg_panel #181C22`, `bg_panel_alt #15191F`, `bg_surface #252B33`, `bg_surface_hover #2D3540`, `bg_surface_pressed #343E4A`, `bg_input #12161C`, `bg_video #000000` |
-| Borders | `border_subtle #2B323C`, `border_default #3A4350`, `border_strong #4B5665`, `separator #303741` |
-| Text | `text_primary #E6E9ED`, `text_secondary #A9B0BA`, `text_working_title #C7CDD5`, `history_available #B8BFC9`, `text_muted #77808C`, `text_disabled #59616C`, `text_inverse #111317` |
-| Interaction | `accent #41B8C7`, `accent_hover #56C9D7`, `accent_pressed #3096A4`, `accent_muted #17373D`, `accent_selection #244A53`, `accent_focus #59D2E2` |
-| Success | `success #62C98D`, `success_muted #1C3A2A` |
-| Warning | `warning #D9A441`, `warning_muted #3A2D16` |
-| Danger | `danger #D9686A`, `danger_hover #E47D7F`, `danger_muted #3A2022` |
-| Information | `info #6AA9E9` |
-| Rating | `rating_filled #E8C45A`, `rating_hover #F0D16F`, `rating_empty #69717D`, pending pulse `#6D5B33`–`#A78C47` |
-| Component colors | `command_focus #141B21`, `command_blue #172B40`, `tag_color #F0D16F`, `timeline_track #3A424D`, `timeline_progress #617080`, `scrollbar_hover #56616F`, `tooltip #11151A` |
+Components request semantic roles and must not branch on the active color mode. Theme
+resolution maps those roles to the selected Light or Dark palette. Reusable code must not
+embed palette hex values or introduce page-specific aliases for an existing semantic role.
+Small component-specific roles are allowed when a general role would obscure meaning.
 
-Cyan means interaction, focus, selection, active project, playhead or I/O markers. Green means Keep or success; red means Discard, destructive operations or blocking errors. Warning amber means suggested missing metadata or unavailable sources. Gold rating tokens are reserved for stars. Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
+Canonical roles use dotted names in documentation. Python identifiers may use an equivalent
+unambiguous form such as `surface_canvas`; do not maintain a second legacy vocabulary.
+
+#### Light palette
+
+| Role | Value | Intended use |
+| --- | --- | --- |
+| `surface.canvas` | `#F3F5F7` | Window canvas behind the functional surfaces |
+| `surface.workspace` | `#FFFFFF` | Primary page and working surface |
+| `surface.sidebar` | `#F8F9FA` | Left/right panes and top chrome |
+| `surface.panel` | `#FFFFFF` | Dialogs and important contained surfaces |
+| `surface.subtle` | `#F6F8FA` | Secondary panels and neutral button fill |
+| `surface.control` | `#FFFFFF` | Inputs and neutral controls |
+| `surface.hover` | `#EDF1F3` | Ordinary hover state |
+| `surface.pressed` | `#E4E9ED` | Pressed and neutral checked state |
+| `surface.video` | `#000000` | Video surface only |
+| `text.primary` | `#1F252B` | Primary content and control labels |
+| `text.secondary` | `#4F5B66` | Supporting information |
+| `text.muted` | `#65717C` | Tertiary hints and metadata |
+| `text.disabled` | `#A3ABB3` | Disabled content |
+| `text.inverse` | `#FFFFFF` | Text on a strong accent fill |
+| `border.default` | `#C8D1D9` | Input and emphasized control boundaries |
+| `border.subtle` | `#DEE5EA` | Separators and quiet button boundaries |
+| `border.strong` | `#AEB8C1` | Emphasized neutral boundaries |
+| `accent.default` | `#087F8C` | Primary action, active indicator and meaningful emphasis |
+| `accent.hover` | `#066E79` | Hover on strong accent controls |
+| `accent.pressed` | `#055E68` | Pressed strong accent controls |
+| `accent.soft` | `#E2F2F4` | Quiet accent surface |
+| `accent.softHover` | `#D4EAED` | Hover on a soft accent surface |
+| `accent.selection` | `#D9EFF1` | Selected items and text selection |
+| `focus` | `#087F8C` | Keyboard focus ring |
+| `status.success` | `#247A4B` | Keep and success foreground |
+| `status.successSoft` | `#E6F4EC` | Keep and success surface |
+| `status.warning` | `#9A6700` | Missing suggestions and unavailable sources |
+| `status.warningSoft` | `#FFF4D6` | Warning surface |
+| `status.danger` | `#C83C43` | Discard, destructive action and blocking error |
+| `status.dangerHover` | `#AD3037` | Destructive hover |
+| `status.dangerSoft` | `#FBEAEC` | Destructive surface |
+| `status.info` | `#316DCA` | Informational state |
+| `rating.filled` | `#A66A00` | Filled rating star |
+| `rating.hover` | `#C17C00` | Rating hover preview |
+| `rating.empty` | `#7C8791` | Empty star for a populated rating |
+| `component.commandValid` | `#EAF2FB` | Valid command draft |
+| `component.timelineTrack` | `#C7E0E3` | Pale teal timeline remainder |
+| `component.timelineProgress` | `#087F8C` | Elapsed timeline section |
+| `component.volumeTrack` | `#D5E7E9` | Quiet teal volume remainder |
+| `component.volumeProgress` | `#3D929B` | Current volume level |
+| `component.scrollbar` | `#CDD5DC` | Neutral scrollbar thumb |
+| `component.tooltip` | `#252B33` | Tooltip surface |
+
+#### Dark palette
+
+| Role | Value | Intended use |
+| --- | --- | --- |
+| `surface.canvas` | `#181C21` | Window canvas behind the functional surfaces |
+| `surface.workspace` | `#1F242B` | Primary page and working surface |
+| `surface.sidebar` | `#1B2026` | Left/right panes and top chrome |
+| `surface.panel` | `#1F242B` | Dialogs and important contained surfaces |
+| `surface.subtle` | `#252B33` | Quiet grouped regions and alternating surfaces |
+| `surface.control` | `#20262D` | Inputs and neutral controls |
+| `surface.hover` | `#2A313A` | Ordinary hover state |
+| `surface.pressed` | `#303842` | Pressed and neutral checked state |
+| `surface.video` | `#000000` | Video surface only |
+| `text.primary` | `#F1F4F6` | Primary content and control labels |
+| `text.secondary` | `#BEC6CD` | Supporting information |
+| `text.muted` | `#8E99A4` | Tertiary hints and metadata |
+| `text.disabled` | `#626C76` | Disabled content |
+| `text.inverse` | `#111317` | Text on a strong accent fill |
+| `border.default` | `#39424C` | Control boundaries |
+| `border.subtle` | `#2D343D` | Separators and quiet card boundaries |
+| `border.strong` | `#515C67` | Emphasized neutral boundaries |
+| `accent.default` | `#43B6C3` | Primary action, active indicator and meaningful emphasis |
+| `accent.hover` | `#58C2CD` | Hover on strong accent controls |
+| `accent.pressed` | `#32A4B1` | Pressed strong accent controls |
+| `accent.soft` | `#173D43` | Quiet accent surface |
+| `accent.softHover` | `#1B4850` | Hover on a soft accent surface |
+| `accent.selection` | `#20515A` | Selected items and text selection |
+| `focus` | `#4CC1CE` | Keyboard focus ring |
+| `status.success` | `#62C98D` | Keep and success foreground |
+| `status.successSoft` | `#1C3A2A` | Keep and success surface |
+| `status.warning` | `#D9A441` | Missing suggestions and unavailable sources |
+| `status.warningSoft` | `#3A2D16` | Warning surface |
+| `status.danger` | `#EF6A70` | Discard, destructive action and blocking error |
+| `status.dangerHover` | `#FF8086` | Destructive hover |
+| `status.dangerSoft` | `#48252A` | Destructive surface |
+| `status.info` | `#6AA9E9` | Informational state |
+| `rating.filled` | `#E8C45A` | Filled rating star |
+| `rating.hover` | `#F0D16F` | Rating hover preview |
+| `rating.empty` | `#69717D` | Empty star for a populated rating |
+| `component.commandValid` | `#172B40` | Valid command draft |
+| `component.timelineTrack` | `#23434A` | Dark teal timeline remainder |
+| `component.timelineProgress` | `#43B6C3` | Elapsed timeline section |
+| `component.volumeTrack` | `#29434A` | Quiet teal volume remainder |
+| `component.volumeProgress` | `#3698A3` | Current volume level |
+| `component.scrollbar` | `#3A424D` | Neutral scrollbar thumb |
+| `component.tooltip` | `#11151A` | Tooltip surface |
+
+Both palettes additionally derive pending-rating low/high values and a scrollbar-hover value
+from their adjacent semantic roles. Populated tags use the rating/gold family, not the main
+accent. Working-title metadata uses `text.secondary`; it must not have a theme-specific hard-
+coded color.
+
+Teal means primary interaction, focus, selection, active project, playhead or I/O markers.
+It is not the default hover color for ordinary controls. Green means Keep or success; red
+means Discard, destructive operations or blocking errors. Warning amber means suggested
+missing metadata or unavailable sources. Gold rating tokens are reserved for stars and tags.
+Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
+
+### Theme selection and switching
+
+Settings contains an **Appearance** tab with **Theme: System / Light / Dark**. Light is the
+default when no preference exists. The selection is saved in `data/settings.yaml` and applies
+immediately to all application-owned windows, menus, dialogs, custom-painted controls, rich
+text and icons.
+
+System resolves through Qt's operating-system color-scheme API and updates while DFSorter is
+running when the system scheme changes. DFSorter still uses the palettes above; System does
+not delegate its component design to the platform. A sun/moon icon button appears between
+Projects and Settings in the top-right toolbar. Its tooltip names the action, for example
+`Switch to dark mode`. It toggles explicit Light/Dark. From System it selects the explicit
+mode opposite the currently resolved appearance.
+
+Theme changes must invalidate theme-dependent icon/pixmap caches and repaint custom delegates
+and widgets. Components must never retain colors captured from the previous mode.
 
 ### Typography, spacing and dimensions
 
@@ -46,24 +167,43 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 | Toolbar / navigation height | 28 / 34 |
 | Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
 
-Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 13 px regular metadata in `text_working_title #C7CDD5`, 13 px regular game codes and separators in `text_muted`, and 16 px bold mainline in `text_primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 13 px regular metadata in `text.secondary`, 13 px regular game codes and separators in `text.muted`, and 16 px bold mainline in `text.primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
-Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px, panels 0–3 px. Font metrics take precedence over dimensions where necessary to avoid clipping.
+Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px; larger grouped panels may use 5–7 px. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
+
+### Surface and border hierarchy
+
+Establish grouping in this order: surface, spacing, typography, then border. In light mode,
+the cool-gray canvas, faintly tinted sidebars/top chrome and white primary workspace must read
+as distinct functional layers. Secondary groups use `surface.subtle`; editable controls remain
+white. Do not manufacture that depth by wrapping every section in a bordered card. Use borders
+for control boundaries, major pane edges, meaningful section dividers and selected/focused
+state. Do not frame each label, statistic or small content group.
+
+Shadows are limited to menus, popovers, transient overlays and modal dialogs when Qt can
+render them consistently. Persistent panels and cards remain flat. Do not add decorative
+animation. Any inexpensive hover or selection transition must be short and must not delay
+input, theme switching or navigation.
 
 
 ### Controls and visual states
 
 
-- Neutral buttons use surface/hover/pressed colors and default borders. Primary actions use accent-muted fill and accent border sparingly. Destructive buttons use danger text/border with danger-muted fill. Disabled controls use panel background, subtle border and disabled text/icon colors; avoid fading whole widgets into illegibility.
-- Navigation sits at the top of the application with no menu bar or outer top gap; the workspace beneath it has its own 12 px inset. Navigation uses a continuous dark strip with a bottom divider and compact rectangular text-only tabs. Labels are 14 px medium; active labels are semibold. The active tab matches the workspace background with a straight 2 px cyan top edge, subtle side borders, and no contrasting bottom border. Inactive labels use secondary text and surface hover. Projects and Settings remain right-aligned utilities.
-- Inputs use input background, subtle border, primary text, muted placeholders, default hover border and focus-cyan border. The command bar uses the same idle styling and `command_focus` background when focused. No neon glow or native dotted focus rectangles. Focus behavior follows main specs §13.2.
+- Neutral buttons use the lightly tinted `surface.subtle`, neutral hover/pressed colors, a quiet `border.subtle` boundary and 5 px vertical / 9 px horizontal padding. Inputs remain `surface.control`, so buttons and editable fields do not collapse into the same stock-control treatment. Primary buttons use a filled `accent.default` surface with `text.inverse`, and are limited to the singular commit action in a local context. Secondary actions remain neutral. Ghost/icon toolbar buttons have no visible border at rest. Destructive buttons use danger text with a danger-soft surface; strong red fill is reserved for confirmation-level emphasis. Disabled controls retain the subtle neutral fill, subtle border and disabled text/icon colors; avoid fading whole widgets into illegibility.
+- Navigation sits at the top of the application with no menu bar or outer top gap; the workspace beneath it has its own 12 px inset. Navigation uses a continuous `surface.panel` strip with a subtle bottom divider and compact rectangular text-only tabs. Labels are 14 px medium; active labels are semibold. Inactive tabs use secondary text, transparent backgrounds and a neutral hover surface. The active tab uses primary text and a straight 2 px `accent.default` bottom indicator; it may use an extremely subtle active surface but must not also use strong side borders or accent text. Projects, Theme and Settings remain right-aligned utilities.
+- Inputs use `surface.control`, a subtle border, primary text, muted placeholders, a quiet neutral hover and an unmistakable focus treatment. Use a 2 px focus ring where QSS and geometry permit without layout movement; otherwise use an equivalently clear inset/outline treatment. The command bar uses the same idle styling and `component.commandValid` when valid. No neon glow or native dotted focus rectangles. Focus behavior follows main specs §13.2.
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Undefined uses pressed-surface/strong-border/secondary-text.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
 - Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows a faded gold pulse and disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
-- Video is black. Use **7 px timeline groove** with larger hit area. Use neutral track/progress, cyan playhead, focus-cyan saved I/O markers, and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). Transport/audio/time controls remain directly below.
+- Video is black. Use a **7 px timeline groove** with a larger hit area, pale teal remainder and strong teal elapsed section/playhead. Use focus-cyan saved I/O markers and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). The volume slider uses an 18 px widget height, 3 px groove, 10 px handle, quiet teal remainder and medium-teal level; center it optically with the volume icon and time text. Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
-- Tooltips appear after a 200 ms hover delay throughout the application. They use tooltip background, default border, primary text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use bold `#F0D16F` and remain hidden when empty. Valid commands use a subtle blue background `#172B40`; incomplete, invalid and briefly saved commands use warning, danger and success bottom borders respectively. Keyboard focus retains its cyan outline; other command backgrounds stay neutral. Unset rating uses the existing danger color for star outlines only, with no background highlight.
+- Tooltips appear after a 200 ms hover delay throughout the application. They use `component.tooltip`, a default border, theme-appropriate tooltip text, 6 px vertical / 8 px horizontal padding and 4 px corners. Secondary metadata recedes; populated tag prefixes use the theme's gold/tag role and remain hidden when empty. Valid commands use `component.commandValid`; incomplete, invalid and briefly saved commands use warning, danger and success bottom borders respectively. Keyboard focus retains its teal outline; other command backgrounds stay neutral. Unset rating uses the existing danger color for star outlines only, with no background highlight.
+
+Every applicable interactive component has intentional rest, hover, pressed, focused,
+disabled and selected states. Ordinary text targets at least WCAG AA 4.5:1 contrast, and
+important focus/control indicators target 3:1 against adjacent colors. These are practical
+design checks rather than a claim of formal application-wide WCAG conformance.
 
 
 ## 3. Application shell and side panes
@@ -71,12 +211,12 @@ Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups,
 ### Navigation and workspace
 
 ```text
-Home  Browse  Session  Editing  Export  Config   [stretch]   Undo Redo   Projects   Settings
-------------------------------------------------------------------------------------------------
+Home  Browse  Session  Editing  Export  Config   [stretch]   Undo Redo   Projects   Theme Settings
+------------------------------------------------------------------------------------------------------
 Left pane                  | Center: page/player and information                  | Projects
 ```
 
-Navigation touches application top edge; workspace has separate 12 px inset. Use continuous strip and shared tab styling described below. Utilities align vertically; Projects and settings use 28 px height. Undo/Redo have 4 px separation, then 16 px before Projects; retain existing optical 1 px downward offset for navigation utility artwork. Do not imitate tabs with ordinary form buttons.
+Navigation touches application top edge; workspace has separate 12 px inset. Use the continuous strip and shared tab styling described above. Utilities align vertically and use consistent 28 px square hit areas, icon size and ghost-button behavior; Projects remains a 28 px labeled control. Undo/Redo have 4 px separation, then 16 px before Projects. Theme sits between Projects and Settings with 4–8 px toolbar spacing. Retain the existing optical 1 px downward offset for navigation utility artwork. Every icon-only utility has a tooltip and accessible name. Do not imitate tabs with ordinary form buttons.
 
 Center receives extra space as window grows. Splitters separate panes without decorative nested frames. Pane visibility, default proportions and manual overrides follow main specs §9.4; adding a feature must not invent different pane persistence.
 
@@ -86,15 +226,24 @@ Order search/filter controls, compact heading/action row, expanding clip list, t
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
+Search is the primary filter entry. Stacked filter dropdowns beneath it share height, radius,
+padding, border treatment and arrow placement. Do not frame the filter stack as a separate
+card when the sidebar surface and spacing already establish the group.
+
 ### Clip cards
 
 
 
-Use one shared delegate in all left-pane library, Session and Export views. A clip card has a 48 px body, 4 px external gap, 1 px subtle border, 3 px radius, neutral `bg_panel_alt` fill and 8 px horizontal padding. Grow only as required by font metrics.
+Use one shared delegate in all left-pane library, Session and Export views. A clip row has a
+48 px body, 1 px inter-row gap and 8 px horizontal padding. At rest it is transparent against
+`surface.sidebar` with only a short, subtle bottom separator inset to the text edge. It must
+read as a dense file/media browser row, not a stack of rounded cards. Hover receives a soft
+neutral fill. Selection may use a 3 px radius because its pale accent surface is transient.
+Grow only as required by font metrics.
 
-Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text_working_title`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot centered against visible text using font metrics, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
+Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text.secondary`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot centered against visible text using font metrics, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
 
-Hover uses `bg_surface_hover`; selection uses `accent_selection` plus a 2 px cyan left indicator. Keyboard focus uses a subtle cyan border. Presentation data must use explicit roles, not substring matching against visible text.
+Hover uses `surface.hover`; selection uses `accent.selection` plus a 2 px `accent.default` left indicator. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
 
 Browse uses capture datetime and capture-folder name on line two instead of game/triage text; retain shared card geometry, status dot and Unavailable treatment. Content and selection behavior remain governed by main specs §§9.5, 10.1 and 12.2.
 
@@ -102,7 +251,30 @@ Browse uses capture datetime and capture-folder name on line two instead of game
 
 Secondary heading, active-project accent, expanding list and compact icon toolbar. Keep common actions grouped; destructive deletion remains separate in context menu. Every icon action needs tooltip and accessible name. Preserve enabled, disabled and checked states through shared styling.
 
-## 4. Video and playback controls
+## 4. Sparse-page composition
+
+### Home / Capture folders
+
+Preserve Capture Folders behavior and all existing information. Each watched folder is a
+compact typographic group rather than raw diagnostic-looking text. The folder path is primary;
+scanning state and total clips are secondary; detected-game counts and duration statistics are
+tertiary. Align labels and values consistently and use spacing before introducing containers.
+A quiet surface group is acceptable when multiple folders need stronger separation, but do not
+turn every statistic into a card. The explanatory sentence remains tertiary and wraps.
+
+### Session
+
+Compose the existing setup controls as one deliberate compact region with a comfortable
+maximum width. Present the session count summary first, then Scope, its Selected / First N /
+All controls and count field, followed by the primary Create Session action. Separate existing-
+session actions into a subordinate group containing Resume session and End session. A single
+subtle panel surface around this region is permitted. Do not stretch controls across the empty
+workspace, invent dashboard content or change behavior and terminology.
+
+Empty space is valid on both pages. Content should be anchored to shared page edges and grouped
+with intentional widths so it does not appear accidentally stranded in the upper-left corner.
+
+## 5. Video and playback controls
 
 Reuse [Player](../src/dfsorter/playback.py) across Browse, Editing and Export. Do not build separate transport variants for equivalent actions. Browse alone adds a trailing fullscreen icon action using shared tool-button styling: maximize to enter, minimize to exit. Fullscreen retains the existing player and controls with surrounding UI and outer padding hidden.
 
@@ -113,13 +285,21 @@ Previous Play Next Mute Volume Time   >>>   Set In Set Out Clear [page actions]
 [Status only when populated]
 ```
 
-Video absorbs available height; timeline and transport remain compact. Transport/audio/time form left group; range/page actions form right group. Both occupy same row beneath timeline. Editing separates Share/range controls from Add to project + Next with subtle 1 px vertical divider, 20 px tall. Group boundaries use separators; individual buttons do not each need dividers.
+Video absorbs available height; timeline and transport remain compact. The native black video
+surface uses libmpv's display-corrected aspect ratio and is centered within a
+`surface.canvas` container. The surface must fit rather than crop or stretch, so player-added
+letterbox/pillarbox regions become application canvas while black pixels encoded in the video
+remain untouched. This behavior applies to landscape, portrait, square and unusual source
+resolutions. Transport/audio/time form left group; range/page actions form right group. Both
+occupy same row beneath timeline. Editing separates Share/range controls from Add to project
++ Next with subtle 1 px vertical divider, 20 px tall. Group boundaries use separators;
+individual buttons do not each need dividers.
 
 Center `>>>` in middle grid column with equal stretch on side columns. Reserve its horizontal slot while hidden; do not add indicator row or change video height. Use bold shared small font and animated accent highlights across three glyphs. Existing `QTimer` runs at 120 ms only during active hold, then stops/resets. Hold activation/cancellation and playback restoration follow main specs §13.2.
 
 Status messages wrap when populated and collapse when empty. Keep transition/loading presentation consistent with main specs §9.1; never leave blank status row between transport and title.
 
-## 5. Below-video information and forms
+## 6. Below-video information and forms
 
 ### Shared composition rules
 
@@ -146,6 +326,11 @@ Diagram describes relationships, not character-width dimensions. In [BrowsePage]
 
 480 px folder width and 140 px selector width are Browse-specific requirements from main specs §10.1, not universal input widths. Preserve 10 px explicit gap before range summary in addition to layout-managed spacing. Do not silently shrink or reflow prescribed fields; report clipping that requires specification change.
 
+Video remains the dominant visual element. Below it, the working title is primary; source/file
+information and Share controls are secondary; codec and explanatory text are tertiary. The
+tertiary tier must not compete with Share or Delete. Playback uses the same neutral ghost-icon
+language as the rest of the application, while the seek/progress role may retain teal.
+
 ### Editing reference
 
 ```text
@@ -165,13 +350,25 @@ Command feedback
 Field checklist
 ```
 
-Retain bottom command area within center column and full-height left list. Existing command-area top margin is `4 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. Feedback line and checklist reserve enough height to prevent baseline jumps. Put the range warning immediately left of Set In and Set Out in the player controls row and retain its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
+Retain bottom command area within center column and full-height left list. The command-area top margin is `8 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. The wrapping shortcut line uses the 11 px tertiary helper role so it reads as reference rather than task content. Feedback line and checklist reserve enough height to prevent baseline jumps. Put the range warning immediately left of Set In and Set Out in the player controls row and retain its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
 
 Triage/rating groups remain compact and left aligned; help action anchors right. Description uses selectable plain text on separate row. Functional behavior and field availability follow main specs §13.
 
+The visual order is video, playback, working title and source context, triage/game/project status,
+rating, structured metadata and description, then the separated command/help region. Keyboard
+hints and technical explanations remain readable but tertiary. Rating retains the dedicated
+gold semantic family; it does not borrow danger red or the teal application accent.
+
 Place new panel information in an existing row where practical. A new row can cause conspicuous vertical movement when its content appears or disappears.
 
-## 6. Qt implementation patterns
+### Export and Config
+
+Preserve existing workflows and page-specific constraints. Apply the same shared surface,
+typography, form alignment, button hierarchy and state styling used elsewhere. Export's final
+commit action is primary; setup and utility actions remain secondary. Config remains a compact
+utility page and must not grow decorative cards merely to occupy space.
+
+## 7. Qt implementation patterns
 
 ### Shared styling and text
 
@@ -222,7 +419,7 @@ This retains both widget dimensions; existing transport row already owns vertica
 
 Let Qt process layout before comparing positions. Compare edges in same coordinate space using `mapTo()`; inspect rich-text formats as well as widget fonts. Use `QFontMetrics` for painted text, elision and hit-area sizing. Keep device-pixel-ratio handling inside shared icon renderer. Window resize and display scaling are separate checks; neither substitutes for other.
 
-## 7. Feature and review checklist
+## 8. Feature and review checklist
 
 - Read main specs, this guide and closest Browse/Editing counterpart before changing UI. Reuse shared components; flag unrelated inconsistencies separately.
 - Compare equivalent typography, rich-text spans, colors, icon sizes, baselines and field edges. Confirm intentional exceptions remain page-specific.
@@ -231,6 +428,8 @@ Let Qt process layout before comparing positions. Compare edges in same coordina
 - Check `>>>` activation/cancellation, range warnings and command feedback without unwanted vertical jumps. Verify adjacent clip cards and narrow panes.
 - Check short, long and mixed Chinese/English text; wrapping in detail panes, elision/full tooltips in cards, and visibility of bottom actions.
 - Compare normal/maximized windows and 100%, 125%, 150% scaling for affected components. Inspect representative menus/dialogs when shared styling changes.
+- Capture the same representative populated, empty, focused, disabled and selected states in Light and Dark. Check System mode against both operating-system appearances and verify live system changes. Theme switching must not leave stale icons, rich-text colors, custom-painted controls, menus or already-open dialogs.
+- Audit contrast for ordinary text, secondary text, focus boundaries, selected items, destructive states and unavailable warnings. Do not approve a palette solely from isolated swatches; evaluate colors on their actual adjacent surfaces.
 - Run smallest relevant existing checks for UI edits, using isolated catalogues/generated media where needed. Broaden only for concrete impact. Documentation-only changes need diff/link review, not runtime tests.
 
 Existing checks include `test_browse_form_alignment_and_title_style` and `test_browse_layout` in [UI tests](../tests/test_ui.py). [Visual fixture script](../tests/visual_design.py) supplements inspection but currently omits Browse; its captures are not exhaustive acceptance. Screenshots may predate source: verify provenance before using them as reference.

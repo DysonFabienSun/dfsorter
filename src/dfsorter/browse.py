@@ -22,8 +22,8 @@ from .config import title
 from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
-from .theme import COLORS, role, title_styles
-from .widgets import icon, tool
+from .theme import role, title_styles
+from .widgets import set_icon, tool
 
 
 class BrowsePage(QWidget):
@@ -56,12 +56,8 @@ class BrowsePage(QWidget):
         title_row.setSpacing(12)
         title_row.addWidget(self.working_title, 1)
         self.delete_button = tool("trash-2", "Delete source…", self.delete_source)
-        self.delete_button.setIcon(icon("trash-2", COLORS["danger"]))
-        self.delete_button.setStyleSheet(
-            f"QToolButton {{ border: 1px solid {COLORS['danger']}; "
-            f"background: {COLORS['danger_muted']}; border-radius: 4px; }}"
-            f"QToolButton:hover {{ border-color: {COLORS['danger_hover']}; }}"
-        )
+        role(self.delete_button, "danger")
+        set_icon(self.delete_button, "trash-2", "status_danger")
         title_row.addWidget(self.delete_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(title_row)
         layout.addWidget(self.filename)
@@ -105,7 +101,7 @@ class BrowsePage(QWidget):
         form.addWidget(self.mode, 1, 4)
         divider = QFrame()
         divider.setFixedHeight(1)
-        divider.setStyleSheet(f"background: {COLORS['border_subtle']};")
+        role(divider, "divider")
         layout.addWidget(divider)
         layout.addLayout(form)
         layout.addSpacing(10)
@@ -117,6 +113,7 @@ class BrowsePage(QWidget):
         role(info, "secondary")
         footer.addWidget(info, 1)
         self.share_button = QPushButton("Share")
+        role(self.share_button, "primary")
         self.share_button.clicked.connect(self.share)
         footer.addWidget(self.share_button)
         layout.addLayout(footer)
@@ -157,7 +154,7 @@ class BrowsePage(QWidget):
             for layout, margins in layouts:
                 layout.setContentsMargins(margins)
             window.splitter.setSizes(sizes)
-        self.fullscreen_button.setIcon(icon("minimize" if enabled else "maximize"))
+        set_icon(self.fullscreen_button, "minimize" if enabled else "maximize")
         label = "Exit fullscreen · Esc / F11" if enabled else "Fullscreen · F11"
         self.fullscreen_button.setToolTip(label)
         self.fullscreen_button.setAccessibleName(label)

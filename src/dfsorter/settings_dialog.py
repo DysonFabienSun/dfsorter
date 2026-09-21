@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -103,6 +104,31 @@ class SettingsDialog(QDialog):
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
         tabs.insertTab(0, general, "General")
+        appearance = QWidget()
+        appearance_layout = QVBoxLayout(appearance)
+        theme_row = QHBoxLayout()
+        theme_label = QLabel("Theme:")
+        self.theme = QComboBox()
+        for label, value in [("System", "system"), ("Light", "light"), ("Dark", "dark")]:
+            self.theme.addItem(label, value)
+        self.theme.setCurrentIndex(
+            max(0, self.theme.findData(window.settings.get("theme", "light")))
+        )
+        theme_label.setBuddy(self.theme)
+        theme_row.addWidget(theme_label)
+        theme_row.addWidget(self.theme)
+        theme_row.addStretch()
+        appearance_layout.addLayout(theme_row)
+        theme_explanation = QLabel(
+            "System follows the operating-system appearance. The toolbar control selects an "
+            "explicit Light or Dark theme."
+        )
+        theme_explanation.setWordWrap(True)
+        role(theme_explanation, "secondary")
+        appearance_layout.addWidget(theme_explanation)
+        appearance_layout.addStretch()
+        self.theme.currentIndexChanged.connect(self.save_theme_preference)
+        tabs.insertTab(0, appearance, "Appearance")
         tabs.setCurrentIndex(0)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
@@ -113,6 +139,9 @@ class SettingsDialog(QDialog):
         self.window.settings["lowercase_generated_titles"] = self.lowercase_titles.isChecked()
         self.window.save_settings()
         self.window.refresh_title_presentation()
+
+    def save_theme_preference(self):
+        self.window.set_theme(self.theme.currentData())
 
     def save_playback_preferences(self):
         self.start_offset.setEnabled(self.start_near_end.isChecked())

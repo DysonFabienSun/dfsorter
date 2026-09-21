@@ -279,6 +279,12 @@ Initial required playback support includes MP4 clips containing H.264 or AV1 vid
 
 Browse, Editing, and Export use application-local libmpv playback. All audio tracks play together by default, including microphone tracks. Mix tracks channel-wise into stereo, preserving left/right separation and relative track timing; mono contributes to both channels. Silent sources remain silent. Playback never creates derived media or changes source files. Project Export retains original bytes and separate audio tracks; Share produces mixed stereo AAC.
 
+The embedded native video surface follows libmpv's display-corrected source dimensions and
+fits within the available player region without cropping or stretching. This prevents libmpv
+from adding black letterbox or pillarbox pixels around landscape, portrait, square or other
+source aspect ratios. Unused player space shows the application canvas. Black pixels encoded
+in the source remain part of the video and are not detected or cropped.
+
 The Editing player includes:
 
 - embedded video playback;
@@ -306,7 +312,15 @@ Each clip may store one optional non-destructive In/Out range.
 
 ### 9.1 Theme
 
-Use the application-wide dark design system in [UI Layout Guide](ui-layout-guide.md). A light theme is not required.
+Use the application-wide semantic design system in [UI Layout Guide](ui-layout-guide.md).
+DFSorter provides System, Light and Dark appearance modes. Light is the default when no
+preference has been saved. System follows the operating-system color scheme while retaining
+DFSorter's own semantic palette rather than adopting unrelated native component styling.
+
+The selected mode persists across restarts. A theme control in the top-right application
+toolbar switches immediately between explicit Light and Dark modes. When the saved mode is
+System, the quick toggle selects the explicit mode opposite the currently resolved system
+appearance. Settings provides all three choices under Appearance.
 
 Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. In every left-pane clip list, place the selected clip at the top when it is the first clip, and in the second visible position otherwise. Apply this to default selection, mouse selection, keyboard navigation, and selections restored after a library rebuild or page change. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
@@ -318,7 +332,7 @@ Resetting clip metadata must never modify or delete the source video. Destructiv
 
 ### 9.3 Panel Navigation
 
-At the top of the window, provide a restrained six-destination navigation strip with connected desktop-style tabs and a cyan active top edge:
+At the top of the window, provide a restrained six-destination navigation strip with compact desktop-style tabs and a teal active bottom indicator:
 
 1. Home
 2. Browse
@@ -889,7 +903,7 @@ Configuration changes must never silently delete existing clip metadata.
 
 Undo/redo is intentionally narrow.
 
-Navigation Undo and Redo icons independently reflect their catalogue history stacks: available actions use slightly brighter neutral artwork (`#B8BFC9`); unavailable actions are disabled with dim gray artwork (`#59616C`). Refresh availability after edits, undo/redo, and history clearing. Preserve native text-input undo/redo.
+Navigation Undo and Redo icons independently reflect their catalogue history stacks: available actions use `text.secondary`; unavailable actions use `text.disabled`. Refresh availability after edits, undo/redo, and history clearing. Preserve native text-input undo/redo.
 
 The normal undo stack covers user metadata operations performed during the current application run, including:
 
