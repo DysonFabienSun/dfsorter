@@ -278,7 +278,7 @@ class Window(QMainWindow):
         session_header_layout.addWidget(session_heading)
         session_header_layout.addStretch()
         self.next_undefined_button = tool(
-            "arrow-down-to-dot",
+            "list-todo",
             "Next undefined clip · Jump ahead without changing verdicts (no wrap)",
             self.navigate_next_undefined,
         )

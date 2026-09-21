@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PySide6.QtWidgets import QProxyStyle, QStyle
@@ -161,7 +163,14 @@ def resolved_scheme(application, mode):
 
 
 def stylesheet():
-    values = {**COLORS, **SIZES, **{f"font_{key}": value for key, value in FONT_SIZES.items()}}
+    values = {
+        **COLORS,
+        **SIZES,
+        **{f"font_{key}": value for key, value in FONT_SIZES.items()},
+        "combo_chevron": (
+            Path(__file__).resolve().parents[2] / "resources/icons/chevron-down.svg"
+        ).as_posix(),
+    }
     return (
         """
         QWidget { background: %(surface_workspace)s; color: %(text_primary)s; }
@@ -190,8 +199,15 @@ def stylesheet():
             selection-color: %(text_primary)s;
         }
         QLineEdit, QComboBox, QSpinBox { min-height: 18px; }
+        QComboBox { padding: 4px 28px 4px 8px; }
+        QComboBox::drop-down {
+            subcontrol-origin: padding; subcontrol-position: top right;
+            width: 24px; border: none; background: transparent;
+        }
+        QComboBox::down-arrow { image: url("%(combo_chevron)s"); width: 14px; height: 14px; }
         QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(border_strong)s; }
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
+        QComboBox:focus { padding: 3px 27px 3px 7px; }
         QLineEdit#command[validationState="valid"] { background: %(component_command_valid)s; }
         QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(status_warning)s; }
         QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(status_danger)s; }
@@ -256,7 +272,7 @@ def stylesheet():
         QWidget#clipLibraryPane QScrollBar::add-page, QWidget#clipLibraryPane QScrollBar::sub-page { background: %(component_clip_scrollbar_track)s; }
         QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-        QToolTip { background: %(component_tooltip)s; border: 1px solid %(border_default)s; color: %(component_tooltip_text)s; padding: 6px 8px; border-radius: 4px; }
+        QToolTip { background: %(component_tooltip)s; border: 1px solid %(border_default)s; color: %(component_tooltip_text)s; font-size: %(font_sm)spx; padding: 0px 3px 2px 3px; border-radius: 4px; }
         QWidget[role="error"] { color: %(status_danger)s; }
         QWidget[role="warning"] { color: %(status_warning)s; }
         QWidget[role="success"] { color: %(status_success)s; }
