@@ -127,6 +127,7 @@ SIZES = {
     "nav": 34,
     "card": 48,
     "card_gap": 1,
+    "card_padding": 7,
     "panel_padding": 12,
     "timeline": 7,
     "icon_xs": 12,
@@ -235,6 +236,7 @@ def stylesheet():
         QPushButton#navigation:checked { background: transparent; color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }
         QPushButton#navigation:disabled { background: transparent; color: %(text_disabled)s; border-bottom-color: transparent; }
         QListWidget { background: %(surface_workspace)s; border: none; padding: 4px; outline: none; }
+        QListWidget#clipLibrary { padding: 0px; }
         QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
         QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
         QListWidget::item { padding: 2px 4px; }

@@ -104,7 +104,12 @@ class ClipDelegate(QStyledItemDelegate):
             painter.drawRoundedRect(card, 3, 3)
         else:
             painter.setPen(QColor(COLORS["border_subtle"]))
-            painter.drawLine(card.left() + 8, card.bottom(), card.right() - 8, card.bottom())
+            painter.drawLine(
+                card.left() + SIZES["card_padding"],
+                card.bottom(),
+                card.right() - SIZES["card_padding"],
+                card.bottom(),
+            )
         if focused:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QColor(COLORS["focus"]))
@@ -124,7 +129,12 @@ class ClipDelegate(QStyledItemDelegate):
         top = (
             card.top() + (card.height() - title_metrics.height() - detail_metrics.height() - 2) // 2
         )
-        area = QRect(card.left() + 8, top, max(0, card.width() - 16), title_metrics.height())
+        area = QRect(
+            card.left() + SIZES["card_padding"],
+            top,
+            max(0, card.width() - 2 * SIZES["card_padding"]),
+            title_metrics.height(),
+        )
         painter.setFont(title_font)
         painter.setPen(QColor(COLORS["text_primary"]))
         document = QTextDocument()

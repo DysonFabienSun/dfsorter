@@ -220,13 +220,13 @@ Home  Browse  Session  Editing  Export  Config   [stretch]   Undo Redo   Project
 Left pane                  | Center: page/player and information                  | Projects
 ```
 
-Navigation touches application top edge; workspace has separate 12 px inset. Use the continuous strip and shared tab styling described above. Utilities align vertically and use consistent 28 px square hit areas, icon size and ghost-button behavior; Projects remains a 28 px labeled control. Undo/Redo have 4 px separation, then 16 px before Projects. Theme sits between Projects and Settings with 4–8 px toolbar spacing. Retain the existing optical 1 px downward offset for navigation utility artwork. Every icon-only utility has a tooltip and accessible name. Do not imitate tabs with ordinary form buttons.
+Navigation touches application top edge; workspace has a 12 px top, right and bottom inset and a 13 px left inset. This left gutter uses the normal workspace surface while the sidebar keeps a compact 8 px content inset. Use the continuous strip and shared tab styling described above. Utilities align vertically and use consistent 28 px square hit areas, icon size and ghost-button behavior; Projects remains a 28 px labeled control. Undo/Redo have 4 px separation, then 16 px before Projects. Theme sits between Projects and Settings with 4–8 px toolbar spacing. Retain the existing optical 1 px downward offset for navigation utility artwork. Every icon-only utility has a tooltip and accessible name. Do not imitate tabs with ordinary form buttons.
 
 Center receives extra space as window grows. Splitters separate panes without decorative nested frames. Pane visibility, default proportions and manual overrides follow main specs §9.4; adding a feature must not invent different pane persistence.
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row, expanding clip list, then page-specific footer. Browse heading is Library clips with date-order action; Editing heading is Session clips with Next undefined action. Align heading text to card text and action to card edge, not merely to outer widget bounds. Shared heading margins are 13 px left / 5 px right inside existing left-pane layout; left-pane margins are 8 px horizontal / 4 px vertical. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row, expanding clip list, then page-specific footer. Browse heading is Library clips with date-order action; Editing heading is Session clips with Next undefined action. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
@@ -239,7 +239,7 @@ card when the sidebar surface and spacing already establish the group.
 
 
 Use one shared delegate in all left-pane library, Session and Export views. A clip row has a
-48 px body, 1 px inter-row gap and 8 px horizontal padding. At rest it is transparent against
+48 px body, 1 px inter-row gap and 7 px horizontal padding. At rest it is transparent against
 `surface.sidebar` with only a short, subtle bottom separator inset to the text edge. It must
 read as a dense file/media browser row, not a stack of rounded cards. Hover receives a soft
 neutral fill. Selection may use a 3 px radius because its pale accent surface is transient.

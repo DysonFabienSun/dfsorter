@@ -13,7 +13,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog, QProgressDialog
+from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QProgressDialog
 
 from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
@@ -860,12 +860,33 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.session_header.geometry().bottom() < window.library.geometry().top()
     assert window.left.height() == window.center_column.height()
     assert window.session_counts.geometry().bottom() >= window.left.height() - 8
+    assert window.left.mapTo(window, QPoint(0, 0)).x() == 13
+    heading = window.session_header.findChild(QLabel)
+    heading_x = heading.mapTo(window.left, QPoint(0, 0)).x()
+    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
+    card_title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 1 + 7
+    assert heading_x == footer_x == card_title_x
     artifact = ROOT / "cache/verification/session-counts"
     artifact.mkdir(parents=True, exist_ok=True)
     assert wait_for(application, lambda: not window.transition_pending)
     window.grab().save(str(artifact / "editing.png"))
+    window.set_theme("dark")
+    application.processEvents()
+    window.grab().save(str(artifact / "editing-dark.png"))
     window.panel("Export")
     assert window.session_counts.isHidden()
+    window.panel("Session")
+    application.processEvents()
+    card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
+    assert window.search.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    assert window.triage_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    window.panel("Browse")
+    application.processEvents()
+    card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
+    assert window.browse_search.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    assert window.browse_game.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    assert wait_for(application, lambda: not window.transition_pending)
+    window.grab().save(str(artifact / "browse-dark.png"))
 
 
 def test_review_advance_skips_verdicts_without_wrapping(window, application, tmp_path):
