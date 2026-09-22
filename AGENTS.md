@@ -40,6 +40,9 @@
 - Read and follow [UI Layout Guide](specs/ui-layout-guide.md) when adding or reviewing UI features. It owns reusable layout, typography, colors and visual states; main specs own functional behavior and page-specific constraints.
 - `specs/legacy/` is archival only. Do not refer to it for implementation guidance or requirements.
 - Ask the user about questions, required clarifications, or technical issues rather than silently making decisions that depart from the specification.
+- When the user requests a new feature, first investigate the relevant code, specifications, tests, existing interaction patterns, persistence model, and edge cases so that discoverable facts are resolved from the repository.
+- After that investigation, identify every material ambiguity and design choice that cannot be resolved from repository evidence. Ask the user explicit questions, written in question form, before implementation. Include a concrete recommendation and meaningful alternatives when tradeoffs exist.
+- Continue clarifying until the feature's intended behavior, scope, interactions, persistence, failure and cancellation behavior, and acceptance criteria are decision-complete. Do not silently choose consequential product behavior merely to begin implementation sooner.
 
 ## Premise Checking and Technical Pushback
 
