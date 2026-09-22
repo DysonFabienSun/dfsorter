@@ -794,6 +794,13 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     assert "<u>player</u> clutch" in window.library.item(0).data(CLIP_ROLE)["rich_title"].lower()
     window.command.setText("[3rd] R4")
     assert "[3rd] · Existing" in window.command_feedback.text()
+    original_clips = window.catalogue.clips
+    try:
+        window.catalogue.clips = lambda: (_ for _ in ()).throw(AssertionError("full scan"))
+        window.command.setText("[3RD] R4")
+        assert "[3RD] · Existing" in window.command_feedback.text()
+    finally:
+        window.catalogue.clips = original_clips
     assert window.rating.command_preview == 4
     assert not window.rating_clear.isEnabled()
     assert window.rating_clear.toolTip() == "Rating pending · press Enter"

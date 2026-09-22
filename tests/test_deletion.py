@@ -130,7 +130,7 @@ def test_version_four_upgrade_retains_missing_sources(catalogue, clips):
     assert restarted.clips() == clips
     assert restarted.state("session") == session
     assert restarted.hidden_deleted_ids() == set()
-    assert restarted.rows("PRAGMA user_version")[0]["user_version"] == 5
+    assert restarted.rows("PRAGMA user_version")[0]["user_version"] == 6
 
 
 @pytest.mark.parametrize("available_at_relink", [False, True])

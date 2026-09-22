@@ -126,7 +126,7 @@ def test_tag_column_migration_preserves_catalogue(catalogue, clips, version):
     assert migrated.clips() == before
     assert migrated.state("session") == session
     assert migrated.member_ids(project) == {clip_id}
-    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 5
+    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 6
     assert Catalogue(catalogue.path).clips() == before
     migrated.patch(clip_id, {"tag": "Highlight"})
     migrated.undo()
@@ -193,12 +193,19 @@ def test_tag_commands_and_brim_alias(registry, catalogue, clips):
         with pytest.raises(ValueError):
             parse_command(text, "VALORANT", registry)
     catalogue.patch(clips[0]["clip_id"], patch)
+    assert catalogue.tag_exists("AUDIO <ISSUE>")
+    assert not catalogue.tag_exists("missing")
     assert (
         query_clips(catalogue.clips(), 'tag:"audio <issue>"', registry)[0]["clip_id"]
         == clips[0]["clip_id"]
     )
     with pytest.raises(ValueError):
         query_clips(catalogue.clips(), "tag:", registry)
+
+
+def test_tag_lookup_uses_unicode_casefold(catalogue, clips):
+    catalogue.patch(clips[0]["clip_id"], {"tag": "Straße"})
+    assert catalogue.tag_exists("STRASSE")
 
 
 def test_freeform_and_quoted_boundaries(registry):

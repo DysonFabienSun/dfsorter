@@ -1860,10 +1860,7 @@ class Window(QMainWindow):
         self.rating_clear.setAccessibleName("Clear rating" if rating is None else "Rating pending")
         if validation == "valid" and patch.get("tag"):
             candidate = patch["tag"]
-            if any(
-                (item.get("tag") or "").casefold() == candidate.casefold()
-                for item in self.catalogue.clips()
-            ):
+            if self.catalogue.tag_exists(candidate):
                 message = f"{message} · [{candidate}] · Existing"
         if validation == "empty":
             if self.command_saved_timer.isActive():

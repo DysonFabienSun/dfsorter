@@ -25,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 5:
+            if version > 6:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -95,7 +95,11 @@ class Catalogue:
                     "CREATE UNIQUE INDEX IF NOT EXISTS folder_path_identity "
                     "ON folders(path COLLATE NOCASE)"
                 )
-            database.execute("PRAGMA user_version = 5")
+            database.execute(
+                "CREATE INDEX IF NOT EXISTS tag_casefold_identity "
+                "ON clips(casefold(tag)) WHERE tag IS NOT NULL"
+            )
+            database.execute("PRAGMA user_version = 6")
 
     def hidden_deleted_ids(self):
         """Hide intentional deletions until their current (possibly relinked) source returns."""
@@ -126,6 +130,12 @@ class Catalogue:
     def connection(self):
         database = sqlite3.connect(self.path, timeout=10)
         database.row_factory = sqlite3.Row
+        database.create_function(
+            "casefold",
+            1,
+            lambda value: value.casefold() if isinstance(value, str) else value,
+            deterministic=True,
+        )
         database.execute("PRAGMA foreign_keys = ON")
         try:
             with database:
@@ -150,6 +160,15 @@ class Catalogue:
         clip = rows[0]
         clip["metadata"] = json.loads(clip["metadata"])
         return clip
+
+    def tag_exists(self, tag):
+        return bool(
+            self.rows(
+                "SELECT 1 FROM clips "
+                "WHERE tag IS NOT NULL AND casefold(tag)=? LIMIT 1",
+                (tag.casefold(),),
+            )
+        )
 
     def state(self, key, default=None):
         rows = self.rows("SELECT value FROM state WHERE key=?", (key,))
