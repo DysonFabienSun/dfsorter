@@ -1567,7 +1567,8 @@ def test_clip_click_keeps_list_and_positions_selection(
             pos=window.library.visualItemRect(target).center(),
         )
         application.processEvents()
-        assert window.library.visualItemRect(target).intersects(window.library.viewport().rect())
+        previous = window.library.visualItemRect(window.library.item(row - 1))
+        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
         assert window.library.item(65) is item
         assert window.transition_scope == "clip"
         assert not window.transition_cover.geometry().intersects(window.left.geometry())
@@ -1591,13 +1592,12 @@ def test_clip_click_keeps_list_and_positions_selection(
         assert window.current_id == ids[68]
         assert window.catalogue.state("session")["index"] == 68
         assert window.library.item(65) is item
-        assert window.library.visualItemRect(window.library.item(68)).intersects(
-            window.library.viewport().rect()
-        )
+        previous = window.library.visualItemRect(window.library.item(67))
+        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
 
 
 @pytest.mark.parametrize("panel", ["Browse", "Session", "Editing", "Export"])
-def test_clip_list_uses_natural_scrolling_and_edge_fades(window, application, tmp_path, panel):
+def test_clip_list_positions_selection_with_edge_fades(window, application, tmp_path, panel):
     root = tmp_path / "SelectionLibrary"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
@@ -1631,8 +1631,10 @@ def test_clip_list_uses_natural_scrolling_and_edge_fades(window, application, tm
     for row in (30, 49):
         window.library.setCurrentRow(row)
         application.processEvents()
+        previous = window.library.visualItemRect(window.library.item(row - 1))
         selected = window.library.visualItemRect(window.library.item(row))
-        assert selected.intersects(window.library.viewport().rect())
+        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
+        assert abs(selected.top() - round(previous.height() / 3)) <= 1
         assert window.library_top_fade.isVisible()
         assert window.library_bottom_fade.isVisible() == (row == 30)
         assert window.library_top_fade.height() == 16
@@ -1643,9 +1645,8 @@ def test_clip_list_uses_natural_scrolling_and_edge_fades(window, application, tm
             assert window.session_position.text() == f"{row + 1} / 50"
     window.refresh_library()
     application.processEvents()
-    assert window.library.visualItemRect(window.library.item(49)).intersects(
-        window.library.viewport().rect()
-    )
+    previous = window.library.visualItemRect(window.library.item(48))
+    assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
 
 
 def test_library_rebuild_keeps_viewport(window, application, tmp_path):

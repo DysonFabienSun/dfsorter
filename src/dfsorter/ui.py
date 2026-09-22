@@ -982,6 +982,8 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
+        if hasattr(self, "library"):
+            QTimer.singleShot(0, self.position_selected_clip)
 
     def panel(self, name):
         if not self.ensure_range_complete():
@@ -1032,6 +1034,7 @@ class Window(QMainWindow):
         self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
         self.refresh_library()
+        QTimer.singleShot(0, self.position_selected_clip)
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
@@ -1287,6 +1290,24 @@ class Window(QMainWindow):
         self.browse.player.previous_button.setEnabled(row > 0)
         self.browse.player.next_button.setEnabled(0 <= row < self.library.count() - 1)
 
+    def position_selected_clip(self):
+        row = self.library.currentRow()
+        if row < 0:
+            return
+        self.library.doItemsLayout()
+        scrollbar = self.library.verticalScrollBar()
+        offset = scrollbar.value()
+        anchor = self.library.item(max(0, row - 1))
+        anchor_rect = self.library.visualItemRect(anchor)
+        target = anchor_rect.top() + offset
+        if row > 0:
+            target += round(anchor_rect.height() * 2 / 3)
+        last = self.library.visualItemRect(self.library.item(self.library.count() - 1))
+        content_bottom = last.bottom() + offset + 1
+        natural_maximum = max(0, content_bottom - self.library.viewport().height())
+        scrollbar.setMaximum(max(natural_maximum, target))
+        scrollbar.setValue(target)
+
     def update_library_scroll_fades(self, *_args):
         viewport = self.library.viewport()
         fade_height = 16
@@ -1410,6 +1431,7 @@ class Window(QMainWindow):
                     break
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
+            self.position_selected_clip()
             if self.current_panel == "Browse":
                 self.browse_id = current
                 self.browse.load(self.catalogue.clip(current) if current else None)
@@ -1434,6 +1456,7 @@ class Window(QMainWindow):
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
+        self.position_selected_clip()
 
     def switch_editing_clip(self, clip_id):
         if clip_id == self.current_id:
@@ -1458,6 +1481,7 @@ class Window(QMainWindow):
                 self.library.blockSignals(True)
                 self.library.setCurrentItem(item)
                 self.library.blockSignals(False)
+                self.position_selected_clip()
         self.refresh_session_status()
         self.begin_page_transition("clip")
         self.load_clip(clip_id)
