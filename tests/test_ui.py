@@ -177,7 +177,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert window.browse.clip is None
     assert window.browse.player.status.text() == "No clip selected"
     window.panel("Home")
-    assert window.triage_filter.currentText() == "Undefined"
+    assert window.triage_filter.currentText() == "Pending"
     assert catalogue_dump(window) == before
     assert window.catalogue.undo_stack == history
 
@@ -1026,7 +1026,10 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     assert item.data(Qt.ItemDataRole.UserRole) == ids[0]
     assert item.data(CLIP_ROLE)["triage"] is None
     assert "discard keep" in item.data(CLIP_ROLE)["title"]
+    assert "pending" in item.text().lower()
     assert window.triage_buttons[None].isChecked()
+    assert window.triage_buttons[None].text() == "Pending"
+    assert window.triage_buttons[None].toolTip() == "Clear verdict and mark as pending"
     QTest.mouseClick(window.triage_buttons["keep"], Qt.MouseButton.LeftButton)
     assert window.catalogue.clip(ids[0])["triage"] == "keep"
     assert window.triage_buttons["keep"].isChecked()
@@ -1904,13 +1907,14 @@ def test_next_undefined_navigation_is_editing_only(window, application, tmp_path
     window.catalogue.patch(ids[2], {"triage": "discard"})
     window.panel("Editing")
     assert not window.session_header.isHidden()
+    assert "Next pending clip" in window.next_undefined_button.toolTip()
     window.command.setText("draft")
     window.next_undefined_button.click()
     assert window.current_id == ids[3]
     assert window.catalogue.clip(ids[0])["triage"] is None
     window.next_undefined_button.click()
     assert window.current_id == ids[3]
-    assert "No undefined clips ahead" in window.statusBar().currentMessage()
+    assert "No pending clips ahead" in window.statusBar().currentMessage()
     window.navigate(-3)
     assert window.command.text() == "draft"
     for panel in ["Home", "Session", "Export", "Config"]:

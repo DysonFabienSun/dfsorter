@@ -376,7 +376,9 @@ def test_discovery_nearest_and_forced(tmp_path, registry, monkeypatch):
 
 
 def test_export_validation_and_preservation(catalogue, clips, registry, tmp_path):
-    assert len(validate(clips, registry)) == 3
+    validation_errors = validate(clips, registry)
+    assert len(validation_errors) == 3
+    assert all("verdict is pending" in message for _, message in validation_errors)
     for clip in clips:
         catalogue.patch(
             clip["clip_id"], {"triage": "keep", "metadata": {"agent": "Jett", "weapon": ["Vandal"]}}

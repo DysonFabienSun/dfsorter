@@ -137,7 +137,7 @@ Teal means primary interaction, focus, selection, active project, playhead or I/
 It is not the default hover color for ordinary controls. Green means Keep or success; red
 means Discard, destructive operations or blocking errors. Warning amber means suggested
 missing metadata or unavailable sources. Gold rating tokens are reserved for stars and tags.
-Undefined triage uses muted gray. Always retain text or shape cues in addition to color.
+Pending triage uses muted gray. Always retain text or shape cues in addition to color.
 
 ### Theme selection and switching
 
@@ -196,7 +196,7 @@ input, theme switching or navigation.
 - Neutral buttons use the lightly tinted `surface.subtle`, neutral hover/pressed colors, a quiet `border.subtle` boundary and 5 px vertical / 9 px horizontal padding. Inputs remain `surface.control`, so buttons and editable fields do not collapse into the same stock-control treatment. Primary buttons use a filled `accent.default` surface with `text.inverse`, and are limited to the singular commit action in a local context. Secondary actions remain neutral. Ghost/icon toolbar buttons have no visible border at rest. Destructive buttons use danger text with a danger-soft surface; strong red fill is reserved for confirmation-level emphasis. Disabled controls retain the subtle neutral fill, subtle border and disabled text/icon colors; avoid fading whole widgets into illegibility.
 - Navigation sits at the top of the application with no menu bar or outer top gap; the workspace beneath it has its own 12 px inset. Navigation uses a continuous `surface.panel` strip with a subtle bottom divider and compact rectangular text-only tabs. Labels are 14 px medium; active labels are semibold. Inactive tabs use secondary text, transparent backgrounds and a neutral hover surface. The active tab uses primary text and a straight 2 px `accent.default` bottom indicator; it may use an extremely subtle active surface but must not also use strong side borders or accent text. Projects, Theme and Settings remain right-aligned utilities.
 - Inputs use `surface.control`, a subtle border, primary text, muted placeholders, a quiet neutral hover and an unmistakable focus treatment. Use a 2 px focus ring where QSS and geometry permit without layout movement; otherwise use an equivalently clear inset/outline treatment. The command bar uses the same idle styling and `component.commandValid` when valid. No neon glow or native dotted focus rectangles. Focus behavior follows main specs §13.2.
-- Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Undefined uses pressed-surface/strong-border/secondary-text.
+- Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Pending uses pressed-surface/strong-border/secondary-text.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
 - Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows a faded gold pulse and disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
@@ -226,7 +226,7 @@ Center receives extra space as window grows. Splitters separate panes without de
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row, expanding clip list, then page-specific footer. Browse heading is Library clips with date-order action; Editing heading is Session clips with Next undefined action. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row, expanding clip list, then page-specific footer. Browse heading is Library clips with date-order action; Editing heading is Session clips with Next pending action. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
@@ -245,7 +245,7 @@ read as a dense file/media browser row, not a stack of rounded cards. Hover rece
 neutral fill. Selection may use a 3 px radius because its pale accent surface is transient.
 Grow only as required by font metrics.
 
-Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text.secondary`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot centered against visible text using font metrics, canonical game name (or Unassigned) and Keep/Discard/Undefined at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
+Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text.secondary`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot centered against visible text using font metrics, canonical game name (or Unassigned) and Keep/Discard/Pending at 11 px. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for triage and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
 
 Hover uses `surface.hover`; selection uses `accent.selection` plus a 2 px `accent.default` left indicator. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
 
@@ -343,7 +343,7 @@ language as the rest of the application, while the seek/progress role may retain
 Working title, wrapping
 Source filename
 Triage / game / project status
-[Keep] [Discard] [Undefined] [Change game]
+[Keep] [Discard] [Pending] [Change game]
 Rating stars [Clear] [Muted rating hints]                             [Help]
 Structured metadata
 [Description when populated]

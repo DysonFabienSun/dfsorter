@@ -28,7 +28,7 @@ def validate(clips, registry):
         if clip["triage"] == "discard":
             continue
         if clip["triage"] is None:
-            reasons.append("triage is undefined")
+            reasons.append("verdict is pending")
         else:
             game = registry.game(clip["game"])
             if not game:

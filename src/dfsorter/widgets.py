@@ -204,7 +204,7 @@ class ClipDelegate(QStyledItemDelegate):
         painter.setFont(detail_font)
         verdict = data.get("triage")
         warning = " · Unavailable" if data.get("unavailable") else ""
-        status = f" · {(verdict or 'undefined').capitalize()}"
+        status = f" · {(verdict or 'pending').capitalize()}"
         reserved = detail_metrics.horizontalAdvance(status + warning)
         game = detail_metrics.elidedText(
             data.get("game") or "Unassigned",

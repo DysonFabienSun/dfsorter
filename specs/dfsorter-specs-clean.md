@@ -302,7 +302,7 @@ Each clip may store one optional non-destructive In/Out range.
 - The range is stored as source-relative time and shown on the player's progress display.
 - Opening a clip in any panel places the paused playhead at its saved In point when `0 <= In < Out <= duration`; otherwise it starts 40 seconds before the end by default, clamped to zero for shorter clips. Settings → General allows disabling this behavior (start at zero) and configuring the offset from 1 to 86400 seconds. Preferences persist across restarts and apply on the next clip load. Apply the position as soon as media loading permits seeking.
 - Pending In and Out points are shown distinctly on the timeline. Commit a pair only when both endpoints are present and In precedes Out; otherwise preserve the last valid stored range. Repeatedly setting either endpoint updates that pending point.
-- An incomplete or invalid pending range blocks switching clips through list selection, previous/next controls, arrow shortcuts, Next undefined, verdict-and-advance and Add to project + Next. Block panel changes, session creation/replacement and ending the session as well, before changing verdicts, project membership or session state. Explain which endpoint needs correction and offer Clear range through the existing control. A blocked mouse selection restores the current clip selection. Completing the pair or clearing the range releases the block; explicit metadata reset also clears pending markers.
+- An incomplete or invalid pending range blocks switching clips through list selection, previous/next controls, arrow shortcuts, Next pending, verdict-and-advance and Add to project + Next. Block panel changes, session creation/replacement and ending the session as well, before changing verdicts, project membership or session state. Explain which endpoint needs correction and offer Clear range through the existing control. A blocked mouse selection restores the current clip selection. Completing the pair or clearing the range releases the block; explicit metadata reset also clears pending markers.
 - In/Out points never trim or rewrite the source video.
 - Project Export copies whole videos without exporting In/Out metadata.
 
@@ -364,7 +364,7 @@ The exact content of each pane depends on the active panel.
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
 | Config | Library/reference view | Config placeholder/status | Hidden | Hidden |
 
-The shared library triage filter defaults to Undefined on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; Browse's independent controls, frozen Editing sessions and Export membership are unaffected.
+The shared library triage filter defaults to Pending on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; Browse's independent controls, frozen Editing sessions and Export membership are unaffected.
 
 ### 9.5 Left-Pane Library
 
@@ -414,7 +414,7 @@ Only Browse provides player fullscreen. Its transport-row Fullscreen button or F
 
 Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including every triage state and clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
 
-Browse library cards show capture datetime (local time) and capture-folder name, without triage text. Retain all triage states in results. Show search and a game filter with state independent from Session/Home. Each entry into Browse resets sorting to newest capture first. Select the newest matching clip across the library unless the user manually selected another Browse clip during the current application run; restore that selection when it still matches Browse filters and is visible. If that clip is no longer visible, select the newest matching clip. Remember manual Browse selection only for the current run, independently of Editing Session selection, and scroll the selected card into view. An accessible date-order icon in the library header, where Editing places Next undefined, toggles newest/oldest. Use media capture time with filesystem creation-time fallback and source-path tie-breaking. Previous/next and Up/Down follow visible order without wrapping. Sorting preserves selection; filtering selects the first result when the current clip disappears. Empty results clear the player.
+Browse library cards show capture datetime (local time) and capture-folder name, without triage text. Retain all triage states in results. Show search and a game filter with state independent from Session/Home. Each entry into Browse resets sorting to newest capture first. Select the newest matching clip across the library unless the user manually selected another Browse clip during the current application run; restore that selection when it still matches Browse filters and is visible. If that clip is no longer visible, select the newest matching clip. Remember manual Browse selection only for the current run, independently of Editing Session selection, and scroll the selected card into view. An accessible date-order icon in the library header, where Editing places Next pending, toggles newest/oldest. Use media capture time with filesystem creation-time fallback and source-path tie-breaking. Previous/next and Up/Down follow visible order without wrapping. Sorting preserves selection; filtering selects the first result when the current clip disappears. Empty results clear the player.
 
 Show only working title and filename below the player, followed by an always-visible Share panel. Browse working titles use the same font, sizes, and rich-text styling as Editing, with a square red trash icon to the right for Delete source…. The output folder input has a fixed width of 480 px. Put output folder, its picker, and the 140 px Share mode selector on one row. Size the custom title input to that entire row so its right edge aligns with the Share selector. Separate titles from the form with a subtle horizontal divider; retain a 10 px gap before the I/O status. Use shared grid columns to align input edges. Hide editing metadata, command/session controls and Projects. Disable catalogue undo/redo and mutating settings actions in Browse; text fields retain normal undo/redo. Keep transport, seeking, volume, mute, hold-Space fast-forward and I/O shortcuts, without consuming text-field typing.
 
@@ -534,13 +534,13 @@ Once locked, Session membership and ordering do not change because metadata or s
 
 The Session stores the current clip index across application restarts.
 
-While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters. An Editing-only header above the clip list shows **Session clips**, the current numeric position such as **17 / 50**, and a compact icon-only **Next undefined clip** button on the right, with a downward navigation icon and an explanatory tooltip. It jumps to the next undefined clip later in frozen Session order without changing metadata or verdicts, preserving drafts. It does not wrap; if none exists ahead, it stays on the current clip and reports that fact.
+While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters. An Editing-only header above the clip list shows **Session clips**, the current numeric position such as **17 / 50**, and a compact icon-only **Next pending clip** button on the right, with a downward navigation icon and an explanatory tooltip. It jumps to the next pending clip later in frozen Session order without changing metadata or verdicts, preserving drafts. It does not wrap; if none exists ahead, it stays on the current clip and reports that fact.
 
 The Session view should display progress and the proportions/counts of:
 
 - Keep;
 - Discard;
-- Undefined.
+- Pending.
 
 Clip metadata in the Session list may be refreshed only at stable interaction boundaries such as explicit clip navigation or panel navigation, rather than continuously while the user is typing, to avoid distracting list movement.
 
@@ -707,12 +707,12 @@ This command history exists only in memory and does not persist across applicati
 - A successful metadata command by itself does **not** change triage.
 - For a non-discarded clip, Shift+Enter requires a configured game and at least one populated structured metadata field or `mainline`. Missing metadata leaves verdict and position unchanged and is explained inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. Source availability remains an export requirement.
 - An explicitly discarded clip advances while preserving Discard, even with missing fields, no game or an unavailable source. The empty-command-bar requirement still applies.
-- After applying the legal verdict, advance to the next clip with undefined triage later in frozen Session order, skipping Keep and Discard clips. Do not wrap. If none remains ahead, stay on the current clip and report Session complete only if no Session clips remain undefined; otherwise report that earlier clips remain undefined. Do not delete or replace the Session. Ignore key auto-repeat for advancement.
+- After applying the legal verdict, advance to the next clip with pending triage later in frozen Session order, skipping Keep and Discard clips. Do not wrap. If none remains ahead, stay on the current clip and report Session complete only if no Session clips remain pending; otherwise report that earlier clips remain pending. Do not delete or replace the Session. Ignore key auto-repeat for advancement.
 - Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
 - Backspace does not automatically advance; the user may then use `Shift+Enter` or ordinary navigation to continue.
 - Immediately after Backspace rejects a clip in review mode, the next non-modifier Enter also applies verdict-and-advance once. Any other key, mouse action or clip change cancels this opportunity.
 - Rating never changes triage.
-- Clicking the visible triage controls may also set Keep/Discard/Undefined directly.
+- Clicking the visible triage controls may also set Keep/Discard/Pending directly. Pending clears the stored verdict.
 
 ### 13.7 Rating
 
@@ -823,7 +823,7 @@ For a Project Export:
 
 - `keep` clips are candidates for export;
 - `discard` clips are ignored;
-- any clip with undefined triage blocks the entire export;
+- any clip with pending triage blocks the entire export;
 - any kept clip with no structured metadata field and no `mainline` blocks the entire export;
 - any kept clip whose source file is unavailable blocks the entire export.
 

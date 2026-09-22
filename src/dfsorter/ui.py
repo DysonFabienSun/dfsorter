@@ -237,9 +237,9 @@ class Window(QMainWindow):
         role(self.filters, "transparent")
         self.triage_filter = QComboBox()
         self.triage_filter.addItems(
-            ["Hide discarded", "All triage", "Undefined", "Keep", "Discard"]
+            ["Hide discarded", "All triage", "Pending", "Keep", "Discard"]
         )
-        self.triage_filter.setCurrentText("Undefined")
+        self.triage_filter.setCurrentText("Pending")
         self.game_filter = QComboBox()
         self.project_filter = QComboBox()
         self.sort = QComboBox()
@@ -291,7 +291,7 @@ class Window(QMainWindow):
         session_header_layout.addStretch()
         self.next_undefined_button = tool(
             "list-todo",
-            "Next undefined clip · Jump ahead without changing verdicts (no wrap)",
+            "Next pending clip · Jump ahead without changing verdicts (no wrap)",
             self.navigate_next_undefined,
         )
         self.next_undefined_button.setProperty("sessionAction", True)
@@ -383,7 +383,7 @@ class Window(QMainWindow):
         self.command_history.hide()
         command_layout.addWidget(self.command_history)
         self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Undefined · Ctrl+Enter Add to project + Next · ? Shortcuts"
+            "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Pending · Ctrl+Enter Add to project + Next · ? Shortcuts"
         )
         role(self.shortcut_hint, "helper")
         self.shortcut_hint.setWordWrap(True)
@@ -636,10 +636,12 @@ class Window(QMainWindow):
         editing.addWidget(self.clip_status)
         triage = QHBoxLayout()
         self.triage_buttons = {}
-        for text, state in [("Keep", "keep"), ("Discard", "discard"), ("Undefined", None)]:
+        for text, state in [("Keep", "keep"), ("Discard", "discard"), ("Pending", None)]:
             control = button(text, lambda checked=False, state=state: self.edit({"triage": state}))
             control.setCheckable(True)
             role(control, state or "undefined")
+            if state is None:
+                control.setToolTip("Clear verdict and mark as pending")
             self.triage_buttons[state] = control
             triage.addWidget(control)
         triage.addWidget(button("Change game", self.change_game))
@@ -1188,7 +1190,8 @@ class Window(QMainWindow):
             self.session_status.setText(
                 f"Position {session['index'] + 1} / {total}\n"
                 + "\n".join(
-                    f"{state}: {counts[state]} ({counts[state] / total:.0%})"
+                    f"{'pending' if state == 'undefined' else state}: "
+                    f"{counts[state]} ({counts[state] / total:.0%})"
                     for state in ["keep", "discard", "undefined"]
                 )
             )
@@ -1231,7 +1234,7 @@ class Window(QMainWindow):
             )
             browse_details = f"{captured} · {folder_name}"
         details = (
-            browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'undefined'}"
+            browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'pending'}"
         )
         item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])
@@ -1335,7 +1338,7 @@ class Window(QMainWindow):
                 if triage == "Hide discarded" and not requests_discarded(self.search.text()):
                     clips = [clip for clip in clips if clip["triage"] != "discard"]
                 elif triage not in {"All triage", "Hide discarded"}:
-                    expected = None if triage == "Undefined" else triage.casefold()
+                    expected = None if triage == "Pending" else triage.casefold()
                     clips = [clip for clip in clips if clip["triage"] == expected]
                 game = self.game_filter.currentData()
                 if game is not None:
@@ -1538,7 +1541,7 @@ class Window(QMainWindow):
             if project["project_id"] in member_ids
         ]
         self.clip_status.setText(
-            f"{clip['triage'] or 'Undefined'} | {clip['game'] or 'No game'} | Projects: {', '.join(names) or 'None'}"
+            f"{clip['triage'] or 'Pending'} | {clip['game'] or 'No game'} | Projects: {', '.join(names) or 'None'}"
         )
         self.rating.value = clip["rating"]
         self.rating.preview = None
@@ -1735,9 +1738,9 @@ class Window(QMainWindow):
                     self.render_card(item, clips[self.current_id])
                 unfinished = any(clips[clip_id]["triage"] is None for clip_id in session["ids"])
                 message = (
-                    "No undefined clips ahead — earlier Session clips remain undefined."
+                    "No pending clips ahead — earlier Session clips remain pending."
                     if unfinished
-                    else "Session complete — no undefined clips remain."
+                    else "Session complete — no pending clips remain."
                 )
                 self.statusBar().showMessage(message, 12000)
             self.review_mode()
@@ -1760,7 +1763,7 @@ class Window(QMainWindow):
         if next_id is not None:
             self.switch_editing_clip(next_id)
         else:
-            self.statusBar().showMessage("No undefined clips ahead in this session.", 12000)
+            self.statusBar().showMessage("No pending clips ahead in this session.", 12000)
 
     def navigate(self, offset):
         if self.current_panel == "Browse":
@@ -1945,7 +1948,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Undefined (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def eventFilter(self, watched: QObject, event):
