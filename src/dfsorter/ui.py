@@ -68,6 +68,7 @@ from .theme import COLORS, SIZES, apply_theme, resolved_scheme, role, title_styl
 from .widgets import (
     CLIP_ROLE,
     ClipDelegate,
+    ClipScrollFade,
     Rating,
     icon,
     refresh_icons,
@@ -279,9 +280,12 @@ class Window(QMainWindow):
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
         session_header_layout.setContentsMargins(8, 0, 5, 0)
-        session_heading = QLabel("Session clips")
-        role(session_heading, "paneHeading")
-        session_header_layout.addWidget(session_heading)
+        self.session_heading = QLabel("Session clips")
+        role(self.session_heading, "paneHeading")
+        session_header_layout.addWidget(self.session_heading)
+        self.session_position = QLabel()
+        role(self.session_position, "secondary")
+        session_header_layout.addWidget(self.session_position)
         session_header_layout.addStretch()
         self.next_undefined_button = tool(
             "list-todo",
@@ -300,6 +304,15 @@ class Window(QMainWindow):
         self.library.setItemDelegate(ClipDelegate(self.library))
         self.library.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.library.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.library_top_fade = ClipScrollFade("top", self.library.viewport())
+        self.library_top_fade.setObjectName("clipScrollTopFade")
+        self.library_bottom_fade = ClipScrollFade("bottom", self.library.viewport())
+        self.library_bottom_fade.setObjectName("clipScrollBottomFade")
+        self.library_top_fade.hide()
+        self.library_bottom_fade.hide()
+        scrollbar = self.library.verticalScrollBar()
+        scrollbar.rangeChanged.connect(self.update_library_scroll_fades)
+        scrollbar.valueChanged.connect(self.update_library_scroll_fades)
         self.library.currentItemChanged.connect(self.select_clip)
         left_layout.addWidget(self.library, 1)
         self.session_counts = QLabel()
@@ -958,8 +971,6 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
-        if hasattr(self, "library"):
-            QTimer.singleShot(0, self.position_selected_clip)
 
     def panel(self, name):
         if not self.ensure_range_complete():
@@ -1010,7 +1021,6 @@ class Window(QMainWindow):
         self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
         self.refresh_library()
-        QTimer.singleShot(0, self.position_selected_clip)
         if name == "Editing":
             session = self.catalogue.state("session")
             self.load_clip(session["ids"][session["index"]])
@@ -1135,6 +1145,7 @@ class Window(QMainWindow):
         if session:
             counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
             total = len(session["ids"])
+            self.session_position.setText(f"{session['index'] + 1} / {total}")
             self.session_counts.setText(
                 f"{counts['keep'] + counts['discard']}/{total} ({counts['discard']} rejected)"
             )
@@ -1146,6 +1157,7 @@ class Window(QMainWindow):
                 )
             )
         else:
+            self.session_position.clear()
             self.session_counts.clear()
             self.session_status.setText(
                 "No active session. Filter and select clips in the library."
@@ -1236,21 +1248,24 @@ class Window(QMainWindow):
         self.browse.player.previous_button.setEnabled(row > 0)
         self.browse.player.next_button.setEnabled(0 <= row < self.library.count() - 1)
 
-    def position_selected_clip(self):
-        row = self.library.currentRow()
-        if row < 0:
-            return
-        self.library.doItemsLayout()
-        scrollbar = self.library.verticalScrollBar()
-        offset = scrollbar.value()
-        anchor = self.library.item(max(0, row - 1))
-        target = self.library.visualItemRect(anchor).top() + offset
-        last = self.library.visualItemRect(self.library.item(self.library.count() - 1))
-        content_bottom = last.bottom() + offset + 1
-        natural_maximum = max(0, content_bottom - self.library.viewport().height())
-        # Allow trailing blank space so even the final clip can occupy row two.
-        scrollbar.setMaximum(max(natural_maximum, target))
-        scrollbar.setValue(target)
+    def update_library_scroll_fades(self, *_args):
+        viewport = self.library.viewport()
+        fade_height = 16
+        self.library_top_fade.setGeometry(0, 0, viewport.width(), fade_height)
+        self.library_bottom_fade.setGeometry(
+            0, max(0, viewport.height() - fade_height), viewport.width(), fade_height
+        )
+        first = self.library.item(0)
+        last = self.library.item(self.library.count() - 1)
+        self.library_top_fade.setVisible(
+            first is not None and self.library.visualItemRect(first).top() < 0
+        )
+        self.library_bottom_fade.setVisible(
+            last is not None
+            and self.library.visualItemRect(last).bottom() > viewport.rect().bottom()
+        )
+        self.library_top_fade.raise_()
+        self.library_bottom_fade.raise_()
 
     def refresh_library(self):
         self.update_history_controls()
@@ -1356,7 +1371,6 @@ class Window(QMainWindow):
                     break
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
-            self.position_selected_clip()
             if self.current_panel == "Browse":
                 self.browse_id = current
                 self.browse.load(self.catalogue.clip(current) if current else None)
@@ -1381,7 +1395,6 @@ class Window(QMainWindow):
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
-        self.position_selected_clip()
 
     def switch_editing_clip(self, clip_id):
         if clip_id == self.current_id:
@@ -1406,7 +1419,6 @@ class Window(QMainWindow):
                 self.library.blockSignals(True)
                 self.library.setCurrentItem(item)
                 self.library.blockSignals(False)
-                self.position_selected_clip()
         self.refresh_session_status()
         self.begin_page_transition("clip")
         self.load_clip(clip_id)
@@ -1903,6 +1915,12 @@ class Window(QMainWindow):
     def eventFilter(self, watched: QObject, event):
         if event.type() == QEvent.Type.ApplicationActivate:
             self.request_auto_scan()
+        if (
+            event.type() == QEvent.Type.Resize
+            and hasattr(self, "library")
+            and watched is self.library.viewport()
+        ):
+            self.update_library_scroll_fades()
         if (
             event.type() in {QEvent.Type.Resize, QEvent.Type.Move}
             and watched in (self.center, self.command_area)

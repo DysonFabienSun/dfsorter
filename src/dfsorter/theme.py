@@ -237,6 +237,7 @@ def stylesheet():
         QPushButton#navigation:disabled { background: transparent; color: %(text_disabled)s; border-bottom-color: transparent; }
         QListWidget { background: %(surface_workspace)s; border: none; padding: 4px; outline: none; }
         QListWidget#clipLibrary { padding: 0px; }
+        QWidget#clipScrollTopFade, QWidget#clipScrollBottomFade { background: transparent; border: none; }
         QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
         QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
         QListWidget::item { padding: 2px 4px; }

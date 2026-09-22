@@ -3,7 +3,16 @@ from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPixmap, QTextDocument, QTextLayout
+from PySide6.QtGui import (
+    QColor,
+    QFontMetrics,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPixmap,
+    QTextDocument,
+    QTextLayout,
+)
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QStyle, QStyledItemDelegate, QToolButton, QWidget
 
@@ -11,6 +20,28 @@ from .theme import COLORS, SIZES, font
 
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
+class ClipScrollFade(QWidget):
+    def __init__(self, edge, parent=None):
+        super().__init__(parent)
+        self.edge = edge
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, event):
+        color = QColor(COLORS["surface_sidebar"])
+        transparent = QColor(color)
+        transparent.setAlpha(0)
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        if self.edge == "top":
+            gradient.setColorAt(0, color)
+            gradient.setColorAt(1, transparent)
+        else:
+            gradient.setColorAt(0, transparent)
+            gradient.setColorAt(1, color)
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), gradient)
 
 
 def tag_prefix(clip, rich=False):
