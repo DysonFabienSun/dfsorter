@@ -67,6 +67,8 @@ from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, resolved_scheme, role, title_styles
 from .widgets import (
     CLIP_ROLE,
+    FOLDER_ROLE,
+    CaptureFolderDelegate,
     ClipDelegate,
     ClipScrollFade,
     Rating,
@@ -494,17 +496,21 @@ class Window(QMainWindow):
         role(home_title, "heading")
         home.addWidget(home_title)
         explanation = QLabel(
-            "Add folders containing recordings. Rescan finds new clips; original files stay untouched."
+            "Add folders containing recordings. Rescans discover new clips; source media is never modified."
         )
         explanation.setWordWrap(True)
         role(explanation, "secondary")
         home.addWidget(explanation)
+        self.folder_summary = QLabel()
+        role(self.folder_summary, "secondary")
+        home.addWidget(self.folder_summary)
         folder_controls = QHBoxLayout()
         self.add_folder_button = button("Add folder…", self.add_folder)
-        self.add_folder_button.setIcon(icon("folder-plus"))
+        role(self.add_folder_button, "prominentNeutral")
+        set_icon(self.add_folder_button, "folder-plus")
         folder_controls.addWidget(self.add_folder_button)
         self.rescan_button = button("Rescan", self.rescan)
-        self.rescan_button.setIcon(icon("refresh-cw"))
+        set_icon(self.rescan_button, "refresh-cw")
         self.rescan_button.setToolTip(
             "Find new files in all enabled folders. Reuse cached media information for unchanged files."
         )
@@ -512,6 +518,8 @@ class Window(QMainWindow):
         self.folder_more = QToolButton()
         self.folder_more.setObjectName("captureFolderMenuButton")
         self.folder_more.setText("More…")
+        set_icon(self.folder_more, "ellipsis")
+        self.folder_more.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.folder_menu = QMenu(self.folder_more)
         self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
         self.folder_toggle_action.setToolTip(
@@ -534,6 +542,7 @@ class Window(QMainWindow):
         home.addLayout(folder_controls)
         self.folders = QListWidget()
         self.folders.setProperty("contentSurface", "secondary")
+        self.folders.setItemDelegate(CaptureFolderDelegate(self.folders))
         self.folders.setMinimumHeight(120)
         self.folders.setWordWrap(True)
         self.folder_context_menu = QMenu(self.folders)
@@ -543,9 +552,9 @@ class Window(QMainWindow):
         self.folders.customContextMenuRequested.connect(self.show_folder_context_menu)
         home.addWidget(self.folders, 1)
         note = QLabel(
-            "Right-click a folder to pause or resume scanning; select More for other actions. "
-            "Paused folders stay in the library but are excluded "
-            "from new sessions. Unlinked clips are saved entries from folders no longer tracked."
+            "Right-click a folder to pause or resume scanning; select More for other actions.\n"
+            "Paused folders remain in the library but are excluded from new sessions. "
+            "Unlinked clips are saved entries from folders no longer tracked."
         )
         note.setWordWrap(True)
         role(note, "muted")
@@ -1085,7 +1094,9 @@ class Window(QMainWindow):
         folder_selection = self.selected_id(self.folders)
         self.folders.clear()
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
-        for folder in self.catalogue.folders():
+        folders = self.catalogue.folders()
+        linked_clip_count = 0
+        for folder in folders:
             ids = [
                 row["clip_id"]
                 for row in self.catalogue.rows(
@@ -1103,14 +1114,26 @@ class Window(QMainWindow):
                 if durations
                 else "unavailable until scanned"
             )
+            linked_clip_count += len(ids)
             text = f"{folder['path']}\n"
-            games = ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
-            text += (
-                f"{'Scanning on' if folder['enabled'] else 'Scanning paused'} · {len(ids)} clips\n"
+            games = "   ".join(
+                f"{name} {count}"
+                for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
             )
-            text += f"{games or 'No detected games'}\nAverage {average}"
+            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · Avg {average}\n"
+            text += games or "No detected games"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
+            item.setData(
+                FOLDER_ROLE,
+                {
+                    "path": folder["path"],
+                    "status": "Enabled" if folder["enabled"] else "Paused",
+                    "enabled": bool(folder["enabled"]),
+                    "summary": f"{len(ids)} clips · Avg {average}",
+                    "details": games or "No detected games",
+                },
+            )
             self.folders.addItem(item)
             if folder["folder_id"] == folder_selection:
                 self.folders.setCurrentItem(item)
@@ -1121,6 +1144,14 @@ class Window(QMainWindow):
                 "Select More → Remove saved entries… to review"
             )
             item.setData(Qt.ItemDataRole.UserRole, "__unlinked__")
+            item.setData(
+                FOLDER_ROLE,
+                {
+                    "path": "Unlinked catalogue clips",
+                    "summary": f"{len(unlinked)} clips from removed folders",
+                    "details": "Select More → Remove saved entries… to review",
+                },
+            )
             item.setToolTip(
                 "\n".join(sorted({str(Path(clip["source_path"]).parent) for clip in unlinked}))
             )
@@ -1129,6 +1160,11 @@ class Window(QMainWindow):
                 self.folders.setCurrentItem(item)
         if self.folders.count() == 1 and self.folders.currentRow() < 0:
             self.folders.setCurrentRow(0)
+        folder_word = "folder" if len(folders) == 1 else "folders"
+        clip_word = "clip" if linked_clip_count == 1 else "clips"
+        self.folder_summary.setText(
+            f"{len(folders)} {folder_word} · {linked_clip_count} {clip_word}"
+        )
         self.refresh_session_status(clips)
         self.config_status.setPlainText(
             "\n".join(self.registry.errors)

@@ -20,6 +20,7 @@ from .theme import COLORS, SIZES, font
 
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
+FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
 
 
 class ClipScrollFade(QWidget):
@@ -243,6 +244,99 @@ class ClipDelegate(QStyledItemDelegate):
         ink = detail_metrics.tightBoundingRect(text)
         center_y = baseline + ink.y() + ink.height() / 2
         painter.drawEllipse(QPointF(area.left() + 3, center_y), 3, 3)
+        painter.restore()
+
+
+class CaptureFolderDelegate(QStyledItemDelegate):
+    def sizeHint(self, option, index):
+        path_height = QFontMetrics(font("md", "semibold", base=option.font)).height()
+        summary_height = QFontMetrics(font("sm", base=option.font)).height()
+        detail_height = QFontMetrics(font("xs", base=option.font)).height()
+        return QSize(100, path_height + summary_height + detail_height + 22)
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        data = index.data(FOLDER_ROLE) or {}
+        row = option.rect.adjusted(1, 1, -1, -1)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
+        if selected or hovered:
+            painter.setBrush(QColor(COLORS["accent_selection" if selected else "surface_hover"]))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(row, 3, 3)
+        else:
+            painter.setPen(QColor(COLORS["border_subtle"]))
+            painter.drawLine(row.left() + 8, row.bottom(), row.right() - 8, row.bottom())
+        if focused:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QColor(COLORS["focus"]))
+            painter.drawRoundedRect(row, 3, 3)
+        if selected:
+            painter.fillRect(
+                row.left() + 1,
+                row.top() + 5,
+                2,
+                row.height() - 10,
+                QColor(COLORS["accent_default"]),
+            )
+
+        left = row.left() + 10
+        right = row.right() - 10
+        path_font = font("md", "semibold", base=option.font)
+        summary_font = font("sm", base=option.font)
+        detail_font = font("xs", base=option.font)
+        path_metrics = QFontMetrics(path_font)
+        summary_metrics = QFontMetrics(summary_font)
+        detail_metrics = QFontMetrics(detail_font)
+        top = row.top() + 6
+
+        status = data.get("status", "")
+        status_width = summary_metrics.horizontalAdvance(status)
+        dot_width = 14 if status else 0
+        status_rect = QRect(right - status_width, top, status_width, path_metrics.height())
+        painter.setFont(summary_font)
+        painter.setPen(QColor(COLORS["text_secondary"]))
+        painter.drawText(status_rect, Qt.AlignmentFlag.AlignVCenter, status)
+        if status:
+            dot_color = "status_success" if data.get("enabled") else "status_warning"
+            painter.setBrush(QColor(COLORS[dot_color]))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(status_rect.left() - 8, status_rect.center().y()), 3, 3)
+
+        path_width = max(0, right - left - status_width - dot_width - 8)
+        path = path_metrics.elidedText(
+            data.get("path", str(index.data())), Qt.TextElideMode.ElideMiddle, path_width
+        )
+        painter.setFont(path_font)
+        painter.setPen(QColor(COLORS["text_primary"]))
+        painter.drawText(
+            QRect(left, top, path_width, path_metrics.height()),
+            Qt.AlignmentFlag.AlignVCenter,
+            path,
+        )
+
+        summary_top = top + path_metrics.height() + 2
+        painter.setFont(summary_font)
+        painter.setPen(QColor(COLORS["text_secondary"]))
+        painter.drawText(
+            QRect(left, summary_top, right - left, summary_metrics.height()),
+            Qt.AlignmentFlag.AlignVCenter,
+            summary_metrics.elidedText(
+                data.get("summary", ""), Qt.TextElideMode.ElideRight, right - left
+            ),
+        )
+        detail_top = summary_top + summary_metrics.height() + 2
+        painter.setFont(detail_font)
+        painter.setPen(QColor(COLORS["text_muted"]))
+        painter.drawText(
+            QRect(left, detail_top, right - left, detail_metrics.height()),
+            Qt.AlignmentFlag.AlignVCenter,
+            detail_metrics.elidedText(
+                data.get("details", ""), Qt.TextElideMode.ElideRight, right - left
+            ),
+        )
         painter.restore()
 
 

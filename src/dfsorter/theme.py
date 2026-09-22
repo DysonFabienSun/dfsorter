@@ -220,6 +220,7 @@ def stylesheet():
         QPushButton[role="primary"] { background: %(accent_default)s; color: %(text_inverse)s; border-color: %(accent_default)s; font-weight: 600; }
         QPushButton[role="primary"]:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; }
         QPushButton[role="primary"]:pressed { background: %(accent_pressed)s; border-color: %(accent_pressed)s; }
+        QPushButton[role="prominentNeutral"] { border-color: %(border_default)s; font-weight: 600; }
         QPushButton[role="danger"], QToolButton[role="danger"] { color: %(status_danger)s; border-color: %(border_default)s; background: %(status_danger_soft)s; }
         QPushButton[role="danger"]:hover, QToolButton[role="danger"]:hover { color: %(status_danger_hover)s; border-color: %(status_danger)s; }
         QPushButton[role="keep"]:checked { background: %(status_success_soft)s; color: %(status_success)s; border-color: %(status_success)s; }

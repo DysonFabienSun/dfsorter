@@ -19,8 +19,9 @@ from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
+from dfsorter.theme import FONT_SIZES
 from dfsorter.ui import ROOT, Window, style_application
-from dfsorter.widgets import CLIP_ROLE
+from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate
 
 
 @pytest.fixture(scope="module")
@@ -417,7 +418,9 @@ def test_home_folder_context_toggle(window, application, tmp_path, enabled):
     assert folders[other]["enabled"]
     assert window.catalogue.clip(ids[0]) is not None
     assert window.catalogue.state("session") == session
-    assert ("Scanning paused" if enabled else "Scanning on") in window.folders.currentItem().text()
+    assert window.folders.currentItem().data(FOLDER_ROLE)["status"] == (
+        "Paused" if enabled else "Enabled"
+    )
 
 
 def test_home_folder_context_guards(window, application, tmp_path):
@@ -439,6 +442,61 @@ def test_home_folder_context_guards(window, application, tmp_path):
     item.setData(Qt.ItemDataRole.UserRole, "__unlinked__")
     window.folders.customContextMenuRequested.emit(position)
     assert not menu.isVisible()
+
+
+def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
+    first = tmp_path / "MEDAL-EXP"
+    second = tmp_path / "NVIDIA"
+    first.mkdir()
+    second.mkdir()
+    first_id = window.catalogue.add_folder(first)
+    second_id = window.catalogue.add_folder(second)
+    window.catalogue.ingest(
+        first_id,
+        [
+            {"path": str(first / "valorant-1.mp4"), "game": "VALORANT"},
+            {"path": str(first / "valorant-2.mp4"), "game": "VALORANT"},
+            {"path": str(first / "eft.mp4"), "game": "Escape from Tarkov"},
+        ],
+    )
+    window.catalogue.ingest(
+        second_id,
+        [{"path": str(second / "unknown.mp4"), "game": None}],
+    )
+    window.catalogue.enable_folder(second_id, False)
+    for index, clip in enumerate(window.catalogue.clips(), start=1):
+        window.media_info[clip["source_path"]] = {"duration": float(index * 10)}
+    window.refresh_references()
+    window.panel("Home")
+    application.processEvents()
+
+    assert isinstance(window.folders.itemDelegate(), CaptureFolderDelegate)
+    assert window.folder_summary.text() == "2 folders · 4 clips"
+    assert window.folder_more.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    items = {
+        window.folders.item(row).data(Qt.ItemDataRole.UserRole): window.folders.item(row)
+        for row in range(window.folders.count())
+    }
+    first_data = items[first_id].data(FOLDER_ROLE)
+    second_data = items[second_id].data(FOLDER_ROLE)
+    assert first_data == {
+        "path": str(first),
+        "status": "Enabled",
+        "enabled": True,
+        "summary": "3 clips · Avg 20.0s",
+        "details": "VALORANT 2   Escape from Tarkov 1",
+    }
+    assert second_data["status"] == "Paused"
+    assert second_data["details"] == "Unknown 1"
+    assert (FONT_SIZES["md"], FONT_SIZES["sm"], FONT_SIZES["xs"]) == (13, 12, 11)
+
+    artifact = ROOT / "cache/verification/home-folders"
+    artifact.mkdir(parents=True, exist_ok=True)
+    window.resize(1100, 720)
+    window.grab().save(str(artifact / "hierarchy-light.png"))
+    window.set_theme("dark")
+    application.processEvents()
+    window.grab().save(str(artifact / "hierarchy-dark.png"))
 
 
 def test_home_removes_folder_entries_after_confirmation(window, application, tmp_path, monkeypatch):
