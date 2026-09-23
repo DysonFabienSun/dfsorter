@@ -518,9 +518,6 @@ class Window(QMainWindow):
         self.command_saved_timer.setSingleShot(True)
         self.command_saved_timer.setInterval(1200)
         self.command_saved_timer.timeout.connect(self.update_command_state)
-        self.rating_preview_timer = QTimer(self)
-        self.rating_preview_timer.setInterval(650)
-        self.rating_preview_timer.timeout.connect(self.toggle_rating_preview)
         command_layout.addWidget(self.command)
         self.command_feedback = QLabel()
         self.command_feedback.setTextFormat(Qt.TextFormat.PlainText)
@@ -1285,7 +1282,6 @@ class Window(QMainWindow):
         self.current_panel = name
         self.reject_enter_armed = False
         if name != "Editing":
-            self.rating_preview_timer.stop()
             self.rating.command_preview = None
             self.rating.update()
         self.center.setCurrentWidget(self.pages[name][0])
@@ -2200,12 +2196,7 @@ class Window(QMainWindow):
         )
         if self.rating.command_preview != rating:
             self.rating.command_preview = rating
-            self.rating.command_flash = rating is not None
             self.rating.update()
-        if rating is None:
-            self.rating_preview_timer.stop()
-        elif not self.rating_preview_timer.isActive():
-            self.rating_preview_timer.start()
         self.rating_clear.setEnabled(rating is None)
         self.rating_clear.setIcon(icon("x" if rating is None else "clock"))
         self.rating_clear.setToolTip(
@@ -2229,10 +2220,6 @@ class Window(QMainWindow):
             self.command.style().unpolish(self.command)
             self.command.style().polish(self.command)
             self.command.update()
-
-    def toggle_rating_preview(self):
-        self.rating.command_flash = not self.rating.command_flash
-        self.rating.update()
 
     def review_mode(self):
         self.submit_resume = False

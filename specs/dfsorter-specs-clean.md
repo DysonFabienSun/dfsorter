@@ -734,7 +734,7 @@ R5
 
 The parser is case-insensitive.
 
-The Editing panel displays the stored rating as a clickable 1-5 star control. The adjacent `x` action and right-click clear the rating. A fully valid command draft containing `R1`–`R5` previews faded yellow stars with a slow pulse and temporarily replaces `x` with a disabled clock. Muted lowercase hints beside the stars read `r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic`.
+The Editing panel displays the stored rating as a clickable 1-5 star control. The adjacent `x` action and right-click clear the rating. A fully valid command draft containing `R1`–`R5` previews static dull-yellow stars and temporarily replaces `x` with a disabled clock. Muted lowercase hints beside the stars read `r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic`.
 
 Rating is reference metadata only. It does not automatically Keep, Discard, or prioritize a clip and is not included in ordinary search/filter functionality.
 

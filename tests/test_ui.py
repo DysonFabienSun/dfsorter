@@ -1048,7 +1048,7 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     assert window.rating_clear.isEnabled()
     window.command.setText("[3rd] R4")
     window.panel("Session")
-    assert not window.rating_preview_timer.isActive()
+    assert window.rating.command_preview is None
     window.panel("Editing")
     assert window.rating.command_preview == 4
     window.submit()

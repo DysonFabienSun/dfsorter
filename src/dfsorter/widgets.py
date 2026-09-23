@@ -404,7 +404,6 @@ class Rating(QWidget):
         self.value = None
         self.preview = None
         self.command_preview = None
-        self.command_flash = False
         self.step = SIZES["rating"] + SIZES["rating_gap"]
         self.setFixedSize(self.step * 5, SIZES["normal"])
         self.setMouseTracking(True)
@@ -423,7 +422,7 @@ class Rating(QWidget):
             color = "rating_hover" if self.preview is not None else "rating_filled"
             tint = COLORS[color if position < value else "rating_empty"]
             if pending and position < value:
-                tint = COLORS["rating_pending_high" if self.command_flash else "rating_pending_low"]
+                tint = COLORS["rating_pending_low"]
             icon(
                 "star",
                 tint,

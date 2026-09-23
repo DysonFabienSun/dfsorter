@@ -130,7 +130,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `component.scrollbar` | `#3A424D` | Neutral scrollbar thumb |
 | `component.tooltip` | `#11151A` | Tooltip surface |
 
-Both palettes additionally derive pending-rating low/high values and a scrollbar-hover value
+Both palettes additionally derive pending-rating values and a scrollbar-hover value
 from their adjacent semantic roles. Populated tags use the rating/gold family, not the main
 accent. Working-title metadata uses `text.secondary`; it must not have a theme-specific hard-
 coded color.
@@ -202,7 +202,7 @@ input, theme switching or navigation.
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Pending uses pressed-surface/strong-border/secondary-text.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
-- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows a faded gold pulse and disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
+- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows static dull-yellow stars and a disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
 - Metadata-style clip lists show game, an optional bold `R1`–`R5` label, capture-folder name and verdict in that order. Rating uses the theme's five-step low-to-high scale; unrated clips omit that segment. Elide long folder names in the middle before they crowd out the other fields. Browse retains capture time and folder on its second line instead.
 - Video is black. Use a **7 px timeline groove** with a larger hit area, pale teal remainder and strong teal elapsed section/playhead. Use focus-cyan saved I/O markers and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). The volume slider uses an 18 px widget height, 3 px groove, 10 px handle, quiet teal remainder and medium-teal level; center it optically with the volume icon and time text. Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
