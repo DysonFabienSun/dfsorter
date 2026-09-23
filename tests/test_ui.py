@@ -133,6 +133,7 @@ def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     window.save_atomic_edit()
     application.processEvents()
     assert window.current_panel == "Home"
+    assert window.selected_id(window.library) == ids[1]
     assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
     assert window.catalogue.state("session") == session
     assert len(window.catalogue.undo_stack) == len(history) + 1
@@ -145,8 +146,52 @@ def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     window.revert_atomic_edit()
     application.processEvents()
     assert window.current_panel == "Browse"
+    assert window.selected_id(window.library) == ids[0]
+    assert window.browse_selected_id == ids[0]
     assert window.catalogue.clip(ids[0])["tag"] is None
     assert window.catalogue.state("session") == session
+
+
+def test_atomic_return_restores_origin_scroll_position(
+    window, application, tmp_path, monkeypatch
+):
+    root = tmp_path / "atomic-scroll"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    paths = [root / f"clip-{index:02}.mp4" for index in range(30)]
+    for path in paths:
+        path.write_bytes(b"video")
+    window.catalogue.ingest(
+        folder, [{"path": str(path), "game": "VALORANT"} for path in paths]
+    )
+    window.refresh_library()
+    application.processEvents()
+    clip_id = window.library.item(15).data(Qt.ItemDataRole.UserRole)
+    scrollbar = window.library.verticalScrollBar()
+    scrollbar.setValue(scrollbar.maximum() // 2)
+    home_scroll = scrollbar.value()
+    assert home_scroll > 0
+
+    window.start_atomic_edit(clip_id, "Home")
+    window.edit({"rating": 4})
+    window.save_atomic_edit()
+    application.processEvents()
+    assert window.current_panel == "Home"
+    assert window.selected_id(window.library) == clip_id
+    assert scrollbar.value() == home_scroll
+
+    window.panel("Browse")
+    application.processEvents()
+    scrollbar.setValue(scrollbar.maximum() // 3)
+    browse_scroll = scrollbar.value()
+    assert browse_scroll > 0
+    window.start_atomic_edit(clip_id, "Browse")
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.revert_atomic_edit()
+    application.processEvents()
+    assert window.current_panel == "Browse"
+    assert window.selected_id(window.library) == clip_id
+    assert scrollbar.value() == browse_scroll
 
 
 def test_atomic_entry_controls_and_context_target(window, application, tmp_path, monkeypatch):

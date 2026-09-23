@@ -91,6 +91,7 @@ class AtomicEditState:
     origin: str
     baseline: tuple
     draft: tuple
+    scroll_position: tuple[int, int]
     history: list[str] = dataclass_field(default_factory=list)
 
 
@@ -1155,7 +1156,14 @@ class Window(QMainWindow):
         baseline = self.catalogue.snapshot(clip_id)
         baseline[1].sort()
         self.atomic_edit = AtomicEditState(
-            clip_id, origin or self.current_panel, baseline, deepcopy(baseline)
+            clip_id,
+            origin or self.current_panel,
+            baseline,
+            deepcopy(baseline),
+            (
+                self.library.horizontalScrollBar().value(),
+                self.library.verticalScrollBar().value(),
+            ),
         )
         self.current_id = clip_id
         self.panel("Editing")
@@ -1188,7 +1196,7 @@ class Window(QMainWindow):
             self.atomic_edit = None
             self.current_id = None
             if return_to_origin:
-                self.panel(origin)
+                self.return_from_atomic_edit(origin, state.clip_id, state.scroll_position)
             return True
         except ValueError as error:
             self.error(error)
@@ -1219,8 +1227,34 @@ class Window(QMainWindow):
     def revert_atomic_edit(self):
         if not self.atomic_edit or not self.confirm_revert_atomic():
             return
+        clip_id = self.atomic_edit.clip_id
+        scroll_position = self.atomic_edit.scroll_position
         origin = self.discard_atomic_edit()
+        self.return_from_atomic_edit(origin, clip_id, scroll_position)
+
+    def return_from_atomic_edit(self, origin, clip_id, scroll_position):
+        if origin == "Browse":
+            self.browse_id = clip_id
+            self.browse_selected_id = clip_id
         self.panel(origin)
+        if self.current_panel != origin or origin not in {"Home", "Browse"}:
+            return
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) != clip_id:
+                continue
+            self.library.blockSignals(True)
+            self.library.clearSelection()
+            self.library.setCurrentItem(item)
+            item.setSelected(True)
+            self.library.blockSignals(False)
+            break
+        QTimer.singleShot(0, lambda: self.restore_library_scroll(scroll_position))
+
+    def restore_library_scroll(self, position):
+        horizontal, vertical = position
+        self.library.horizontalScrollBar().setValue(horizontal)
+        self.library.verticalScrollBar().setValue(vertical)
 
     def panel(self, name):
         if self.atomic_edit and self.current_panel == "Editing" and name != "Editing":
