@@ -60,6 +60,39 @@ def test_folder_case_and_disabled_sessions(catalogue, tmp_path):
     assert video.exists()
 
 
+def test_ingest_backfills_only_missing_game(catalogue, tmp_path):
+    root = tmp_path / "captures"
+    root.mkdir()
+    folder_id = catalogue.add_folder(root)
+    unassigned = root / "unassigned.mp4"
+    assigned = root / "assigned.mp4"
+    unassigned.write_bytes(b"unassigned")
+    assigned.write_bytes(b"assigned")
+    catalogue.ingest(
+        folder_id,
+        [
+            {"path": str(unassigned), "game": None},
+            {"path": str(assigned), "game": "VALORANT"},
+        ],
+    )
+    with catalogue.connection() as database:
+        database.execute("UPDATE clips SET catalogue_modified_at='before-rescan'")
+
+    catalogue.ingest(
+        folder_id,
+        [
+            {"path": str(unassigned), "game": "Counter-strike 2"},
+            {"path": str(assigned), "game": "Counter-strike 2"},
+        ],
+    )
+
+    clips = {Path(clip["source_path"]).name: clip for clip in catalogue.clips()}
+    assert clips["unassigned.mp4"]["game"] == "Counter-strike 2"
+    assert clips["unassigned.mp4"]["catalogue_modified_at"] != "before-rescan"
+    assert clips["assigned.mp4"]["game"] == "VALORANT"
+    assert clips["assigned.mp4"]["catalogue_modified_at"] == "before-rescan"
+
+
 def test_legacy_path_case_migration(catalogue, tmp_path):
     import os
 

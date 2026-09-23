@@ -226,6 +226,12 @@ class Catalogue:
                     + (" COLLATE NOCASE" if os.name == "nt" else ""),
                     (path,),
                 ).fetchone()[0]
+                if item["game"] is not None:
+                    database.execute(
+                        "UPDATE clips SET game=?,catalogue_modified_at=? "
+                        "WHERE clip_id=? AND game IS NULL",
+                        (item["game"], now(), clip_id),
+                    )
                 database.execute("INSERT OR IGNORE INTO sources VALUES (?,?)", (folder_id, clip_id))
             if cancelled():
                 raise InterruptedError("Scan cancelled")
