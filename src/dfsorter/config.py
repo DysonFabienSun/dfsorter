@@ -143,6 +143,18 @@ def has_review_metadata(clip: dict, game: Game) -> bool:
     )
 
 
+def source_fallback(clip: dict, game: Game | None, *, include_suffix: bool = False) -> str:
+    path = Path(clip["source_path"])
+    fallback = path.name if include_suffix else path.stem
+    if not game:
+        return fallback
+    for leading in (game.name, game.code):
+        match = re.match(rf"{re.escape(leading)}(?=$|[\s._-])[\s._-]*", fallback, re.IGNORECASE)
+        if match and match.end() < len(fallback):
+            return fallback[match.end() :]
+    return fallback
+
+
 def title(
     clip: dict,
     registry: Registry,
@@ -193,7 +205,7 @@ def title(
         else:
             parts.append(value)
         previous_key = key
-    fallback = Path(clip["source_path"]).stem
+    fallback = source_fallback(clip, game if prefix else None)
     result = "".join(parts) or (html.escape(fallback) if rich else fallback)
     return (
         styled(html.escape(game.code + "_") if rich else game.code + "_", "prefix") + result

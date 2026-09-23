@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from dfsorter.catalogue import Catalogue, normalized
-from dfsorter.config import Registry, title
+from dfsorter.config import Registry, source_fallback, title
 from dfsorter.media import discover
 from dfsorter.output import copy_one, export_project, safe_stem, share_clip, validate
 from dfsorter.parsing import parse_command, preview_command, query_clips
@@ -662,6 +662,20 @@ def test_generated_title_casing(registry, catalogue, clips, tmp_path, monkeypatc
     assert clip == before == catalogue.clip(clip_id)
     fallback = {**clip, "metadata": {}, "mainline": None, "source_path": "Original NAME.MP4"}
     assert title(fallback, registry, lowercase=lowercase) == "VAL_Original NAME"
+    cs2_fallback = {
+        **fallback,
+        "game": "Counter-strike 2",
+        "source_path": "Counter-strike 2 2026.09.22.DVR.mp4",
+    }
+    assert title(cs2_fallback, registry, lowercase=lowercase) == "CS2_2026.09.22.DVR"
+    cs2_fallback["source_path"] = "cs2_2026.09.22.DVR.mp4"
+    assert title(cs2_fallback, registry, lowercase=lowercase) == "CS2_2026.09.22.DVR"
+    assert source_fallback(
+        cs2_fallback, registry.game("Counter-strike 2"), include_suffix=True
+    ) == "2026.09.22.DVR.mp4"
+    assert title(cs2_fallback, registry, prefix=False, lowercase=lowercase) == (
+        "cs2_2026.09.22.DVR"
+    )
     assert title(clip, registry, selected=["kill"], prefix=False, lowercase=lowercase) == (
         "4k" if lowercase else "4K"
     )

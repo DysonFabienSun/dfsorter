@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
 
 from .browse import BrowsePage
 from .catalogue import Catalogue
-from .config import Registry, has_review_metadata, title
+from .config import Registry, has_review_metadata, source_fallback, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
@@ -1831,7 +1831,13 @@ class Window(QMainWindow):
                 underline_first_mainline_word=(clip.get("tag") or "").strip().casefold() == "3rd",
             )
         else:
-            rendered = html.escape(Path(clip["source_path"]).name)
+            fallback = html.escape(source_fallback(clip, game, include_suffix=True))
+            if game:
+                fallback = (
+                    f'<span style="{title_styles()["prefix"]}">'
+                    f"{html.escape(game.code + '_')}</span>{fallback}"
+                )
+            rendered = fallback
             rendered += (
                 f' <span style="color:{COLORS["text_secondary"]}; font-size:12px; font-weight:400">'
                 "— Working title not set</span>"

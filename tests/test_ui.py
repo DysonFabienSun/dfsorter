@@ -10,7 +10,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QProgressDialog
@@ -1582,6 +1582,26 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
     assert window.right.isVisible()
     window.reset_layout()
     assert window.right.isHidden()
+
+
+def test_filename_fallback_deduplicates_game_prefix(window, application, tmp_path):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    source = captures / "Counter-strike 2 2026.09.22.DVR.mp4"
+    source.write_bytes(b"test")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(source), "game": "Counter-strike 2"}])
+    window.refresh_references()
+    window.catalogue.create_session([window.catalogue.clips()[0]["clip_id"]])
+    window.panel("Editing")
+    application.processEvents()
+
+    document = QTextDocument()
+    document.setHtml(window.working_title.text())
+    assert "CS2_2026.09.22.DVR.mp4" in document.toPlainText()
+    assert "Counter-strike 2 2026" not in document.toPlainText()
+    assert window.filename.text() == source.name
+    assert window.library.item(0).data(CLIP_ROLE)["title"] == "CS2_2026.09.22.DVR"
 
 
 @pytest.mark.parametrize("first", ["in", "out"])
