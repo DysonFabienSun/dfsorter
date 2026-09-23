@@ -69,6 +69,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `rating.filled` | `#A66A00` | Filled rating star |
 | `rating.hover` | `#C17C00` | Rating hover preview |
 | `rating.empty` | `#7C8791` | Empty star for a populated rating |
+| `rating.label.1–5` | `#A83245` → `#1F7044` | Bold list rating scale from low to high |
 | `component.commandValid` | `#EAF2FB` | Valid command draft |
 | `component.timelineTrack` | `#C7E0E3` | Pale teal timeline remainder |
 | `component.timelineProgress` | `#087F8C` | Elapsed timeline section |
@@ -118,6 +119,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `rating.filled` | `#E8C45A` | Filled rating star |
 | `rating.hover` | `#F0D16F` | Rating hover preview |
 | `rating.empty` | `#69717D` | Empty star for a populated rating |
+| `rating.label.1–5` | `#FFA0A8` → `#79D7A0` | Bold list rating scale from low to high |
 | `component.commandValid` | `#172B40` | Valid command draft |
 | `component.timelineTrack` | `#23434A` | Dark teal timeline remainder |
 | `component.timelineProgress` | `#43B6C3` | Elapsed timeline section |
@@ -137,7 +139,8 @@ Teal means primary interaction, focus, selection, active project, playhead or I/
 It is not the default hover color for ordinary controls. Green means Keep or success; red
 means Discard, destructive operations or blocking errors. Warning amber means suggested
 missing metadata or unavailable sources. Gold rating tokens are reserved for stars and tags.
-Pending triage uses muted gray. Always retain text or shape cues in addition to color.
+Clip-list rating labels use their dedicated five-step scale. Pending triage uses muted gray.
+Always retain text or shape cues in addition to color.
 
 ### Theme selection and switching
 
@@ -200,6 +203,7 @@ input, theme switching or navigation.
 - Projects remain a secondary utility pane with secondary header text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
 - Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows a faded gold pulse and disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
+- Metadata-style clip lists show a bold `R1`–`R5` label between game and verdict, using the theme's five-step low-to-high rating-label scale. Unrated clips omit the rating segment. Browse retains capture time and folder on its second line instead.
 - Video is black. Use a **7 px timeline groove** with a larger hit area, pale teal remainder and strong teal elapsed section/playhead. Use focus-cyan saved I/O markers and accent range tint at 18% opacity. Pending In and Out have distinct labels (·I and ·O). The volume slider uses an 18 px widget height, 3 px groove, 10 px handle, quiet teal remainder and medium-teal level; center it optically with the volume icon and time text. Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
 - Tooltips appear after a 200 ms hover delay throughout the application. They use `component.tooltip`, 12 px text, a default border, theme-appropriate tooltip text, compact 3 px horizontal padding and optical vertical padding of 0 px above / 2 px below, with 4 px corners. Secondary metadata recedes; populated tag prefixes use the theme's gold/tag role and remain hidden when empty. Valid commands use `component.commandValid`; incomplete, invalid and briefly saved commands use warning, danger and success bottom borders respectively. Keyboard focus retains its teal outline; other command backgrounds stay neutral. Unset rating uses the existing danger color for star outlines only, with no background highlight.
@@ -363,8 +367,9 @@ Triage/rating groups remain compact and left aligned; help action anchors right.
 
 The visual order is video, playback, working title and source context, triage/game/project status,
 rating, structured metadata and description, then the separated command/help region. Keyboard
-hints and technical explanations remain readable but tertiary. Rating retains the dedicated
-gold semantic family; it does not borrow danger red or the teal application accent.
+hints and technical explanations remain readable but tertiary. Rating stars retain the dedicated
+gold semantic family. Compact clip-list labels use their separate five-step scale and always
+retain the explicit `R1`–`R5` text cue.
 
 Atomic single-clip Editing preserves this composition. Put compact **Save** and red **Revert** actions on the working-title row, aligned to its top/right edge. Hide Add to project + Next; disable Previous/Next and catalogue Undo/Redo. Membership Add/Remove remains in the Projects pane while global project mutations are disabled.
 

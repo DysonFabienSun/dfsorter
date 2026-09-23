@@ -13,7 +13,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QProgressDialog
+from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QListWidgetItem, QProgressDialog
 
 from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
@@ -1252,7 +1252,10 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     item = window.library.item(0)
     assert item.data(Qt.ItemDataRole.UserRole) == ids[0]
     assert item.data(CLIP_ROLE)["triage"] is None
+    assert item.data(CLIP_ROLE)["rating"] is None
     assert "discard keep" in item.data(CLIP_ROLE)["title"]
+    assert "VALORANT · pending" in item.text()
+    assert "R–" not in item.text()
     assert "pending" in item.text().lower()
     assert window.triage_buttons[None].isChecked()
     assert window.triage_buttons[None].text() == "Pending"
@@ -1269,6 +1272,8 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     assert window.triage_buttons["discard"].isChecked()
     window.edit({"rating": 2})
     application.processEvents()
+    assert window.library.item(0).data(CLIP_ROLE)["rating"] == 2
+    assert "VALORANT · R2 · discard" in window.library.item(0).text()
     position = QPointF(window.rating.step * 3 + 4, 10)
     application.sendEvent(
         window.rating,
@@ -1290,6 +1295,23 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     QTest.mouseClick(window.rating, Qt.MouseButton.RightButton)
     assert window.catalogue.clip(ids[0])["rating"] is None
     assert window.catalogue.clip(ids[0])["triage"] == "discard"
+
+
+def test_clip_card_rating_scope(window, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.catalogue.patch(clip_id, {"rating": 4, "triage": "keep"})
+    clip = window.catalogue.clip(clip_id)
+    item = QListWidgetItem()
+
+    for panel in ("Home", "Session", "Editing", "Export", "Config"):
+        window.current_panel = panel
+        window.render_card(item, clip)
+        assert "VALORANT · R4 · keep" in item.text()
+
+    window.current_panel = "Browse"
+    window.render_card(item, clip)
+    assert "R4" not in item.text()
+    assert item.data(CLIP_ROLE)["browse_details"] is not None
 
 
 @pytest.mark.parametrize("codec", ["libx264", "libaom-av1"])

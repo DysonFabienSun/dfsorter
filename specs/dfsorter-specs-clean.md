@@ -379,6 +379,8 @@ The general library view supports:
 
 Library views support multi-selection outside Editing; Editing uses single selection. Frozen Session ordering and stable-boundary refresh follow §12.2.
 
+Every metadata-style left-pane clip list shows `Game · R# · Verdict` on the second line when rated and `Game · Verdict` when unrated, with a bold theme-aware `R1`–`R5` label. This applies to Home, Session, Editing, Export and Config. Browse instead retains capture time and folder on that line. The explicit rating text remains present independently of color.
+
 The search bar does **not** expose raw SQL.
 
 Examples of structured queries include:

@@ -1516,8 +1516,9 @@ class Window(QMainWindow):
                 "Unlinked",
             )
             browse_details = f"{captured} · {folder_name}"
-        details = (
-            browse_details or f"{clip['game'] or 'Unassigned'} · {clip['triage'] or 'pending'}"
+        rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
+        details = browse_details or (
+            f"{clip['game'] or 'Unassigned'}{rating} · {clip['triage'] or 'pending'}"
         )
         item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])
@@ -1539,6 +1540,7 @@ class Window(QMainWindow):
                 ),
                 "browse_details": browse_details,
                 "game": clip["game"],
+                "rating": clip["rating"],
                 "triage": clip["triage"],
                 "unavailable": bool(available),
             },

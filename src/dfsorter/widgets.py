@@ -205,13 +205,22 @@ class ClipDelegate(QStyledItemDelegate):
         verdict = data.get("triage")
         warning = " · Unavailable" if data.get("unavailable") else ""
         status = f" · {(verdict or 'pending').capitalize()}"
-        reserved = detail_metrics.horizontalAdvance(status + warning)
+        rating = data.get("rating")
+        rating_text = f"R{rating}" if rating is not None else ""
+        rating_font = font("xs", "bold", base=option.font)
+        rating_metrics = QFontMetrics(rating_font)
+        separator = " · " if rating is not None else ""
+        reserved = (
+            detail_metrics.horizontalAdvance(separator)
+            + rating_metrics.horizontalAdvance(rating_text)
+            + detail_metrics.horizontalAdvance(status + warning)
+        )
         game = detail_metrics.elidedText(
             data.get("game") or "Unassigned",
             Qt.TextElideMode.ElideRight,
             max(0, detail.width() - reserved),
         )
-        text = game + status
+        text = game + separator + rating_text + status
         if data.get("browse_details") is not None:
             text = detail_metrics.elidedText(
                 data["browse_details"],
@@ -220,11 +229,44 @@ class ClipDelegate(QStyledItemDelegate):
             )
         painter.setClipRect(card)
         painter.setPen(QColor(COLORS["text_secondary"]))
-        painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)
+        if data.get("browse_details") is not None:
+            painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)
+            warning_offset = detail_metrics.horizontalAdvance(text)
+        else:
+            game_width = detail_metrics.horizontalAdvance(game)
+            separator_width = detail_metrics.horizontalAdvance(separator)
+            rating_width = rating_metrics.horizontalAdvance(rating_text)
+            painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, game)
+            painter.drawText(
+                detail.adjusted(game_width, 0, 0, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                separator,
+            )
+            if rating is not None:
+                painter.setFont(rating_font)
+                painter.setPen(QColor(COLORS[f"rating_label_{rating}"]))
+                painter.drawText(
+                    detail.adjusted(game_width + separator_width, 0, 0, 0),
+                    Qt.AlignmentFlag.AlignVCenter,
+                    rating_text,
+                )
+            painter.setFont(detail_font)
+            painter.setPen(QColor(COLORS["text_secondary"]))
+            painter.drawText(
+                detail.adjusted(game_width + separator_width + rating_width, 0, 0, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                status,
+            )
+            warning_offset = (
+                game_width
+                + separator_width
+                + rating_width
+                + detail_metrics.horizontalAdvance(status)
+            )
         if warning:
             painter.setPen(QColor(COLORS["status_warning"]))
             painter.drawText(
-                detail.adjusted(detail_metrics.horizontalAdvance(text), 0, 0, 0),
+                detail.adjusted(warning_offset, 0, 0, 0),
                 Qt.AlignmentFlag.AlignVCenter,
                 warning,
             )
