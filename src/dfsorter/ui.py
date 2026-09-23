@@ -252,6 +252,7 @@ class Window(QMainWindow):
         self.space_timer.setInterval(200)
         self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
         self.media_info = self.catalogue.media_cache()
+        self.clip_folder_names = self.catalogue.clip_folder_names()
         self.pending_in = None
         self.pending_out = None
         self.worker = None
@@ -1506,19 +1507,13 @@ class Window(QMainWindow):
                 )
             except ValueError:
                 captured = captured or "Date unavailable"
-            source = Path(clip["source_path"])
-            folder_name = next(
-                (
-                    Path(folder["path"]).name
-                    for folder in self.catalogue.folders()
-                    if source.is_relative_to(Path(folder["path"]))
-                ),
-                "Unlinked",
-            )
+            folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
             browse_details = f"{captured} · {folder_name}"
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
+        folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
         details = browse_details or (
-            f"{clip['game'] or 'Unassigned'}{rating} · {clip['triage'] or 'pending'}"
+            f"{clip['game'] or 'Unassigned'}{rating} · {folder_name} · "
+            f"{clip['triage'] or 'pending'}"
         )
         item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])
@@ -1541,6 +1536,7 @@ class Window(QMainWindow):
                 "browse_details": browse_details,
                 "game": clip["game"],
                 "rating": clip["rating"],
+                "folder": folder_name,
                 "triage": clip["triage"],
                 "unavailable": bool(available),
             },
@@ -1646,6 +1642,7 @@ class Window(QMainWindow):
         if self.refreshing:
             return
         try:
+            self.clip_folder_names = self.catalogue.clip_folder_names()
             clips = self.catalogue.clips()
             if self.current_panel == "Editing":
                 if self.atomic_edit:

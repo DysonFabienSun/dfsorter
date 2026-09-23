@@ -1254,7 +1254,7 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     assert item.data(CLIP_ROLE)["triage"] is None
     assert item.data(CLIP_ROLE)["rating"] is None
     assert "discard keep" in item.data(CLIP_ROLE)["title"]
-    assert "VALORANT · pending" in item.text()
+    assert "VALORANT · captures · pending" in item.text()
     assert "R–" not in item.text()
     assert "pending" in item.text().lower()
     assert window.triage_buttons[None].isChecked()
@@ -1273,7 +1273,7 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     window.edit({"rating": 2})
     application.processEvents()
     assert window.library.item(0).data(CLIP_ROLE)["rating"] == 2
-    assert "VALORANT · R2 · discard" in window.library.item(0).text()
+    assert "VALORANT · R2 · captures · discard" in window.library.item(0).text()
     position = QPointF(window.rating.step * 3 + 4, 10)
     application.sendEvent(
         window.rating,
@@ -1301,12 +1301,13 @@ def test_clip_card_rating_scope(window, tmp_path):
     clip_id = add_clips(window, tmp_path)[0]
     window.catalogue.patch(clip_id, {"rating": 4, "triage": "keep"})
     clip = window.catalogue.clip(clip_id)
+    window.clip_folder_names = window.catalogue.clip_folder_names()
     item = QListWidgetItem()
 
     for panel in ("Home", "Session", "Editing", "Export", "Config"):
         window.current_panel = panel
         window.render_card(item, clip)
-        assert "VALORANT · R4 · keep" in item.text()
+        assert "VALORANT · R4 · captures · keep" in item.text()
 
     window.current_panel = "Browse"
     window.render_card(item, clip)

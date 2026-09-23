@@ -181,6 +181,15 @@ class Catalogue:
     def folders(self):
         return self.rows("SELECT * FROM folders ORDER BY path COLLATE NOCASE")
 
+    def clip_folder_names(self):
+        return {
+            row["clip_id"]: Path(row["path"]).name
+            for row in self.rows(
+                "SELECT sources.clip_id, folders.path "
+                "FROM sources JOIN folders USING(folder_id)"
+            )
+        }
+
     def session_excluded_ids(self):
         return {
             row["clip_id"]

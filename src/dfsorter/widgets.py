@@ -210,17 +210,29 @@ class ClipDelegate(QStyledItemDelegate):
         rating_font = font("xs", "bold", base=option.font)
         rating_metrics = QFontMetrics(rating_font)
         separator = " · " if rating is not None else ""
-        reserved = (
+        folder_separator = " · "
+        folder = data.get("folder") or "Unlinked"
+        fixed_width = (
             detail_metrics.horizontalAdvance(separator)
             + rating_metrics.horizontalAdvance(rating_text)
-            + detail_metrics.horizontalAdvance(status + warning)
+            + detail_metrics.horizontalAdvance(folder_separator + status + warning)
+        )
+        flexible_width = max(0, detail.width() - fixed_width)
+        folder = detail_metrics.elidedText(
+            folder,
+            Qt.TextElideMode.ElideMiddle,
+            min(detail_metrics.horizontalAdvance(folder), flexible_width // 2),
+        )
+        folder_width = detail_metrics.horizontalAdvance(folder)
+        reserved = (
+            fixed_width + folder_width
         )
         game = detail_metrics.elidedText(
             data.get("game") or "Unassigned",
             Qt.TextElideMode.ElideRight,
             max(0, detail.width() - reserved),
         )
-        text = game + separator + rating_text + status
+        text = game + separator + rating_text + folder_separator + folder + status
         if data.get("browse_details") is not None:
             text = detail_metrics.elidedText(
                 data["browse_details"],
@@ -236,6 +248,7 @@ class ClipDelegate(QStyledItemDelegate):
             game_width = detail_metrics.horizontalAdvance(game)
             separator_width = detail_metrics.horizontalAdvance(separator)
             rating_width = rating_metrics.horizontalAdvance(rating_text)
+            folder_separator_width = detail_metrics.horizontalAdvance(folder_separator)
             painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, game)
             painter.drawText(
                 detail.adjusted(game_width, 0, 0, 0),
@@ -252,8 +265,16 @@ class ClipDelegate(QStyledItemDelegate):
                 )
             painter.setFont(detail_font)
             painter.setPen(QColor(COLORS["text_secondary"]))
+            folder_offset = game_width + separator_width + rating_width
             painter.drawText(
-                detail.adjusted(game_width + separator_width + rating_width, 0, 0, 0),
+                detail.adjusted(folder_offset, 0, 0, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                folder_separator + folder,
+            )
+            painter.drawText(
+                detail.adjusted(
+                    folder_offset + folder_separator_width + folder_width, 0, 0, 0
+                ),
                 Qt.AlignmentFlag.AlignVCenter,
                 status,
             )
@@ -261,6 +282,8 @@ class ClipDelegate(QStyledItemDelegate):
                 game_width
                 + separator_width
                 + rating_width
+                + folder_separator_width
+                + folder_width
                 + detail_metrics.horizontalAdvance(status)
             )
         if warning:
