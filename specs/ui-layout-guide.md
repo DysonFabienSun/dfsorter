@@ -226,13 +226,14 @@ Center receives extra space as window grows. Splitters separate panes without de
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row, expanding clip list, then page-specific footer. Browse heading is Library clips with date-order action; Editing heading is Session clips with Next pending action. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
-Search is the primary filter entry. Stacked filter dropdowns beneath it share height, radius,
-padding, border treatment and arrow placement. Do not frame the filter stack as a separate
-card when the sidebar surface and spacing already establish the group.
+Search is the primary filter entry. The three filter menu buttons beneath it share height,
+radius, padding, border treatment and arrow placement. Menus use persistent checkboxes for
+multi-selection. Do not frame the row as a separate card when the sidebar surface and spacing
+already establish the group.
 
 ### Clip cards
 
@@ -249,7 +250,7 @@ Line one uses 12 px regular muted game codes, 12 px regular structured metadata 
 
 Hover uses `surface.hover`; selection uses `accent.selection` plus a 2 px `accent.default` left indicator. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
 
-When additional cards exist beyond a visible list edge, overlay a non-interactive 16 px vertical gradient at that edge, fading from `surface.sidebar` to transparent toward the content. The fade sits above card content without consuming layout space and disappears completely at the corresponding start or end of the list. Do not add chevrons or borders. When the selected card is not first, position it with only the bottom third of the immediately preceding card visible above it.
+When additional cards exist beyond a visible list edge, overlay a non-interactive 16 px vertical gradient at that edge, fading from `surface.sidebar` to transparent toward the content. The fade sits above card content without consuming layout space and disappears completely at the corresponding start or end of the list. Do not add chevrons or borders. On the first opening of each applicable navigation page, position a selected card that is not first with only the bottom third of the immediately preceding card visible above it. Preserve the viewport on later selection and navigation changes.
 
 Browse uses capture datetime and capture-folder name on line two instead of game/triage text; retain shared card geometry, status dot and Unavailable treatment. Content and selection behavior remain governed by main specs §§9.5, 10.1 and 12.2.
 
@@ -282,7 +283,7 @@ with intentional widths so it does not appear accidentally stranded in the upper
 
 ## 5. Video and playback controls
 
-Reuse [Player](../src/dfsorter/playback.py) across Browse, Editing and Export. Do not build separate transport variants for equivalent actions. Browse alone adds a trailing fullscreen icon action using shared tool-button styling: maximize to enter, minimize to exit. Fullscreen retains the existing player and controls with surrounding UI and outer padding hidden.
+Reuse [Player](../src/dfsorter/playback.py) across Browse, Editing and Export. Do not build separate transport variants for equivalent actions. Browse adds a pencil **Edit clip…** action after Clear range and before its trailing fullscreen action. Both use shared icon-tool-button styling and accessible names. Fullscreen uses maximize to enter and minimize to exit, retaining the existing player and controls with surrounding UI and outer padding hidden.
 
 ```text
 Video surface                                     [expands]
@@ -364,6 +365,8 @@ The visual order is video, playback, working title and source context, triage/ga
 rating, structured metadata and description, then the separated command/help region. Keyboard
 hints and technical explanations remain readable but tertiary. Rating retains the dedicated
 gold semantic family; it does not borrow danger red or the teal application accent.
+
+Atomic single-clip Editing preserves this composition. Put compact **Save** and red **Revert** actions on the working-title row, aligned to its top/right edge. Hide Add to project + Next; disable Previous/Next and catalogue Undo/Redo. Membership Add/Remove remains in the Projects pane while global project mutations are disabled.
 
 Place new panel information in an existing row where practical. A new row can cause conspicuous vertical movement when its content appears or disappears.
 

@@ -376,38 +376,17 @@ class Catalogue:
         ]
 
     def _snapshot(self, clip_id):
-        return self.clip(clip_id), self.memberships(clip_id)
+        return self.clip(clip_id), sorted(self.memberships(clip_id))
 
-    def _restore(self, snapshot):
-        clip, memberships = snapshot
-        fields = [
-            "game",
-            "triage",
-            "rating",
-            "tag",
-            "mainline",
-            "description",
-            "metadata",
-            "in_ms",
-            "out_ms",
-        ]
-        values = [json.dumps(clip[key]) if key == "metadata" else clip[key] for key in fields]
-        with self.connection() as database:
-            database.execute(
-                "UPDATE clips SET "
-                + ",".join(f"{key}=?" for key in fields)
-                + ",catalogue_modified_at=? WHERE clip_id=?",
-                [*values, now(), clip["clip_id"]],
-            )
-            database.execute("DELETE FROM members WHERE clip_id=?", (clip["clip_id"],))
-            database.executemany(
-                "INSERT INTO members VALUES (?,?)",
-                [(project_id, clip["clip_id"]) for project_id in memberships],
-            )
+    def snapshot(self, clip_id):
+        return deepcopy(self._snapshot(clip_id))
 
-    def patch(self, clip_id, patch, editing=False, replace_metadata=False, membership=None):
-        before = self._snapshot(clip_id)
-        after = deepcopy(before)
+    def draft_snapshot(
+        self, snapshot, patch, *, editing=False, replace_metadata=False, membership=None,
+        active_project=None,
+    ):
+        before = deepcopy(snapshot)
+        after = deepcopy(snapshot)
         clip, memberships = after
         allowed = {
             "game",
@@ -438,16 +417,112 @@ class Catalogue:
             isinstance(start, int) and isinstance(end, int) and 0 <= start < end
         ):
             raise ValueError("In/Out range must have 0 <= In < Out")
-        active = self.state("active_project")
-        if editing and clip["triage"] == "keep" and before[0]["triage"] != "keep" and active:
-            if active not in memberships:
-                memberships.append(active)
+        if (
+            editing and clip["triage"] == "keep" and before[0]["triage"] != "keep"
+            and active_project
+        ):
+            if active_project not in memberships:
+                memberships.append(active_project)
         if membership:
             project_id, include = membership
             if include and project_id not in memberships:
                 memberships.append(project_id)
             if not include and project_id in memberships:
                 memberships.remove(project_id)
+        memberships.sort()
+        return after
+
+    def _restore(self, snapshot):
+        clip, memberships = snapshot
+        fields = [
+            "game",
+            "triage",
+            "rating",
+            "tag",
+            "mainline",
+            "description",
+            "metadata",
+            "in_ms",
+            "out_ms",
+        ]
+        values = [json.dumps(clip[key]) if key == "metadata" else clip[key] for key in fields]
+        with self.connection() as database:
+            database.execute(
+                "UPDATE clips SET "
+                + ",".join(f"{key}=?" for key in fields)
+                + ",catalogue_modified_at=? WHERE clip_id=?",
+                [*values, now(), clip["clip_id"]],
+            )
+            database.execute("DELETE FROM members WHERE clip_id=?", (clip["clip_id"],))
+            database.executemany(
+                "INSERT INTO members VALUES (?,?)",
+                [(project_id, clip["clip_id"]) for project_id in memberships],
+            )
+
+    def commit_snapshot(self, baseline, draft):
+        if baseline == draft:
+            return False
+        clip_id = baseline[0]["clip_id"]
+        if draft[0]["clip_id"] != clip_id:
+            raise ValueError("Atomic edit snapshot does not match the clip")
+        current = self._snapshot(clip_id)
+        current[1].sort()
+        expected = deepcopy(baseline)
+        expected[1].sort()
+        if current != expected:
+            raise ValueError(
+                "Clip or project membership changed outside Editing. Review the newer catalogue state before saving."
+            )
+        fields = [
+            "game", "triage", "rating", "tag", "mainline", "description",
+            "metadata", "in_ms", "out_ms",
+        ]
+        clip, memberships = draft
+        values = [json.dumps(clip[key]) if key == "metadata" else clip[key] for key in fields]
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            persisted = database.execute("SELECT * FROM clips WHERE clip_id=?", (clip_id,)).fetchone()
+            if persisted is None:
+                raise ValueError("Clip no longer exists")
+            persisted_clip = dict(persisted)
+            persisted_clip["metadata"] = json.loads(persisted_clip["metadata"])
+            persisted_memberships = sorted(
+                row[0] for row in database.execute(
+                    "SELECT project_id FROM members WHERE clip_id=?", (clip_id,)
+                )
+            )
+            if (persisted_clip, persisted_memberships) != expected:
+                raise ValueError(
+                    "Clip or project membership changed outside Editing. Review the newer catalogue state before saving."
+                )
+            project_ids = {
+                row[0] for row in database.execute("SELECT project_id FROM projects")
+            }
+            if not set(memberships) <= project_ids:
+                raise ValueError(
+                    "A staged project no longer exists. Review project membership before saving."
+                )
+            database.execute(
+                "UPDATE clips SET " + ",".join(f"{key}=?" for key in fields)
+                + ",catalogue_modified_at=? WHERE clip_id=?",
+                [*values, now(), clip_id],
+            )
+            database.execute("DELETE FROM members WHERE clip_id=?", (clip_id,))
+            database.executemany(
+                "INSERT INTO members VALUES (?,?)",
+                [(project_id, clip_id) for project_id in memberships],
+            )
+        after = self._snapshot(clip_id)
+        self.undo_stack.append((deepcopy(baseline), after))
+        self.redo_stack.clear()
+        return True
+
+    def patch(self, clip_id, patch, editing=False, replace_metadata=False, membership=None):
+        before = self._snapshot(clip_id)
+        after = self.draft_snapshot(
+            before, patch, editing=editing, replace_metadata=replace_metadata,
+            membership=membership, active_project=self.state("active_project"),
+        )
         if before == after:
             return
         self._restore(after)

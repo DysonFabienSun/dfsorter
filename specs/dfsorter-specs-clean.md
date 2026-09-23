@@ -322,7 +322,7 @@ toolbar switches immediately between explicit Light and Dark modes. When the sav
 System, the quick toggle selects the explicit mode opposite the currently resolved system
 appearance. Settings provides all three choices under Appearance.
 
-Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. In every left-pane clip list, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Apply this to default selection, mouse selection, keyboard navigation, and selections restored after a library rebuild or page change. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. The first time each applicable navigation page opens, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. Later mouse selection, keyboard navigation, library rebuilds, page returns and window resizes do not reapply this prescribed placement. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
 ### 9.2 Settings and Actions
 
@@ -358,13 +358,13 @@ The exact content of each pane depends on the active panel.
 | Panel | Left pane | Center/main area | Right pane | Command bar |
 | --- | --- | --- | --- | --- |
 | Home | Library reference | Capture-folder management | Projects | Hidden |
-| Browse | All library clips, search, game filter, date-order toggle | Video, working title, filename, inline Share | Hidden | Hidden |
+| Browse | Library clips, search, clip/game/project filters, availability toggle, date-order toggle | Video, working title, filename, inline Share | Hidden | Hidden |
 | Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
 | Editing | Locked session queue | Video + clip metadata | Projects | Visible |
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
 | Config | Library/reference view | Config placeholder/status | Hidden | Hidden |
 
-The shared library triage filter defaults to Pending on application startup, showing only clips without a Keep/Discard verdict. The selection stays in effect across panel changes and session creation for the current run, but is not persisted across restarts. Other triage filters remain available; Browse's independent controls, frozen Editing sessions and Export membership are unaffected.
+Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Frozen Editing sessions and Export membership are unaffected.
 
 ### 9.5 Left-Pane Library
 
@@ -372,10 +372,10 @@ The general library view supports:
 
 - free-text search;
 - structured query expressions;
-- sorting;
-- triage filters;
-- game filters;
-- project filters where relevant.
+- capture-time sorting, oldest or newest first;
+- clip-state checkbox filters;
+- game checkbox filters;
+- project membership checkbox filters where relevant.
 
 Library views support multi-selection outside Editing; Editing uses single selection. Frozen Session ordering and stable-boundary refresh follow §12.2.
 
@@ -412,15 +412,17 @@ Legacy clips whose folders were previously unregistered appear as an **Unlinked 
 
 Only Browse provides player fullscreen. Its transport-row Fullscreen button or F11 toggles fullscreen; Esc exits. Hide navigation, library, status bar, titles and Share form while retaining video, timeline and playback/range controls. Preserve the loaded clip, playback position/state and temporary range. Restore prior window geometry, normal/maximized state and pane sizes on exit; leaving Browse exits fullscreen. Editing and Export have no fullscreen action.
 
-Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including every triage state and clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
+Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
 
-Browse library cards show capture datetime (local time) and capture-folder name, without triage text. Retain all triage states in results. Show search and a game filter with state independent from Session/Home. Each entry into Browse resets sorting to newest capture first. Select the newest matching clip across the library unless the user manually selected another Browse clip during the current application run; restore that selection when it still matches Browse filters and is visible. If that clip is no longer visible, select the newest matching clip. Remember manual Browse selection only for the current run, independently of Editing Session selection, and scroll the selected card into view. An accessible date-order icon in the library header, where Editing places Next pending, toggles newest/oldest. Use media capture time with filesystem creation-time fallback and source-path tie-breaking. Previous/next and Up/Down follow visible order without wrapping. Sorting preserves selection; filtering selects the first result when the current clip disappears. Empty results clear the player.
+Browse's only catalogue-editing exception is **Edit clip…**. A pencil action sits after Clear range and before Fullscreen, is disabled without a loaded clip, and enters the transient single-clip Editing mode defined in §13.9. Browse remains read-only until that explicit transition.
+
+Browse library cards show capture datetime (local time) and capture-folder name, without clip-state text. The shared filter row sits beneath search. Each entry into Browse resets sorting to newest capture first. Select the newest matching clip across the library unless the user manually selected another Browse clip during the current application run; restore that selection when it still matches Browse filters and is visible. If that clip is no longer visible, select the newest matching clip. Remember manual Browse selection only for the current run, independently of Editing Session selection, and scroll the selected card into view. A compact date-order icon at the right of the filter row toggles newest/oldest. Use media capture time with filesystem creation-time fallback and source-path tie-breaking. Previous/next and Up/Down follow visible order without wrapping. Sorting preserves selection; filtering selects the first result when the current clip disappears. Empty results clear the player.
 
 Show only working title and filename below the player, followed by an always-visible Share panel. Browse working titles use the same font, sizes, and rich-text styling as Editing, with a square red trash icon to the right for Delete source…. The output folder input has a fixed width of 480 px. Put output folder, its picker, and the 140 px Share mode selector on one row. Size the custom title input to that entire row so its right edge aligns with the Share selector. Separate titles from the form with a subtle horizontal divider; retain a 10 px gap before the I/O status. Use shared grid columns to align input edges. Hide editing metadata, command/session controls and Projects. Disable catalogue undo/redo and mutating settings actions in Browse; text fields retain normal undo/redo. Keep transport, seeking, volume, mute, hold-Space fast-forward and I/O shortcuts, without consuming text-field typing.
 
 Initialize temporary I/O from saved markers. Either endpoint may be changed first, and Clear range affects only the preview. A complete range within the duration enables selected-range sharing; incomplete/invalid markers still allow whole-clip sharing. Discard temporary markers and custom title freely when leaving the clip or page, including incomplete ranges. Sorting or refreshing the same selected clip preserves them.
 
-Inline Share contains a required custom title, output folder/picker, whole/selected-range selector, timing summary and Share action. Default to a valid selected range, otherwise whole clip. No generated-name field or game-prefix controls. Whitespace-only titles disable Share. Reuse existing Share encoding, filename sanitization, collision avoidance, destination restrictions, cancellation and cleanup; pass a snapshot of temporary markers without saving them. Remember the output folder in application settings. Missing sources remain visible with unavailable playback/sharing, except successfully explicitly deleted sources, which are hidden from Browse across restarts. Store deletion visibility separately from clip metadata, keyed by stable clip ID. Keep hidden clips eligible for migration/relinking with all metadata and project/session references intact. Clear the deletion marker when the current source path exists again, including after relinking; failed or cancelled deletions never hide a clip. Browse also offers Delete source… for the selected clip regardless of triage, with explicit permanent-deletion confirmation defaulting to Cancel. Reuse source identity and file-change checks; retain catalogue records and project/session references as unavailable without changing triage.
+Inline Share contains a required custom title, output folder/picker, whole/selected-range selector, timing summary and Share action. Default to a valid selected range, otherwise whole clip. No generated-name field or game-prefix controls. Whitespace-only titles disable Share. Reuse existing Share encoding, filename sanitization, collision avoidance, destination restrictions, cancellation and cleanup; pass a snapshot of temporary markers without saving them. Remember the output folder in application settings. Missing sources are hidden by default in Home and Browse. A compact availability icon immediately left of sorting shows or hides them, persists this preference across sessions, and defaults to hidden. Successfully explicitly deleted sources remain hidden from Browse regardless of this preference. Store deletion visibility separately from clip metadata, keyed by stable clip ID. Keep hidden clips eligible for migration/relinking with all metadata and project/session references intact. Clear the deletion marker when the current source path exists again, including after relinking; failed or cancelled deletions never hide a clip. Browse also offers Delete source… for the selected clip regardless of clip state, with explicit permanent-deletion confirmation defaulting to Cancel. Reuse source identity and file-change checks; retain catalogue records and project/session references as unavailable without changing triage.
 
 ## 11. Media ingestion and scanning
 
@@ -503,7 +505,7 @@ Pause scanning retains all catalogue data and existing sessions, skips startup/m
 
 ## 12. Session Panel
 
-All Editing-panel triage is performed within one persisted Session.
+Ordinary Editing-panel triage is performed within one persisted Session. The explicit single-clip Editing mode in §13.9 is the only exception and never creates, replaces, advances, or ends a Session.
 
 DFSorter maintains at most one Session at a time. Creating a replacement while one already exists must explicitly end/replace the existing Session. Ending a Session deletes only Session state and never changes clip metadata.
 
@@ -548,7 +550,7 @@ Clip metadata in the Session list may be refreshed only at stable interaction bo
 
 ## 13. Editing Panel
 
-The Editing panel is disabled until a Session exists.
+The Editing navigation panel is disabled until a Session exists. **Edit clip…** may still open the Editing workspace for one atomic clip without a Session.
 
 The Editing layout provides:
 
@@ -747,6 +749,18 @@ Changing or deactivating the active Project does not remove existing memberships
 Changing a clip away from Keep does not automatically delete existing project membership; export rules determine whether the clip is actually copied.
 
 ---
+
+### 13.9 Atomic single-clip Editing
+
+Clip cards on Home, Browse, Session, Export and Config expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space and Editing itself have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
+
+Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation, catalogue Undo/Redo and permanent source deletion are unavailable. Native text-field undo remains available.
+
+Place atomic-only **Save** and red **Revert** actions beside the working title. Save is disabled until the staged snapshot differs from its baseline and remains blocked while command text is unsubmitted or an In/Out range is incomplete or invalid. Save verifies that the persisted clip identity, editable fields and relevant memberships still match the baseline, then writes the complete staged snapshot and memberships in one transaction, updates modification time once, and adds exactly one catalogue undo operation. A conflict keeps the draft open. A snapshot equal to its baseline performs no write. Atomic Save does not require Keep/export completeness.
+
+Revert opens a destructive **Discard changes / Cancel** confirmation. Confirming discards the entire atomic draft and returns to the originating panel; Cancel stays in Editing. Clicking another navigation tab opens the same confirmation and, when confirmed, discards the draft before opening the selected tab. Save and confirmed Revert are the only atomic-pane actions that commit or discard and exit; Shift+Enter is unavailable and performs no action. Save restores the originating panel, while a confirmed navigation exit opens its selected destination. Closing DFSorter silently discards atomic state and its local submitted-command history without a catalogue write or undo entry.
+
+Share may use the staged atomic snapshot without Save. Command text must first be submitted and the range must be complete and valid. Shared files intentionally remain after Revert or Discard. Atomic-only submitted-command history never enters normal runtime clip history. Keep entered during atomic Editing may stage addition to the active project, but does not advance a Session.
 
 ## 14. Projects
 

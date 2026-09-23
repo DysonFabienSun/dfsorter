@@ -100,6 +100,174 @@ def catalogue_dump(window):
         return list(database.iterdump())
 
 
+def test_atomic_single_clip_edit_save_revert_and_session_preservation(
+    window, application, tmp_path, monkeypatch
+):
+    root = tmp_path / "atomic-captures"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    paths = [root / f"clip-{index}.mp4" for index in range(2)]
+    for path in paths:
+        path.write_bytes(b"video")
+    window.catalogue.ingest(
+        folder, [{"path": str(path), "game": "VALORANT"} for path in paths]
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids)
+    session = window.catalogue.state("session")
+    history = list(window.catalogue.undo_stack)
+
+    window.start_atomic_edit(ids[1], "Home")
+    application.processEvents()
+    assert window.current_panel == "Editing"
+    assert window.session_heading.text() == "Single clip"
+    assert window.library.count() == 1
+    assert not window.next_undefined_button.isVisible()
+    assert not window.player.previous_button.isEnabled()
+    assert not window.player.next_button.isEnabled()
+    window.edit({"rating": 4, "mainline": "Atomic title"})
+    assert window.rating.value == 4
+    assert window.catalogue.clip(ids[1])["rating"] is None
+    assert window.catalogue.undo_stack == history
+    assert window.atomic_save_button.isEnabled()
+    window.save_atomic_edit()
+    application.processEvents()
+    assert window.current_panel == "Home"
+    assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
+    assert window.catalogue.state("session") == session
+    assert len(window.catalogue.undo_stack) == len(history) + 1
+    window.undo()
+    assert window.catalogue.clip(ids[1])["mainline"] is None
+
+    window.start_atomic_edit(ids[0], "Browse")
+    window.edit({"tag": "temporary"})
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.revert_atomic_edit()
+    application.processEvents()
+    assert window.current_panel == "Browse"
+    assert window.catalogue.clip(ids[0])["tag"] is None
+    assert window.catalogue.state("session") == session
+
+
+def test_atomic_entry_controls_and_context_target(window, application, tmp_path, monkeypatch):
+    root = tmp_path / "atomic-controls"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+    window.panel("Browse")
+    application.processEvents()
+    assert window.browse.edit_button.toolTip() == "Edit clip…"
+    assert window.browse.edit_button.accessibleName() == "Edit clip"
+    assert window.browse.edit_button.isEnabled()
+    window.browse.edit_button.click()
+    assert window.atomic_edit.clip_id == clip_id
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.revert_atomic_edit()
+    window.panel("Config")
+    window.context_clip_id = clip_id
+    window.edit_context_clip()
+    assert window.atomic_edit.origin == "Config"
+
+
+def test_atomic_navigation_reverts_and_shift_enter_is_disabled(
+    window, application, tmp_path, monkeypatch
+):
+    root = tmp_path / "atomic-prompt"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+
+    window.start_atomic_edit(clip_id, "Home")
+    window.edit({"rating": 3})
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: False)
+    window.panel("Config")
+    assert window.current_panel == "Editing"
+    assert window.atomic_edit is not None
+
+    window.command.setText("invalid command")
+    assert not window.atomic_save_button.isEnabled()
+    draft = window.atomic_edit.draft
+    QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.atomic_edit.draft == draft
+    assert window.command.text() == "invalid command"
+    window.review_mode()
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.atomic_edit.draft == draft
+
+    window.pending_in = 100
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.panel("Config")
+    application.processEvents()
+    assert window.current_panel == "Config"
+    assert window.atomic_edit is None
+    assert window.catalogue.clip(clip_id)["rating"] is None
+
+
+def test_atomic_save_conflict_keeps_draft(window, tmp_path):
+    root = tmp_path / "atomic-conflict"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+
+    window.start_atomic_edit(clip_id, "Home")
+    window.edit({"rating": 5})
+    window.catalogue.patch(clip_id, {"tag": "external"})
+    assert not window.save_atomic_edit()
+    assert window.current_panel == "Editing"
+    assert window.atomic_edit is not None
+    assert window.catalogue.clip(clip_id)["rating"] is None
+    assert window.catalogue.clip(clip_id)["tag"] == "external"
+
+
+def test_atomic_membership_and_close_discard(window, application, tmp_path):
+    root = tmp_path / "atomic-membership"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+    project_id = window.catalogue.save_project("Project")
+    window.refresh_references()
+    window.start_atomic_edit(clip_id, "Home")
+    for index in range(window.projects.count()):
+        if window.projects.item(index).data(Qt.ItemDataRole.UserRole) == project_id:
+            window.projects.setCurrentRow(index)
+            break
+    history = list(window.catalogue.undo_stack)
+    window.membership(True)
+    window.command.setText("jett")
+    window.submit()
+    assert project_id in window.effective_memberships()
+    assert not window.catalogue.member_ids(project_id)
+    assert window.history[clip_id] == []
+    assert window.atomic_edit.history == ["jett"]
+    window.save_atomic_edit()
+    assert window.catalogue.member_ids(project_id) == {clip_id}
+    assert len(window.catalogue.undo_stack) == len(history) + 1
+    window.undo()
+    assert not window.catalogue.member_ids(project_id)
+
+    window.start_atomic_edit(clip_id, "Home")
+    window.command.setText("jett")
+    window.submit()
+    window.edit({"rating": 2})
+    window.close()
+    application.processEvents()
+    assert window.atomic_edit is None
+    assert window.catalogue.clip(clip_id)["rating"] is None
+    assert window.history[clip_id] == []
+
+
 def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch):
     root = tmp_path / "browse-captures"
     root.mkdir()
@@ -123,6 +291,10 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert list(window.nav) == ["Home", "Browse", "Session", "Editing", "Export", "Config"]
     assert list(window.pages) == list(window.nav)
     assert window.catalogue.state("session") is None
+    assert window.library.count() == 0
+    window.unavailable_toggle.click()
+    assert window.library.count() == 2
+    window.clip_filter.menu().actions()[0].trigger()
     assert window.library.count() == 3
     for index in range(window.library.count()):
         item = window.library.item(index)
@@ -135,7 +307,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert window.browse.player.status.text() == "Source unavailable"
     assert not window.browse.player.play.isEnabled()
     assert not window.browse.share_button.isEnabled()
-    assert window.filters.isHidden() and window.search.isHidden()
+    assert not window.filters.isHidden() and window.search.isHidden()
     assert not window.browse_filters.isHidden()
     assert window.command_area.isHidden() and window.right.isHidden()
     assert not window.undo_button.isEnabled()
@@ -169,7 +341,10 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
         lambda: window.save_range(10, 20),
     ]:
         action()
-    window.browse_game.setCurrentIndex(window.browse_game.findData("VALORANT"))
+    for action in window.game_filter.menu().actions():
+        if action.text() == "Uncategorized":
+            action.trigger()
+            break
     assert window.library.count() == 2
     window.browse_search.setText("missing text")
     window.refresh_library()
@@ -177,7 +352,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert window.browse.clip is None
     assert window.browse.player.status.text() == "No clip selected"
     window.panel("Home")
-    assert window.triage_filter.currentText() == "Pending"
+    assert window.clip_filter.all_selected()
     assert catalogue_dump(window) == before
     assert window.catalogue.undo_stack == history
 
@@ -945,12 +1120,12 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     application.processEvents()
     card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
     assert window.search.mapTo(window, QPoint(0, 0)).x() == card_title_x
-    assert window.triage_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
     window.panel("Browse")
     application.processEvents()
     card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
     assert window.browse_search.mapTo(window, QPoint(0, 0)).x() == card_title_x
-    assert window.browse_game.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
     assert wait_for(application, lambda: not window.transition_pending)
     window.grab().save(str(artifact / "browse-dark.png"))
 
@@ -1524,7 +1699,7 @@ def test_page_reveal_waits_and_delays_indicator(window, application):
 
 
 @pytest.mark.parametrize("panel", ["Editing", "Export"])
-def test_clip_click_keeps_list_and_positions_selection(
+def test_clip_click_keeps_list_and_viewport(
     window, application, tmp_path, monkeypatch, panel
 ):
     root = tmp_path / "LongLibrary"
@@ -1559,6 +1734,7 @@ def test_clip_click_keeps_list_and_positions_selection(
     item = window.library.item(65)
     window.library.scrollToItem(item, window.library.ScrollHint.PositionAtCenter)
     application.processEvents()
+    scroll = window.library.verticalScrollBar().value()
     for row in (65, 66, 67):
         target = window.library.item(row)
         QTest.mouseClick(
@@ -1567,8 +1743,7 @@ def test_clip_click_keeps_list_and_positions_selection(
             pos=window.library.visualItemRect(target).center(),
         )
         application.processEvents()
-        previous = window.library.visualItemRect(window.library.item(row - 1))
-        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
+        assert window.library.verticalScrollBar().value() == scroll
         assert window.library.item(65) is item
         assert window.transition_scope == "clip"
         assert not window.transition_cover.geometry().intersects(window.left.geometry())
@@ -1592,18 +1767,22 @@ def test_clip_click_keeps_list_and_positions_selection(
         assert window.current_id == ids[68]
         assert window.catalogue.state("session")["index"] == 68
         assert window.library.item(65) is item
-        previous = window.library.visualItemRect(window.library.item(67))
-        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
+        assert window.library.verticalScrollBar().value() == scroll
 
 
 @pytest.mark.parametrize("panel", ["Browse", "Session", "Editing", "Export"])
-def test_clip_list_positions_selection_with_edge_fades(window, application, tmp_path, panel):
+def test_clip_list_positions_only_on_first_page_open(
+    window, application, tmp_path, monkeypatch, panel
+):
     root = tmp_path / "SelectionLibrary"
     root.mkdir()
+    paths = [root / f"clip-{index:03}.mp4" for index in range(50)]
+    for path in paths:
+        path.touch()
     folder = window.catalogue.add_folder(root)
     window.catalogue.ingest(
         folder,
-        [{"path": str(root / f"clip-{index:03}.mp4"), "game": "VALORANT"} for index in range(50)],
+        [{"path": str(path), "game": "VALORANT"} for path in paths],
     )
     ids = [clip["clip_id"] for clip in window.catalogue.clips()]
     if panel == "Editing":
@@ -1628,25 +1807,65 @@ def test_clip_list_positions_selection_with_edge_fades(window, application, tmp_
     assert window.library_bottom_fade.testAttribute(
         Qt.WidgetAttribute.WA_TransparentForMouseEvents
     )
-    for row in (30, 49):
-        window.library.setCurrentRow(row)
-        application.processEvents()
-        previous = window.library.visualItemRect(window.library.item(row - 1))
-        selected = window.library.visualItemRect(window.library.item(row))
-        assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
-        assert abs(selected.top() - round(previous.height() / 3)) <= 1
-        assert window.library_top_fade.isVisible()
-        assert window.library_bottom_fade.isVisible() == (row == 30)
-        assert window.library_top_fade.height() == 16
-        assert window.library_bottom_fade.geometry().bottom() == (
-            window.library.viewport().rect().bottom()
-        )
-        if panel == "Editing":
-            assert window.session_position.text() == f"{row + 1} / 50"
+    window.library.scrollToItem(window.library.item(30), window.library.ScrollHint.PositionAtCenter)
+    application.processEvents()
+    scroll = window.library.verticalScrollBar().value()
+    window.library.setCurrentRow(30)
+    application.processEvents()
+    assert window.library.verticalScrollBar().value() == scroll
+    assert window.library_top_fade.isVisible()
+    assert window.library_bottom_fade.isVisible()
+    assert window.library_top_fade.height() == 16
+    assert window.library_bottom_fade.geometry().bottom() == (
+        window.library.viewport().rect().bottom()
+    )
+    if panel == "Editing":
+        assert window.session_position.text() == "31 / 50"
+    assert panel in window.positioned_clip_pages
+    monkeypatch.setattr(
+        window,
+        "position_selected_clip",
+        lambda: pytest.fail("Repositioned after the page's first opening"),
+    )
     window.refresh_library()
     application.processEvents()
-    previous = window.library.visualItemRect(window.library.item(48))
-    assert abs(previous.top() + round(previous.height() * 2 / 3)) <= 1
+    assert window.library.verticalScrollBar().value() == scroll
+    window.panel("Home")
+    window.panel(panel)
+    application.processEvents()
+    window.resize(window.width() + 1, window.height() + 1)
+    application.processEvents()
+
+
+def test_home_clip_left_click_retains_inert_highlight_without_context_menu(
+    window, application, tmp_path, monkeypatch
+):
+    add_clips(window, tmp_path)
+    window.panel("Home")
+    application.processEvents()
+    item = window.library.item(0)
+    popups = []
+    monkeypatch.setattr(window.clip_context_menu, "popup", popups.append)
+
+    position = window.library.visualItemRect(item).center()
+    QTest.mousePress(
+        window.library.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+
+    assert not popups
+    assert window.library.currentItem() is item
+    assert item.isSelected()
+    QTest.mouseRelease(
+        window.library.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    assert window.library.currentItem() is item
+    assert window.library.selectedItems() == [item]
+    assert window.current_id is None
+    assert not popups
 
 
 def test_library_rebuild_keeps_viewport(window, application, tmp_path):
@@ -2068,9 +2287,11 @@ def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatc
 
 def test_browse_entry_selects_newest(window, tmp_path, application):
     add_clips(window, tmp_path)
+    second = tmp_path / "captures" / "second.mp4"
+    second.write_bytes(b"test")
     window.catalogue.ingest(
         window.catalogue.folders()[0]["folder_id"],
-        [{"path": str(tmp_path / "captures" / "second.mp4"), "game": None}],
+        [{"path": str(second), "game": None}],
     )
     clips = window.catalogue.clips()
     for index, clip in enumerate(clips):
@@ -2078,7 +2299,7 @@ def test_browse_entry_selects_newest(window, tmp_path, application):
     window.catalogue.patch(clips[-1]["clip_id"], {"triage": "keep"})
     window.panel("Home")
     application.processEvents()
-    assert window.library.count() == 1
+    assert window.library.count() == 2
     window.nav["Browse"].click()
     application.processEvents()
     newest = clips[-1]["clip_id"]
@@ -2110,11 +2331,63 @@ def test_browse_entry_selects_newest(window, tmp_path, application):
         assert restarted.browse_id == newest
     finally:
         restarted.close()
+    Path(window.catalogue.clip(selected)["source_path"]).unlink()
     with window.catalogue.connection() as database:
         database.execute("INSERT INTO deleted_sources VALUES (?)", (selected,))
     window.panel("Home")
     window.panel("Browse")
     assert window.browse_id == newest
+
+
+def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, application):
+    captures = tmp_path / "filter-captures"
+    captures.mkdir()
+    available = captures / "available.mp4"
+    available.write_bytes(b"test")
+    missing = captures / "missing.mp4"
+    folder_id = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(
+        folder_id,
+        [
+            {"path": str(available), "game": "VALORANT"},
+            {"path": str(missing), "game": None},
+        ],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.patch(ids[0], {"triage": "discard"})
+    window.refresh_references()
+    window.panel("Home")
+
+    assert window.clip_filter.text() == "Clips"
+    assert window.game_filter.text() == "Games"
+    assert window.project_filter.text() == "Projects"
+    assert window.clip_filter.selected_values() == {None, "keep"}
+    assert window.game_filter.all_selected()
+    assert window.project_filter.all_selected()
+    assert [action.text() for action in window.project_filter.menu().actions()] == [
+        "All projects",
+        "",
+        "No projects",
+    ]
+    assert window.library.count() == 0
+
+    for action in window.clip_filter.menu().actions():
+        if action.text() == "Discard":
+            action.trigger()
+            break
+    assert window.library.count() == 1
+    window.unavailable_toggle.click()
+    assert window.settings["show_unavailable_clips"] is True
+    assert window.library.count() == 2
+
+    restarted = Window(tmp_path)
+    try:
+        restarted.show()
+        application.processEvents()
+        assert restarted.unavailable_toggle.isChecked()
+        assert restarted.unavailable_toggle.property("iconName") == "eye"
+    finally:
+        restarted.close()
 
 
 @pytest.mark.parametrize("remaining", [False, True])

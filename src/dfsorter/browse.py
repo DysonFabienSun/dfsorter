@@ -70,6 +70,10 @@ class BrowsePage(QWidget):
             control = tool(icon_name, label, callback)
             self.player.controls.addWidget(control)
             self.marker_buttons.append(control)
+        self.edit_button = tool("pencil", "Edit clip…", self.edit_clip)
+        self.edit_button.setAccessibleName("Edit clip")
+        self.edit_button.setEnabled(False)
+        self.player.controls.addWidget(self.edit_button)
         self.fullscreen_button = tool("maximize", "Fullscreen · F11", self.toggle_fullscreen)
         self.player.controls.addWidget(self.fullscreen_button)
         form = QGridLayout()
@@ -170,7 +174,12 @@ class BrowsePage(QWidget):
         self.custom_title.clear()
         self.render_title()
         self.player.load(clip)
+        self.edit_button.setEnabled(bool(clip))
         self.refresh_range(default=True)
+
+    def edit_clip(self):
+        if self.clip:
+            self.window.start_atomic_edit(self.clip["clip_id"], "Browse")
 
     def render_title(self):
         self.working_title.setText(
@@ -247,7 +256,7 @@ class BrowsePage(QWidget):
         )
 
     def delete_source(self):
-        if not self.clip or self.window.worker is not None:
+        if not self.clip or self.window.worker is not None or self.window.atomic_edit:
             return
         candidates = preview(self.window.catalogue, self.window.media_info, clip_id=self.clip["clip_id"])
         if not candidates:

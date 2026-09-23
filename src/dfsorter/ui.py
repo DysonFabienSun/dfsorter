@@ -5,6 +5,9 @@ import sys
 import threading
 import time
 from collections import Counter, defaultdict
+from copy import deepcopy
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
@@ -60,7 +63,7 @@ from .config import Registry, has_review_metadata, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
-from .parsing import parse_command, preview_command, query_clips, requests_discarded
+from .parsing import parse_command, preview_command, query_clips
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -82,6 +85,15 @@ from .widgets import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@dataclass
+class AtomicEditState:
+    clip_id: str
+    origin: str
+    baseline: tuple
+    draft: tuple
+    history: list[str] = dataclass_field(default_factory=list)
+
+
 class Worker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
@@ -98,6 +110,88 @@ class Worker(QThread):
         except Exception as error:
             logging.exception("Background operation failed")
             self.failed.emit(str(error))
+
+
+class CheckMenu(QMenu):
+    def mouseReleaseEvent(self, event):
+        action = self.activeAction()
+        if action is not None and action.isCheckable() and action.isEnabled():
+            action.trigger()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class FilterMenuButton(QPushButton):
+    selectionChanged = Signal()
+
+    def __init__(self, label, all_label, options=(), selected=None, empty_text=None):
+        super().__init__(label)
+        self.all_label = all_label
+        self.empty_text = empty_text
+        self._all_selected = selected is None
+        self._selected = set(selected or ())
+        self._options = []
+        self._menu = CheckMenu(self)
+        self.setMenu(self._menu)
+        self.setAccessibleName(f"{label} filter")
+        self.set_options(options)
+
+    def set_options(self, options):
+        self._options = list(options)
+        values = {value for _label, value in self._options}
+        if not values:
+            self._all_selected = True
+            self._selected.clear()
+        elif not self._all_selected:
+            self._selected.intersection_update(values)
+        self._rebuild_menu()
+
+    def selected_values(self):
+        if self._all_selected:
+            return {value for _label, value in self._options}
+        return set(self._selected)
+
+    def all_selected(self):
+        return self._all_selected
+
+    def _rebuild_menu(self):
+        self._menu.clear()
+        all_action = self._menu.addAction(self.all_label)
+        all_action.setCheckable(True)
+        all_action.setChecked(self._all_selected)
+        all_action.triggered.connect(self._toggle_all)
+        if self._options:
+            self._menu.addSeparator()
+            for label, value in self._options:
+                action = self._menu.addAction(label)
+                action.setCheckable(True)
+                action.setChecked(self._all_selected or value in self._selected)
+                action.triggered.connect(
+                    lambda checked=False, value=value: self._toggle_value(value, checked)
+                )
+        elif self.empty_text:
+            self._menu.addSeparator()
+            empty = self._menu.addAction(self.empty_text)
+            empty.setEnabled(False)
+
+    def _toggle_all(self, checked):
+        self._all_selected = checked
+        self._selected.clear()
+        self._rebuild_menu()
+        self.selectionChanged.emit()
+
+    def _toggle_value(self, value, checked):
+        selected = self.selected_values()
+        if checked:
+            selected.add(value)
+        else:
+            selected.discard(value)
+        values = {option_value for _label, option_value in self._options}
+        self._all_selected = selected == values
+        self._selected = set() if self._all_selected else selected
+        self._rebuild_menu()
+        self.selectionChanged.emit()
 
 
 def button(text, callback):
@@ -140,9 +234,11 @@ class Window(QMainWindow):
         apply_theme(QApplication.instance(), self.settings["theme"])
         self.current_id = None
         self.current_panel = "Home"
+        self.library_newest = False
         self.browse_newest = True
         self.browse_id = None
         self.browse_selected_id = None
+        self.atomic_edit = None
         self.history = defaultdict(list)
         self.drafts = {}
         self.pane_overrides = {}
@@ -159,6 +255,7 @@ class Window(QMainWindow):
         self.pending_out = None
         self.worker = None
         self.refreshing = False
+        self.positioned_clip_pages = set()
         self.setWindowTitle("DFSorter")
         self.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
         self.resize(1400, 918)
@@ -233,22 +330,48 @@ class Window(QMainWindow):
         left_layout.addLayout(search_layout)
         self.filters, filter_layout = page()
         filter_layout.setContentsMargins(8, 0, 0, 0)
-        filter_layout.setSpacing(8)
+        filter_layout.setSpacing(4)
         role(self.filters, "transparent")
-        self.triage_filter = QComboBox()
-        self.triage_filter.addItems(
-            ["Hide discarded", "All triage", "Pending", "Keep", "Discard"]
+        filter_row = QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 5, 0)
+        filter_row.setSpacing(4)
+        self.clip_filter = FilterMenuButton(
+            "Clips",
+            "All clips",
+            [("Pending", None), ("Keep", "keep"), ("Discard", "discard")],
+            selected={None, "keep"},
         )
-        self.triage_filter.setCurrentText("Pending")
-        self.game_filter = QComboBox()
-        self.project_filter = QComboBox()
-        self.sort = QComboBox()
-        self.sort.addItems(
-            ["Oldest first", "Newest first", "Filename", "Working title", "Modified"]
+        self.game_filter = FilterMenuButton(
+            "Games", "All games", [("Uncategorized", "")]
         )
-        for control in [self.triage_filter, self.game_filter, self.project_filter, self.sort]:
-            filter_layout.addWidget(control)
-            control.currentIndexChanged.connect(self.refresh_library)
+        self.project_filter = FilterMenuButton(
+            "Projects", "All projects", empty_text="No projects"
+        )
+        for control in (self.clip_filter, self.game_filter, self.project_filter):
+            control.selectionChanged.connect(self.refresh_library)
+            filter_row.addWidget(control)
+        filter_row.addStretch()
+        self.unavailable_toggle = tool(
+            "eye-off", "Unavailable clips hidden · Show unavailable clips", self.toggle_unavailable
+        )
+        self.unavailable_toggle.setCheckable(True)
+        self.unavailable_toggle.setChecked(
+            bool(self.settings.get("show_unavailable_clips", False))
+        )
+        if self.unavailable_toggle.isChecked():
+            set_icon(self.unavailable_toggle, "eye")
+            self.unavailable_toggle.setToolTip(
+                "Unavailable clips shown · Hide unavailable clips"
+            )
+            self.unavailable_toggle.setAccessibleName(
+                "Unavailable clips shown · Hide unavailable clips"
+            )
+        filter_row.addWidget(self.unavailable_toggle)
+        self.time_sort = tool(
+            "arrow-down-up", "Oldest first · Switch to newest first", self.toggle_time_sort
+        )
+        filter_row.addWidget(self.time_sort)
+        filter_layout.addLayout(filter_row)
         left_layout.addWidget(self.filters)
         self.browse_filters, browse_filters_layout = page()
         browse_filters_layout.setContentsMargins(8, 0, 0, 0)
@@ -258,21 +381,7 @@ class Window(QMainWindow):
         self.browse_search.setPlaceholderText("Search clips")
         self.browse_search.returnPressed.connect(self.refresh_library)
         browse_filters_layout.addWidget(self.browse_search)
-        self.browse_game = QComboBox()
-        self.browse_game.addItem("All games", None)
-        self.browse_game.currentIndexChanged.connect(self.refresh_library)
-        browse_filters_layout.addWidget(self.browse_game)
-        browse_header = QHBoxLayout()
-        browse_header.setContentsMargins(0, 0, 5, 0)
-        browse_title = QLabel("Library clips")
-        role(browse_title, "paneHeading")
-        browse_header.addWidget(browse_title, 1)
-        self.browse_sort = tool(
-            "arrow-down-up", "Newest first · Switch to oldest first", self.toggle_browse_sort
-        )
-        browse_header.addWidget(self.browse_sort)
-        browse_filters_layout.addLayout(browse_header)
-        left_layout.addWidget(self.browse_filters)
+        left_layout.insertWidget(1, self.browse_filters)
         self.library_error = QLabel()
         role(self.library_error, "error")
         self.library_error.setWordWrap(True)
@@ -316,6 +425,12 @@ class Window(QMainWindow):
         scrollbar.rangeChanged.connect(self.update_library_scroll_fades)
         scrollbar.valueChanged.connect(self.update_library_scroll_fades)
         self.library.currentItemChanged.connect(self.select_clip)
+        self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.library.customContextMenuRequested.connect(self.show_clip_context_menu)
+        self.clip_context_menu = QMenu(self.library)
+        self.edit_clip_action = self.clip_context_menu.addAction("Edit clip…")
+        self.edit_clip_action.triggered.connect(self.edit_context_clip)
+        self.context_clip_id = None
         left_layout.addWidget(self.library, 1)
         self.session_counts = QLabel()
         self.session_counts.setWordWrap(True)
@@ -343,6 +458,7 @@ class Window(QMainWindow):
         self.projects = QListWidget()
         right_layout.addWidget(self.projects)
         project_tools = QHBoxLayout()
+        self.project_global_controls = []
         self.projects.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         for text, callback in [
             ("New project", self.new_project),
@@ -365,7 +481,10 @@ class Window(QMainWindow):
                 "Remove selected clips": "folder-x",
             }
             if text in names:
-                project_tools.addWidget(tool(names[text], text, callback))
+                control = tool(names[text], text, callback)
+                project_tools.addWidget(control)
+                if text in {"New project", "Rename", "Activate", "Deactivate"}:
+                    self.project_global_controls.append(control)
         project_tools.addStretch()
         right_layout.addLayout(project_tools)
         self.splitter.addWidget(self.right)
@@ -621,11 +740,20 @@ class Window(QMainWindow):
         self.player.previous.connect(lambda: self.navigate(-1))
         self.player.next.connect(lambda: self.navigate(1))
         editing.addWidget(self.player, 1)
+        title_row = QHBoxLayout()
         self.working_title = QLabel()
         self.working_title.setWordWrap(True)
         self.working_title.setTextFormat(Qt.TextFormat.RichText)
         self.working_title.setObjectName("workingTitle")
-        editing.addWidget(self.working_title)
+        title_row.addWidget(self.working_title, 1)
+        self.atomic_save_button = button("Save", self.save_atomic_edit)
+        self.atomic_revert_button = button("Revert", self.revert_atomic_edit)
+        role(self.atomic_revert_button, "danger")
+        self.atomic_save_button.hide()
+        self.atomic_revert_button.hide()
+        title_row.addWidget(self.atomic_save_button, 0, Qt.AlignmentFlag.AlignTop)
+        title_row.addWidget(self.atomic_revert_button, 0, Qt.AlignmentFlag.AlignTop)
+        editing.addLayout(title_row)
         self.filename = QLabel()
         role(self.filename, "secondary")
         self.filename.setWordWrap(True)
@@ -798,7 +926,7 @@ class Window(QMainWindow):
         self.command_error.setVisible(bool(str(message)))
 
     def open_settings(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         dialog = SettingsDialog(self)
         self.settings_dialog = dialog
@@ -833,7 +961,7 @@ class Window(QMainWindow):
         self.update_theme_button()
         self.refresh_references()
         self.refresh_title_presentation()
-        clip = self.catalogue.clip(self.current_id) if self.current_id else None
+        clip = self.effective_clip() if self.current_id else None
         if clip:
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
         for player in (self.player, self.export_player, self.browse.player):
@@ -847,7 +975,7 @@ class Window(QMainWindow):
             self.set_theme("system", persist=False)
 
     def delete_rejected(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
@@ -878,7 +1006,7 @@ class Window(QMainWindow):
             self.refresh_references()
             self.refresh_library()
             if self.current_id:
-                self.player.load(self.catalogue.clip(self.current_id))
+                self.player.load(self.effective_clip())
                 self.render_clip()
             self.export_selection()
             report = QDialog(self)
@@ -982,14 +1110,127 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
-        if hasattr(self, "library"):
-            QTimer.singleShot(0, self.position_selected_clip)
+
+    def effective_snapshot(self):
+        if self.atomic_edit and self.current_id == self.atomic_edit.clip_id:
+            return self.atomic_edit.draft
+        return self.catalogue.snapshot(self.current_id)
+
+    def effective_clip(self):
+        return self.effective_snapshot()[0]
+
+    def effective_memberships(self):
+        return self.effective_snapshot()[1]
+
+    def show_clip_context_menu(self, position):
+        item = self.library.itemAt(position)
+        if item is None or self.current_panel == "Editing":
+            return
+        self.context_clip_id = item.data(Qt.ItemDataRole.UserRole)
+        if self.current_panel == "Home":
+            self.highlight_home_clip(item)
+        else:
+            self.library.blockSignals(True)
+            self.library.clearSelection()
+            self.library.setCurrentItem(item)
+            item.setSelected(True)
+            self.library.blockSignals(False)
+        self.clip_context_menu.popup(self.library.viewport().mapToGlobal(position))
+
+    def highlight_home_clip(self, item):
+        self.library.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.library.blockSignals(True)
+        self.library.clearSelection()
+        self.library.setCurrentItem(item)
+        item.setSelected(True)
+        self.library.blockSignals(False)
+
+    def edit_context_clip(self):
+        if self.context_clip_id:
+            self.start_atomic_edit(self.context_clip_id, self.current_panel)
+
+    def start_atomic_edit(self, clip_id, origin=None):
+        if self.atomic_edit:
+            return
+        baseline = self.catalogue.snapshot(clip_id)
+        baseline[1].sort()
+        self.atomic_edit = AtomicEditState(
+            clip_id, origin or self.current_panel, baseline, deepcopy(baseline)
+        )
+        self.current_id = clip_id
+        self.panel("Editing")
+
+    def atomic_changed(self):
+        return bool(
+            self.atomic_edit
+            and (self.atomic_edit.draft != self.atomic_edit.baseline or self.has_pending_range())
+        )
+
+    def can_save_atomic(self):
+        return (
+            self.atomic_changed()
+            and not self.command.text()
+            and not self.has_pending_range()
+        )
+
+    def save_atomic_edit(self, return_to_origin=True):
+        if not self.atomic_edit:
+            return False
+        if self.command.text():
+            self.error("Submit the command with Enter before saving.")
+            return False
+        if not self.ensure_range_complete():
+            return False
+        try:
+            state = self.atomic_edit
+            self.catalogue.commit_snapshot(state.baseline, state.draft)
+            origin = state.origin
+            self.atomic_edit = None
+            self.current_id = None
+            if return_to_origin:
+                self.panel(origin)
+            return True
+        except ValueError as error:
+            self.error(error)
+            return False
+
+    def discard_atomic_edit(self):
+        if not self.atomic_edit:
+            return None
+        origin = self.atomic_edit.origin
+        self.command.clear()
+        self.atomic_edit = None
+        self.current_id = None
+        self.reset_pending_range()
+        return origin
+
+    def confirm_revert_atomic(self):
+        if not self.atomic_edit:
+            return True
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Discard single-clip changes?")
+        dialog.setText("Discard all staged changes and leave single-clip Editing?")
+        discard = dialog.addButton("Discard changes", QMessageBox.ButtonRole.DestructiveRole)
+        cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(cancel)
+        dialog.exec()
+        return dialog.clickedButton() is discard
+
+    def revert_atomic_edit(self):
+        if not self.atomic_edit or not self.confirm_revert_atomic():
+            return
+        origin = self.discard_atomic_edit()
+        self.panel(origin)
 
     def panel(self, name):
+        if self.atomic_edit and self.current_panel == "Editing" and name != "Editing":
+            if not self.confirm_revert_atomic():
+                return
+            self.discard_atomic_edit()
         if not self.ensure_range_complete():
             return
         self.submit_resume = False
-        if name == "Editing" and not self.catalogue.state("session"):
+        if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
         self.begin_page_transition()
@@ -1003,8 +1244,6 @@ class Window(QMainWindow):
         if entering_browse:
             self.browse_id = self.browse_selected_id
             self.browse_newest = True
-            self.browse_sort.setToolTip("Newest first · Switch to oldest first")
-            self.browse_sort.setAccessibleName("Newest first · Switch to oldest first")
         # Hiding focused filters can select an item from the outgoing page's list.
         # That automatic focus change must not become a manual Browse selection.
         library_signals_blocked = self.library.blockSignals(True)
@@ -1021,23 +1260,39 @@ class Window(QMainWindow):
         self.command_area.setVisible(name == "Editing")
         self.command.setEnabled(name == "Editing")
         self.shortcut_hint.setVisible(name == "Editing")
+        self.shortcut_hint.setText(
+            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Save/Revert to exit · ? Shortcuts"
+            if self.atomic_edit
+            else "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Pending · Ctrl+Enter Add to project + Next · ? Shortcuts"
+        )
         self.field_reminder.hide()
         self.session_header.setVisible(name == "Editing")
+        self.session_heading.setText("Single clip" if self.atomic_edit else "Session clips")
+        self.next_undefined_button.setVisible(not self.atomic_edit)
+        self.atomic_save_button.setVisible(bool(self.atomic_edit))
+        self.atomic_revert_button.setVisible(bool(self.atomic_edit))
+        self.player.previous_button.setEnabled(not self.atomic_edit)
+        self.player.next_button.setEnabled(not self.atomic_edit)
+        self.add_project_next.setVisible(not self.atomic_edit)
         self.search.setVisible(name not in {"Browse", "Editing", "Export"})
-        self.filters.setVisible(name not in {"Browse", "Editing", "Export"})
+        self.filters.setVisible(name not in {"Editing", "Export"})
         self.browse_filters.setVisible(name == "Browse")
+        self.update_time_sort_control()
         self.library.setSelectionMode(
             QListWidget.SelectionMode.SingleSelection
-            if name in {"Browse", "Editing"}
+            if name in {"Home", "Browse", "Editing"}
             else QListWidget.SelectionMode.ExtendedSelection
         )
         self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
         self.refresh_library()
-        QTimer.singleShot(0, self.position_selected_clip)
+        QTimer.singleShot(0, lambda panel=name: self.position_clip_page_once(panel))
         if name == "Editing":
-            session = self.catalogue.state("session")
-            self.load_clip(session["ids"][session["index"]])
+            if self.atomic_edit:
+                self.load_clip(self.atomic_edit.clip_id)
+            else:
+                session = self.catalogue.state("session")
+                self.load_clip(session["ids"][session["index"]])
             self.review_mode()
         elif name == "Export":
             self.export_selection()
@@ -1068,34 +1323,20 @@ class Window(QMainWindow):
                 (project["name"] for project in projects if project["project_id"] == active), "None"
             )
         )
-        for combo, default in [
-            (self.project_filter, "All projects"),
-            (self.export_project, "Choose project"),
-        ]:
-            selected = combo.currentData()
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(default, None)
-            for project in projects:
-                combo.addItem(project["name"], project["project_id"])
-            combo.setCurrentIndex(max(0, combo.findData(selected)))
-            combo.blockSignals(False)
-        selected = self.game_filter.currentData()
-        self.game_filter.clear()
-        self.game_filter.addItem("All games", None)
-        self.game_filter.addItem("Unassigned", "")
-        for name in self.registry.games:
-            self.game_filter.addItem(name, name)
-        self.game_filter.setCurrentIndex(max(0, self.game_filter.findData(selected)))
-        selected = self.browse_game.currentData()
-        self.browse_game.blockSignals(True)
-        self.browse_game.clear()
-        self.browse_game.addItem("All games", None)
-        self.browse_game.addItem("Unassigned", "")
-        for name in self.registry.games:
-            self.browse_game.addItem(name, name)
-        self.browse_game.setCurrentIndex(max(0, self.browse_game.findData(selected)))
-        self.browse_game.blockSignals(False)
+        self.project_filter.set_options(
+            [(project["name"], project["project_id"]) for project in projects]
+        )
+        selected = self.export_project.currentData()
+        self.export_project.blockSignals(True)
+        self.export_project.clear()
+        self.export_project.addItem("Choose project", None)
+        for project in projects:
+            self.export_project.addItem(project["name"], project["project_id"])
+        self.export_project.setCurrentIndex(max(0, self.export_project.findData(selected)))
+        self.export_project.blockSignals(False)
+        self.game_filter.set_options(
+            [("Uncategorized", ""), *((name, name) for name in self.registry.games)]
+        )
         folder_selection = self.selected_id(self.folders)
         self.folders.clear()
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
@@ -1182,7 +1423,12 @@ class Window(QMainWindow):
             clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         session = self.catalogue.state("session")
         self.nav["Editing"].setEnabled(bool(session))
-        self.session_counts.setVisible(bool(session) and self.current_panel == "Editing")
+        self.session_counts.setVisible(
+            bool(session) and self.current_panel == "Editing" and not self.atomic_edit
+        )
+        if self.atomic_edit:
+            self.session_position.clear()
+            return
         if session:
             counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
             total = len(session["ids"])
@@ -1277,12 +1523,35 @@ class Window(QMainWindow):
                 captured = ""
         return captured, clip["source_path"]
 
-    def toggle_browse_sort(self):
-        self.browse_newest = not self.browse_newest
-        current, other = ("Newest", "oldest") if self.browse_newest else ("Oldest", "newest")
+    def update_time_sort_control(self):
+        newest = self.browse_newest if self.current_panel == "Browse" else self.library_newest
+        current, other = ("Newest", "oldest") if newest else ("Oldest", "newest")
         label = f"{current} first · Switch to {other} first"
-        self.browse_sort.setToolTip(label)
-        self.browse_sort.setAccessibleName(label)
+        self.time_sort.setToolTip(label)
+        self.time_sort.setAccessibleName(label)
+
+    def toggle_time_sort(self):
+        if self.current_panel == "Browse":
+            self.browse_newest = not self.browse_newest
+        else:
+            self.library_newest = not self.library_newest
+        self.update_time_sort_control()
+        self.refresh_library()
+
+    def toggle_browse_sort(self):
+        self.toggle_time_sort()
+
+    def toggle_unavailable(self, checked):
+        self.settings["show_unavailable_clips"] = checked
+        set_icon(self.unavailable_toggle, "eye" if checked else "eye-off")
+        label = (
+            "Unavailable clips shown · Hide unavailable clips"
+            if checked
+            else "Unavailable clips hidden · Show unavailable clips"
+        )
+        self.unavailable_toggle.setToolTip(label)
+        self.unavailable_toggle.setAccessibleName(label)
+        self.save_settings()
         self.refresh_library()
 
     def update_browse_navigation(self):
@@ -1307,6 +1576,13 @@ class Window(QMainWindow):
         natural_maximum = max(0, content_bottom - self.library.viewport().height())
         scrollbar.setMaximum(max(natural_maximum, target))
         scrollbar.setValue(target)
+
+    def position_clip_page_once(self, panel):
+        if panel != self.current_panel or panel in self.positioned_clip_pages:
+            return
+        self.positioned_clip_pages.add(panel)
+        if self.library.currentRow() >= 0:
+            self.position_selected_clip()
 
     def update_library_scroll_fades(self, *_args):
         viewport = self.library.viewport()
@@ -1336,9 +1612,12 @@ class Window(QMainWindow):
         try:
             clips = self.catalogue.clips()
             if self.current_panel == "Editing":
-                session = self.catalogue.state("session")
-                mapping = {clip["clip_id"]: clip for clip in clips}
-                clips = [mapping[clip_id] for clip_id in session["ids"]] if session else []
+                if self.atomic_edit:
+                    clips = [self.atomic_edit.draft[0]]
+                else:
+                    session = self.catalogue.state("session")
+                    mapping = {clip["clip_id"]: clip for clip in clips}
+                    clips = [mapping[clip_id] for clip_id in session["ids"]] if session else []
             elif self.current_panel == "Export":
                 ids = self.catalogue.member_ids(self.export_project.currentData())
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
@@ -1346,64 +1625,46 @@ class Window(QMainWindow):
                 hidden = self.catalogue.hidden_deleted_ids()
                 clips = [clip for clip in clips if clip["clip_id"] not in hidden]
                 clips = query_clips(clips, self.browse_search.text(), self.registry)
-                game = self.browse_game.currentData()
-                if game is not None:
-                    clips = [clip for clip in clips if (clip["game"] or "") == game]
-                clips.sort(key=self.browse_sort_key, reverse=self.browse_newest)
             else:
                 clips = query_clips(clips, self.search.text(), self.registry)
                 if self.current_panel == "Session":
                     excluded = self.catalogue.session_excluded_ids()
                     clips = [clip for clip in clips if clip["clip_id"] not in excluded]
-                triage = self.triage_filter.currentText()
-                if triage == "Hide discarded" and not requests_discarded(self.search.text()):
-                    clips = [clip for clip in clips if clip["triage"] != "discard"]
-                elif triage not in {"All triage", "Hide discarded"}:
-                    expected = None if triage == "Pending" else triage.casefold()
-                    clips = [clip for clip in clips if clip["triage"] == expected]
-                game = self.game_filter.currentData()
-                if game is not None:
-                    clips = [clip for clip in clips if (clip["game"] or "") == game]
-                project = self.project_filter.currentData()
-                if project:
-                    ids = self.catalogue.member_ids(project)
-                    clips = [clip for clip in clips if clip["clip_id"] in ids]
-
-                def captured(clip):
-                    info = self.media_info.get(clip["source_path"], {})
-                    if info.get("created"):
-                        return info["created"]
-                    try:
-                        from datetime import datetime, timezone
-
-                        return datetime.fromtimestamp(
-                            Path(clip["source_path"]).stat().st_ctime, timezone.utc
-                        ).isoformat()
-                    except OSError:
-                        return ""
-
-                sort = self.sort.currentText()
-                key = {
-                    "Oldest first": captured,
-                    "Newest first": captured,
-                    "Filename": lambda clip: Path(clip["source_path"]).name.casefold(),
-                    "Working title": lambda clip: title(clip, self.registry).casefold(),
-                    "Modified": lambda clip: clip["catalogue_modified_at"],
-                }[sort]
+            if self.current_panel not in {"Editing", "Export"}:
+                if not self.settings.get("show_unavailable_clips", False):
+                    clips = [clip for clip in clips if Path(clip["source_path"]).is_file()]
+                triage = self.clip_filter.selected_values()
+                clips = [clip for clip in clips if clip["triage"] in triage]
+                games = self.game_filter.selected_values()
+                clips = [clip for clip in clips if (clip["game"] or "") in games]
+                if not self.project_filter.all_selected():
+                    project_ids = set()
+                    for project_id in self.project_filter.selected_values():
+                        project_ids.update(self.catalogue.member_ids(project_id))
+                    clips = [clip for clip in clips if clip["clip_id"] in project_ids]
                 clips.sort(
-                    key=lambda clip: (key(clip), clip["source_path"]),
-                    reverse=sort in {"Newest first", "Modified"},
+                    key=self.browse_sort_key,
+                    reverse=(
+                        self.browse_newest
+                        if self.current_panel == "Browse"
+                        else self.library_newest
+                    ),
                 )
             selected = {
                 item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()
             }
             current = self.selected_id(self.library)
-            if self.current_panel == "Browse":
+            if self.current_panel == "Home":
+                current = None
+                selected = set()
+            elif self.current_panel == "Browse":
                 current = self.browse_id
                 if current not in {clip["clip_id"] for clip in clips}:
                     current = clips[0]["clip_id"] if clips else None
                 selected = {current}
-            if self.current_panel == "Editing" and self.catalogue.state("session"):
+            if self.current_panel == "Editing" and self.atomic_edit:
+                current = self.atomic_edit.clip_id
+            elif self.current_panel == "Editing" and self.catalogue.state("session"):
                 session = self.catalogue.state("session")
                 current = session["ids"][session["index"]]
             scroll = self.library.verticalScrollBar().value()
@@ -1431,7 +1692,6 @@ class Window(QMainWindow):
                     break
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
-            self.position_selected_clip()
             if self.current_panel == "Browse":
                 self.browse_id = current
                 self.browse.load(self.catalogue.clip(current) if current else None)
@@ -1456,9 +1716,10 @@ class Window(QMainWindow):
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
             self.export_player.load(self.catalogue.clip(clip_id))
-        self.position_selected_clip()
 
     def switch_editing_clip(self, clip_id):
+        if self.atomic_edit:
+            return
         if clip_id == self.current_id:
             return
         if not self.ensure_range_complete():
@@ -1481,7 +1742,6 @@ class Window(QMainWindow):
                 self.library.blockSignals(True)
                 self.library.setCurrentItem(item)
                 self.library.blockSignals(False)
-                self.position_selected_clip()
         self.refresh_session_status()
         self.begin_page_transition("clip")
         self.load_clip(clip_id)
@@ -1497,22 +1757,26 @@ class Window(QMainWindow):
         self.reject_enter_armed = False
         self.pending_in = None
         self.pending_out = None
-        self.command.setText(self.drafts.get(clip_id, ""))
+        self.command.setText("" if self.atomic_edit else self.drafts.get(clip_id, ""))
         self.command_error.clear()
         self.command_error.hide()
         self.render_clip()
-        self.player.load(self.catalogue.clip(clip_id))
+        self.player.load(self.effective_clip())
         self.review_mode()
 
     def refresh_title_presentation(self):
         self.browse.render_title()
         for index in range(self.library.count()):
             item = self.library.item(index)
-            clip = self.catalogue.clip(item.data(Qt.ItemDataRole.UserRole))
+            clip = (
+                self.atomic_edit.draft[0]
+                if self.atomic_edit and item.data(Qt.ItemDataRole.UserRole) == self.atomic_edit.clip_id
+                else self.catalogue.clip(item.data(Qt.ItemDataRole.UserRole))
+            )
             if clip:
                 self.render_card(item, clip)
         if self.current_id:
-            self.render_working_title(self.catalogue.clip(self.current_id))
+            self.render_working_title(self.effective_clip())
 
     def render_working_title(self, clip):
         game = self.registry.game(clip["game"])
@@ -1545,7 +1809,7 @@ class Window(QMainWindow):
         self.update_history_controls()
         if not self.current_id:
             return
-        clip = self.catalogue.clip(self.current_id)
+        clip = self.effective_clip()
         game = self.registry.game(clip["game"])
         for index in range(self.library.count()):
             item = self.library.item(index)
@@ -1558,7 +1822,7 @@ class Window(QMainWindow):
         self.render_working_title(clip)
         self.render_field_reminder(clip, game)
         self.filename.setText(Path(clip["source_path"]).name)
-        member_ids = self.catalogue.memberships(self.current_id)
+        member_ids = self.effective_memberships()
         names = [
             project["name"]
             for project in self.catalogue.projects()
@@ -1584,9 +1848,13 @@ class Window(QMainWindow):
         self.description.setVisible(bool((clip["description"] or "").strip()))
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
-        self.command_history.setText("\n".join(self.history[self.current_id][-3:]))
+        command_history = (
+            self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
+        )
+        self.command_history.setText("\n".join(command_history[-3:]))
         self.command_history.setVisible(bool(self.command_history.text()))
         self.refresh_session_status()
+        self.atomic_save_button.setEnabled(self.can_save_atomic())
         self.update_command_state()
 
     def render_field_reminder(self, clip, game):
@@ -1661,7 +1929,13 @@ class Window(QMainWindow):
         if self.current_panel != "Editing" or not self.current_id:
             return
         try:
-            self.catalogue.patch(self.current_id, patch, editing=True, **kwargs)
+            if self.atomic_edit:
+                self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                    self.atomic_edit.draft, patch, editing=True,
+                    active_project=self.catalogue.state("active_project"), **kwargs
+                )
+            else:
+                self.catalogue.patch(self.current_id, patch, editing=True, **kwargs)
             self.render_clip()
         except (ValueError, OSError) as error:
             self.error(error)
@@ -1673,12 +1947,19 @@ class Window(QMainWindow):
             return
         text = self.command.text()
         try:
-            clip = self.catalogue.clip(self.current_id)
+            clip = self.effective_clip()
             patch = parse_command(text, clip["game"], self.registry)
-            self.catalogue.patch(self.current_id, patch, editing=True)
+            if self.atomic_edit:
+                self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                    self.atomic_edit.draft, patch, editing=True,
+                    active_project=self.catalogue.state("active_project")
+                )
+            else:
+                self.catalogue.patch(self.current_id, patch, editing=True)
             if text.strip():
-                self.history[self.current_id].append(text)
-                self.history[self.current_id] = self.history[self.current_id][-3:]
+                history = self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
+                history.append(text)
+                del history[:-3]
             self.command.clear()
             self.command_error.clear()
             self.command_error.hide()
@@ -1695,6 +1976,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def add_to_project_next(self):
+        if self.atomic_edit:
+            return
         if self.current_panel == "Browse":
             return
         if not self.ensure_range_complete():
@@ -1715,6 +1998,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def advance_review(self):
+        if self.atomic_edit:
+            return
         if self.current_panel == "Browse":
             return
         if self.current_panel != "Editing" or not self.current_id:
@@ -1772,6 +2057,8 @@ class Window(QMainWindow):
             self.error(error)
 
     def navigate_next_undefined(self):
+        if self.atomic_edit:
+            return
         session = self.catalogue.state("session")
         if self.current_panel != "Editing" or not session:
             return
@@ -1790,6 +2077,8 @@ class Window(QMainWindow):
             self.statusBar().showMessage("No pending clips ahead in this session.", 12000)
 
     def navigate(self, offset):
+        if self.atomic_edit:
+            return
         if self.current_panel == "Browse":
             index = self.library.currentRow() + offset
             if 0 <= index < self.library.count():
@@ -1814,10 +2103,13 @@ class Window(QMainWindow):
         if text:
             self.submit_resume = False
         if self.current_id:
-            self.drafts[self.current_id] = text
-            clip = self.catalogue.clip(self.current_id)
+            if not self.atomic_edit:
+                self.drafts[self.current_id] = text
+            clip = self.effective_clip()
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
         self.update_command_state()
+        if self.atomic_edit:
+            self.atomic_save_button.setEnabled(self.can_save_atomic())
 
     def editing_paused(self):
         return (
@@ -1856,7 +2148,7 @@ class Window(QMainWindow):
             self.command.setProperty("commandState", state)
         validation, message, patch = "empty", "", {}
         if self.current_id:
-            clip = self.catalogue.clip(self.current_id)
+            clip = self.effective_clip()
             patch, validation, message = preview_command(
                 self.command.text(),
                 clip["game"],
@@ -1936,6 +2228,13 @@ class Window(QMainWindow):
         self.right.setVisible(visible)
         self.projects_toggle.setEnabled(allowed)
         self.projects_toggle.setChecked(visible)
+        for action in self.projects.actions():
+            action.setEnabled(
+                not self.atomic_edit
+                or action.text() in {"Add to project", "Remove selected clips"}
+            )
+        for control in self.project_global_controls:
+            control.setEnabled(not self.atomic_edit)
         if visible and self.splitter.sizes()[2] == 0:
             self.splitter.setSizes([420, max(400, self.width() - 770), 350])
 
@@ -1959,6 +2258,9 @@ class Window(QMainWindow):
             text=clip["tag"] or "",
         )
         if accepted:
+            if self.atomic_edit:
+                self.edit({"tag": value or None})
+                return
             self.catalogue.patch(clip["clip_id"], {"tag": value or None})
             if self.current_panel == "Editing":
                 self.render_clip()
@@ -1973,6 +2275,23 @@ class Window(QMainWindow):
         )
 
     def eventFilter(self, watched: QObject, event):
+        if (
+            watched is self.library.viewport()
+            and self.current_panel == "Home"
+        ):
+            if (
+                event.type() == QEvent.Type.MouseButtonPress
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
+                item = self.library.itemAt(event.position().toPoint())
+                if item is not None:
+                    self.highlight_home_clip(item)
+                return True
+            if (
+                event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
+                return True
         if event.type() == QEvent.Type.ApplicationActivate:
             self.request_auto_scan()
         if (
@@ -2087,7 +2406,7 @@ class Window(QMainWindow):
                 if modifiers == Qt.KeyboardModifier.NoModifier:
                     self.submit()
                 elif modifiers == Qt.KeyboardModifier.ShiftModifier:
-                    if not event.isAutoRepeat():
+                    if not self.atomic_edit and not event.isAutoRepeat():
                         self.advance_review()
                 return True
         if text_editing:
@@ -2100,7 +2419,8 @@ class Window(QMainWindow):
             return super().eventFilter(watched, event)
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
-                self.advance_review()
+                if not self.atomic_edit:
+                    self.advance_review()
             elif modifiers == Qt.KeyboardModifier.ControlModifier and not event.isAutoRepeat():
                 self.add_to_project_next()
             elif modifiers == Qt.KeyboardModifier.NoModifier:
@@ -2169,7 +2489,7 @@ class Window(QMainWindow):
         return self.pending_in is not None or self.pending_out is not None
 
     def range_endpoints(self):
-        clip = self.catalogue.clip(self.current_id)
+        clip = self.effective_clip()
         return (
             self.pending_in if self.pending_in is not None else clip["in_ms"],
             self.pending_out if self.pending_out is not None else clip["out_ms"],
@@ -2230,6 +2550,8 @@ class Window(QMainWindow):
         start, end = self.range_endpoints()
         if start is None or end is None or not 0 <= start < end:
             self.ensure_range_complete()
+            if self.atomic_edit:
+                self.atomic_save_button.setEnabled(False)
             return
         self.save_range(start, end)
 
@@ -2237,7 +2559,14 @@ class Window(QMainWindow):
         if self.current_panel == "Browse":
             return
         try:
-            self.catalogue.patch(self.current_id, {"in_ms": start, "out_ms": end}, editing=True)
+            if self.atomic_edit:
+                self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                    self.atomic_edit.draft, {"in_ms": start, "out_ms": end}, editing=True
+                )
+            else:
+                self.catalogue.patch(
+                    self.current_id, {"in_ms": start, "out_ms": end}, editing=True
+                )
             self.reset_pending_range()
             self.command_error.clear()
             self.command_error.hide()
@@ -2254,7 +2583,7 @@ class Window(QMainWindow):
             self.save_range(None, None)
 
     def new_project(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         name, accepted = QInputDialog.getText(self, "New project", "Project name")
         if accepted:
@@ -2265,7 +2594,7 @@ class Window(QMainWindow):
                 self.error(error)
 
     def rename_project(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         project_id = self.selected_id(self.projects)
         if project_id:
@@ -2278,7 +2607,7 @@ class Window(QMainWindow):
                     self.error(error)
 
     def activate_project(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         project_id = self.selected_id(self.projects)
         if project_id:
@@ -2286,13 +2615,13 @@ class Window(QMainWindow):
             self.refresh_references()
 
     def deactivate(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         self.catalogue.set_state("active_project", None)
         self.refresh_references()
 
     def delete_project(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         project_id = self.selected_id(self.projects)
         if project_id and self.confirm(
@@ -2311,13 +2640,18 @@ class Window(QMainWindow):
             return
         ids = [item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()]
         for clip_id in ids:
-            self.catalogue.patch(clip_id, {}, membership=(project_id, include))
+            if self.atomic_edit and clip_id == self.atomic_edit.clip_id:
+                self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                    self.atomic_edit.draft, {}, membership=(project_id, include)
+                )
+            else:
+                self.catalogue.patch(clip_id, {}, membership=(project_id, include))
         self.update_history_controls()
         if self.current_panel == "Editing":
             self.render_clip()
 
     def create_session(self, mode):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         if not self.ensure_range_complete():
             return
@@ -2342,7 +2676,7 @@ class Window(QMainWindow):
             self.error(error)
 
     def end_session(self):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         if not self.ensure_range_complete():
             return
@@ -2360,7 +2694,7 @@ class Window(QMainWindow):
         )
         if not clip_id:
             raise ValueError("Select a clip first")
-        return self.catalogue.clip(clip_id)
+        return self.effective_clip() if self.atomic_edit else self.catalogue.clip(clip_id)
 
     def change_game(self):
         if self.current_panel == "Browse":
@@ -2377,9 +2711,16 @@ class Window(QMainWindow):
                 and game != clip["game"]
                 and self.confirm("Changing game clears all game-specific metadata. Continue?")
             ):
-                self.catalogue.patch(
-                    clip["clip_id"], {"game": game, "metadata": {}}, replace_metadata=True
-                )
+                if self.atomic_edit:
+                    self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                        self.atomic_edit.draft,
+                        {"game": game, "metadata": {}},
+                        replace_metadata=True,
+                    )
+                else:
+                    self.catalogue.patch(
+                        clip["clip_id"], {"game": game, "metadata": {}}, replace_metadata=True
+                    )
                 self.refresh_library()
                 if self.current_panel == "Editing":
                     self.render_clip()
@@ -2394,9 +2735,7 @@ class Window(QMainWindow):
             if self.confirm(
                 "Reset notes, structured metadata, triage, rating and range? Source, game and project memberships stay unchanged."
             ):
-                self.catalogue.patch(
-                    clip["clip_id"],
-                    {
+                reset_patch = {
                         "metadata": {},
                         "mainline": None,
                         "description": None,
@@ -2405,9 +2744,15 @@ class Window(QMainWindow):
                         "rating": None,
                         "in_ms": None,
                         "out_ms": None,
-                    },
-                    replace_metadata=True,
-                )
+                    }
+                if self.atomic_edit:
+                    self.atomic_edit.draft = self.catalogue.draft_snapshot(
+                        self.atomic_edit.draft, reset_patch, replace_metadata=True
+                    )
+                else:
+                    self.catalogue.patch(
+                        clip["clip_id"], reset_patch, replace_metadata=True
+                    )
                 self.reset_pending_range()
                 self.refresh_library()
                 if self.current_panel == "Editing":
@@ -2416,14 +2761,20 @@ class Window(QMainWindow):
             self.error(error)
 
     def update_history_controls(self):
-        allowed = self.current_panel != "Browse"
+        allowed = self.current_panel != "Browse" and not self.atomic_edit
         self.undo_button.setEnabled(allowed and bool(self.catalogue.undo_stack))
         self.redo_button.setEnabled(allowed and bool(self.catalogue.redo_stack))
         for action in getattr(self, "browse_write_actions", []):
-            action.setEnabled(allowed)
+            action.setEnabled(
+                self.current_panel != "Browse"
+                and (
+                    not self.atomic_edit
+                    or action.text() in {"Reset clip metadata…", "Edit tag…"}
+                )
+            )
 
     def undo(self, redo=False):
-        if self.current_panel == "Browse":
+        if self.current_panel == "Browse" or self.atomic_edit:
             return
         self.catalogue.undo(redo)
         self.refresh_references()
@@ -2894,6 +3245,11 @@ class Window(QMainWindow):
         mode.addItem("Whole clip", False)
         layout.addRow("Share", mode)
         layout.addRow(QLabel("H.264 MP4 · All audio tracks mixed to stereo AAC"))
+        if self.atomic_edit and self.command.text():
+            self.error("Submit the command with Enter before sharing.")
+            return
+        if self.atomic_edit and not self.ensure_range_complete():
+            return
         if self.current_panel == "Editing" and self.has_pending_range():
             layout.addRow(
                 QLabel("Range changes are pending; selected range uses the saved markers.")
@@ -2983,6 +3339,7 @@ class Window(QMainWindow):
             self.error("Cancelling current operation; close again after it finishes")
             event.ignore()
             return
+        self.atomic_edit = None
         self.player.media.shutdown()
         self.export_player.media.shutdown()
         self.browse.player.media.shutdown()

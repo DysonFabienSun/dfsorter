@@ -275,6 +275,37 @@ def test_patch_undo_membership_and_live_session(catalogue, clips, registry):
         reopened.create_session(ids)
 
 
+def test_atomic_snapshot_commit_and_conflict(catalogue, clips):
+    clip_id = clips[0]["clip_id"]
+    project_id = catalogue.save_project("Atomic")
+    baseline = catalogue.snapshot(clip_id)
+    draft = catalogue.draft_snapshot(
+        baseline,
+        {"rating": 4, "mainline": "Staged", "metadata": {"agent": "Jett"}},
+        membership=(project_id, True),
+    )
+    assert catalogue.clip(clip_id)["rating"] is None
+    assert catalogue.member_ids(project_id) == set()
+    history = list(catalogue.undo_stack)
+    assert catalogue.commit_snapshot(baseline, baseline) is False
+    assert catalogue.undo_stack == history
+    assert catalogue.commit_snapshot(baseline, draft) is True
+    assert catalogue.clip(clip_id)["mainline"] == "Staged"
+    assert catalogue.member_ids(project_id) == {clip_id}
+    assert len(catalogue.undo_stack) == len(history) + 1
+    catalogue.undo()
+    assert catalogue.clip(clip_id)["mainline"] is None
+    assert catalogue.member_ids(project_id) == set()
+
+    baseline = catalogue.snapshot(clip_id)
+    draft = catalogue.draft_snapshot(baseline, {"rating": 5})
+    catalogue.patch(clip_id, {"tag": "newer"})
+    with pytest.raises(ValueError, match="changed outside Editing"):
+        catalogue.commit_snapshot(baseline, draft)
+    assert catalogue.clip(clip_id)["rating"] is None
+    assert catalogue.clip(clip_id)["tag"] == "newer"
+
+
 def test_game_change_and_hidden_fields(catalogue, clips, registry):
     clip_id = clips[0]["clip_id"]
     catalogue.patch(
