@@ -204,7 +204,6 @@ class ClipDelegate(QStyledItemDelegate):
         painter.setFont(detail_font)
         verdict = data.get("triage")
         warning = " · Unavailable" if data.get("unavailable") else ""
-        status = f" · {(verdict or 'pending').capitalize()}"
         rating = data.get("rating")
         rating_text = f"R{rating}" if rating is not None else ""
         rating_font = font("xs", "bold", base=option.font)
@@ -215,7 +214,7 @@ class ClipDelegate(QStyledItemDelegate):
         fixed_width = (
             detail_metrics.horizontalAdvance(separator)
             + rating_metrics.horizontalAdvance(rating_text)
-            + detail_metrics.horizontalAdvance(folder_separator + status + warning)
+            + detail_metrics.horizontalAdvance(folder_separator + warning)
         )
         flexible_width = max(0, detail.width() - fixed_width)
         folder = detail_metrics.elidedText(
@@ -232,7 +231,7 @@ class ClipDelegate(QStyledItemDelegate):
             Qt.TextElideMode.ElideRight,
             max(0, detail.width() - reserved),
         )
-        text = game + separator + rating_text + folder_separator + folder + status
+        text = game + separator + rating_text + folder_separator + folder
         if data.get("browse_details") is not None:
             text = detail_metrics.elidedText(
                 data["browse_details"],
@@ -271,20 +270,12 @@ class ClipDelegate(QStyledItemDelegate):
                 Qt.AlignmentFlag.AlignVCenter,
                 folder_separator + folder,
             )
-            painter.drawText(
-                detail.adjusted(
-                    folder_offset + folder_separator_width + folder_width, 0, 0, 0
-                ),
-                Qt.AlignmentFlag.AlignVCenter,
-                status,
-            )
             warning_offset = (
                 game_width
                 + separator_width
                 + rating_width
                 + folder_separator_width
                 + folder_width
-                + detail_metrics.horizontalAdvance(status)
             )
         if warning:
             painter.setPen(QColor(COLORS["status_warning"]))
@@ -307,7 +298,7 @@ class ClipDelegate(QStyledItemDelegate):
             detail.top() + (detail.height() - detail_metrics.height()) / 2 + detail_metrics.ascent()
         )
         ink = detail_metrics.tightBoundingRect(text)
-        center_y = baseline + ink.y() + ink.height() / 2
+        center_y = baseline + ink.y() + ink.height() / 2 - 1
         painter.drawEllipse(QPointF(area.left() + 3, center_y), 3, 3)
         painter.restore()
 

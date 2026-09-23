@@ -379,7 +379,7 @@ The general library view supports:
 
 Library views support multi-selection outside Editing; Editing uses single selection. Frozen Session ordering and stable-boundary refresh follow §12.2.
 
-Every metadata-style left-pane clip list shows `Game · R# · Capture folder · Verdict` on the second line when rated and `Game · Capture folder · Verdict` when unrated, with a bold theme-aware `R1`–`R5` label. Use the capture folder's final path component, or `Unlinked` for retained clips without a registered folder. This applies to Home, Session, Editing, Export and Config. Browse retains capture time and folder on that line. The explicit rating text remains present independently of color.
+Every metadata-style left-pane clip list shows `Game · R# · Capture folder` on the second line when rated and `Game · Capture folder` when unrated, with a bold theme-aware `R1`–`R5` label. Use the capture folder's final path component, or `Unlinked` for retained clips without a registered folder. Keep, Discard and Pending are represented only by the colored status dot at the left of the line. This applies to Home, Session, Editing, Export and Config. Browse retains capture time and folder on that line. The explicit rating text remains present independently of color.
 
 The search bar does **not** expose raw SQL.
 

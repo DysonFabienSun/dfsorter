@@ -1512,8 +1512,7 @@ class Window(QMainWindow):
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
         folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
         details = browse_details or (
-            f"{clip['game'] or 'Unassigned'}{rating} · {folder_name} · "
-            f"{clip['triage'] or 'pending'}"
+            f"{clip['game'] or 'Unassigned'}{rating} · {folder_name}"
         )
         item.setText(f"{card_title}\n{details}{available}")
         item.setToolTip(item.text() + "\n" + clip["source_path"])

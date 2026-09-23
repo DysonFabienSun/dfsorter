@@ -1254,9 +1254,9 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     assert item.data(CLIP_ROLE)["triage"] is None
     assert item.data(CLIP_ROLE)["rating"] is None
     assert "discard keep" in item.data(CLIP_ROLE)["title"]
-    assert "VALORANT · captures · pending" in item.text()
+    assert item.text().endswith("VALORANT · captures")
     assert "R–" not in item.text()
-    assert "pending" in item.text().lower()
+    assert "pending" not in item.text().splitlines()[1].lower()
     assert window.triage_buttons[None].isChecked()
     assert window.triage_buttons[None].text() == "Pending"
     assert window.triage_buttons[None].toolTip() == "Clear verdict and mark as pending"
@@ -1273,7 +1273,8 @@ def test_cards_and_verdict_state(window, application, tmp_path):
     window.edit({"rating": 2})
     application.processEvents()
     assert window.library.item(0).data(CLIP_ROLE)["rating"] == 2
-    assert "VALORANT · R2 · captures · discard" in window.library.item(0).text()
+    assert window.library.item(0).text().endswith("VALORANT · R2 · captures")
+    assert "discard" not in window.library.item(0).text().splitlines()[1].lower()
     position = QPointF(window.rating.step * 3 + 4, 10)
     application.sendEvent(
         window.rating,
@@ -1307,7 +1308,8 @@ def test_clip_card_rating_scope(window, tmp_path):
     for panel in ("Home", "Session", "Editing", "Export", "Config"):
         window.current_panel = panel
         window.render_card(item, clip)
-        assert "VALORANT · R4 · captures · keep" in item.text()
+        assert item.text().endswith("VALORANT · R4 · captures")
+        assert "keep" not in item.text().lower()
 
     window.current_panel = "Browse"
     window.render_card(item, clip)
