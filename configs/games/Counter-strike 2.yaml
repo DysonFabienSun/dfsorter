@@ -1,0 +1,21 @@
+name: Counter-strike 2
+code: CS2
+command_example: '1v4 3k CT a1 mirage R4 -- mainline -- description'
+aliases: [cs2, counterstrike2]
+fields:
+  kill: {}
+  clutch: {}
+  side:
+    type: enum
+    values: [T, CT]
+  map:
+    type: enum
+    values: [Ancient, Anubis, Baggage, Boulder, Cache, Debris, Dust2, ElDorado, Fachwerk, Inferno, Italy, Mirage, Nuke, Office, Overpass, PoolDay, Poseidon, Shelter, Shoots, Train, Vertigo]
+    aliases: {dust: Dust2, d2: Dust2}
+  weapon:
+    type: enum
+    multiple: true
+    values: [Glock18, USP-S, P2000, DualBerettas, P250, Five-SeveN, Tec-9, CZ75-Auto, DesertEagle, R8Revolver, MAC-10, MP9, MP7, MP5-SD, UMP45, P90, PP-Bizon, Nova, XM1014, MAG-7, Sawed-Off, M249, Negev, Galil, FAMAS, AK-47, M4A4, M4A1-S, SSG08, SG553, AUG, AWP, SCAR-20, G3SG1, Zeusx27]
+    aliases: {glock: Glock18, usp: USP-S, p2k: P2000, dualies: DualBerettas, fiveseven: Five-SeveN, '57': Five-SeveN, cz: CZ75-Auto, deagle: DesertEagle, revolver: R8Revolver, mac10: MAC-10, mp5: MP5-SD, ump: UMP45, bizon: PP-Bizon, mag7: MAG-7, sawedoff: Sawed-Off, ak: AK-47, ak47: AK-47, a1: M4A1-S, a4: M4A4, m4: M4A4, scout: SSG08, krieg: SG553, scar: SCAR-20, fn57: Five-SeveN, taser: Zeusx27}
+display_order: [clutch, kill, side, map, weapon, mainline]
+suggested_fields: [side, weapon]

@@ -150,6 +150,56 @@ def test_canonical_patch_and_text(registry):
     assert parse_command("phantom", "VALORANT", registry) == {"metadata": {"weapon": ["Phantom"]}}
 
 
+def test_cs2_config_and_weapon_aliases(registry):
+    game = registry.game("Counter-strike 2")
+    assert registry.resolve("CS2") == "Counter-strike 2"
+    assert game.code == "CS2"
+    assert game.suggested_fields == ["side", "weapon"]
+    assert parse_command(
+        "1v4 3k ct a1 a4 m4 scout fn57 taser d2 R4 -- retake",
+        "Counter-strike 2",
+        registry,
+    ) == {
+        "metadata": {
+            "clutch": 4,
+            "kill": 3,
+            "side": "CT",
+            "weapon": ["M4A1-S", "M4A4", "SSG08", "Five-SeveN", "Zeusx27"],
+            "map": "Dust2",
+        },
+        "rating": 4,
+        "mainline": "retake",
+    }
+    assert parse_command(
+        "glock usp p2k dualies fiveseven 57 cz deagle revolver mac10 mp5 ump "
+        "bizon mag7 sawedoff ak ak47 krieg scar",
+        "Counter-strike 2",
+        registry,
+    ) == {
+        "metadata": {
+            "weapon": [
+                "Glock18",
+                "USP-S",
+                "P2000",
+                "DualBerettas",
+                "Five-SeveN",
+                "CZ75-Auto",
+                "DesertEagle",
+                "R8Revolver",
+                "MAC-10",
+                "MP5-SD",
+                "UMP45",
+                "PP-Bizon",
+                "MAG-7",
+                "Sawed-Off",
+                "AK-47",
+                "SG553",
+                "SCAR-20",
+            ]
+        }
+    }
+
+
 @pytest.mark.parametrize(
     "text",
     [
