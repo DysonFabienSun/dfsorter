@@ -122,6 +122,44 @@ class RangeSlider(QSlider):
             painter.drawText(position + 3, 11, label)
 
 
+class VolumeSlider(QSlider):
+    def __init__(self):
+        super().__init__(Qt.Orientation.Horizontal)
+        self.setObjectName("volume")
+
+    def move_pointer(self, event):
+        handle_radius = 5
+        fraction = (event.position().x() - handle_radius) / max(
+            1, self.width() - handle_radius * 2
+        )
+        self.setValue(
+            round(self.minimum() + max(0, min(1, fraction)) * (self.maximum() - self.minimum()))
+        )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setSliderDown(True)
+            self.move_pointer(event)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.isSliderDown():
+            self.move_pointer(event)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.move_pointer(event)
+            self.setSliderDown(False)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class Player(QWidget):
     loading_started = Signal()
     loading_finished = Signal()
@@ -183,8 +221,7 @@ class Player(QWidget):
             lambda muted: self.mute.setIcon(icon("volume-x" if muted else "volume-2"))
         )
         controls.addWidget(self.mute)
-        self.volume = QSlider(Qt.Orientation.Horizontal)
-        self.volume.setObjectName("volume")
+        self.volume = VolumeSlider()
         self.volume.setRange(0, 100)
         self.volume.setValue(60)
         self.volume.setFixedHeight(18)

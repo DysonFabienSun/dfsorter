@@ -95,6 +95,25 @@ def test_player_volume_geometry_and_media_colors(window, application):
     assert THEMES["light"]["component_volume_track"] != THEMES["light"]["border_default"]
 
 
+def test_player_volume_track_drag_updates_continuously(window, application):
+    window.panel("Browse")
+    application.processEvents()
+    volume = window.browse.player.volume
+    volume.setValue(0)
+
+    start = QPoint(5, volume.rect().center().y())
+    middle = QPoint(volume.width() // 2, volume.rect().center().y())
+    end = QPoint(volume.width() - 5, volume.rect().center().y())
+    QTest.mousePress(volume, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(volume, middle)
+    application.processEvents()
+    assert 45 <= volume.value() <= 55
+    QTest.mouseMove(volume, end)
+    QTest.mouseRelease(volume, Qt.MouseButton.LeftButton, pos=end)
+
+    assert volume.value() == 100
+
+
 def catalogue_dump(window):
     with window.catalogue.connection() as database:
         return list(database.iterdump())
