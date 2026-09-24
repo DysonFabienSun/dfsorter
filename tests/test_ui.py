@@ -114,6 +114,26 @@ def test_player_volume_track_drag_updates_continuously(window, application):
     assert volume.value() == 100
 
 
+def test_player_volume_is_shared_and_persists(window, application):
+    import yaml
+
+    window.browse.player.volume.setValue(37)
+    assert window.player.volume.value() == 37
+    assert window.export_player.volume.value() == 37
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
+        "playback_volume"
+    ] == 37
+
+    restarted = Window(window.root)
+    try:
+        assert restarted.browse.player.volume.value() == 37
+        assert restarted.player.volume.value() == 37
+        assert restarted.export_player.volume.value() == 37
+    finally:
+        restarted.close()
+        application.processEvents()
+
+
 def catalogue_dump(window):
     with window.catalogue.connection() as database:
         return list(database.iterdump())
@@ -2693,7 +2713,11 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert browse.clip["clip_id"] == clip_id
     QTest.keyClick(player, Qt.Key.Key_F11)
     assert window.isFullScreen()
-    QTest.keyClick(player, Qt.Key.Key_F11)
+    QTest.keyClick(player, Qt.Key.Key_F)
+    assert not window.isFullScreen()
+    browse.custom_title.setFocus()
+    QTest.keyClicks(browse.custom_title, "f")
+    assert browse.custom_title.text().endswith("f")
     assert not window.isFullScreen()
     browse.fullscreen_button.click()
     window.panel("Home")

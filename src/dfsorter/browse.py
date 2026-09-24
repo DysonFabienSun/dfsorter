@@ -37,6 +37,7 @@ class BrowsePage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.player = Player(window.settings)
+        self.player.volume_changed.connect(window.set_playback_volume)
         self.player.previous.connect(lambda: window.navigate(-1))
         self.player.next.connect(lambda: window.navigate(1))
         layout.addWidget(self.player, 1)
@@ -74,7 +75,7 @@ class BrowsePage(QWidget):
         self.edit_button.setAccessibleName("Edit clip")
         self.edit_button.setEnabled(False)
         self.player.controls.addWidget(self.edit_button)
-        self.fullscreen_button = tool("maximize", "Fullscreen · F11", self.toggle_fullscreen)
+        self.fullscreen_button = tool("maximize", "Fullscreen · F / F11", self.toggle_fullscreen)
         self.player.controls.addWidget(self.fullscreen_button)
         form = QGridLayout()
         form.setVerticalSpacing(10)
@@ -159,7 +160,7 @@ class BrowsePage(QWidget):
                 layout.setContentsMargins(margins)
             window.splitter.setSizes(sizes)
         set_icon(self.fullscreen_button, "minimize" if enabled else "maximize")
-        label = "Exit fullscreen · Esc / F11" if enabled else "Fullscreen · F11"
+        label = "Exit fullscreen · Esc / F / F11" if enabled else "Fullscreen · F / F11"
         self.fullscreen_button.setToolTip(label)
         self.fullscreen_button.setAccessibleName(label)
         self.player.setFocus()

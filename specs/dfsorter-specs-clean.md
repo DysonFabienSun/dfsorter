@@ -290,7 +290,7 @@ The Editing player includes:
 - embedded video playback;
 - progress/seek bar;
 - play/pause controls;
-- volume slider;
+- volume slider, shared across Browse, Editing and Export and persisted across application restarts;
 - mute button;
 - temporary 3x fast-forward while holding Space when a text-editing control is not consuming the key;
 - visible first frame when a clip is loaded rather than an unnecessary black player surface.
@@ -412,7 +412,7 @@ Legacy clips whose folders were previously unregistered appear as an **Unlinked 
 
 ### 10.1 Browse Panel
 
-Only Browse provides player fullscreen. Its transport-row Fullscreen button or F11 toggles fullscreen; Esc exits. Hide navigation, library, status bar, titles and Share form while retaining video, timeline and playback/range controls. Preserve the loaded clip, playback position/state and temporary range. Restore prior window geometry, normal/maximized state and pane sizes on exit; leaving Browse exits fullscreen. Editing and Export have no fullscreen action.
+Only Browse provides player fullscreen. Its transport-row Fullscreen button, F or F11 toggles fullscreen; Esc exits. Plain F does not trigger while editing text. Hide navigation, library, status bar, titles and Share form while retaining video, timeline and playback/range controls. Preserve the loaded clip, playback position/state and temporary range. Restore prior window geometry, normal/maximized state and pane sizes on exit; leaving Browse exits fullscreen. Editing and Export have no fullscreen action.
 
 Browse follows Home in navigation; Home remains the startup and capture-folder page. Browse is a session-free, read-only viewer of the main library, including clips from paused capture folders. It never changes catalogue metadata, saved I/O, projects, sessions, or catalogue undo history. Startup scanning remains independent.
 

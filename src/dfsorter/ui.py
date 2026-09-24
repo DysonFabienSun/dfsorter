@@ -737,6 +737,7 @@ class Window(QMainWindow):
         session.addStretch()
         editing = self.pages["Editing"][1]
         self.player = Player(self.settings)
+        self.player.volume_changed.connect(self.set_playback_volume)
         self.player.previous.connect(lambda: self.navigate(-1))
         self.player.next.connect(lambda: self.navigate(1))
         editing.addWidget(self.player, 1)
@@ -836,6 +837,7 @@ class Window(QMainWindow):
         self.export_project.currentIndexChanged.connect(self.export_selection)
         exporting.addWidget(self.export_project)
         self.export_player = Player(self.settings)
+        self.export_player.volume_changed.connect(self.set_playback_volume)
         self.export_player.previous_button.hide()
         self.export_player.next_button.hide()
         exporting.addWidget(self.export_player, 1)
@@ -2413,7 +2415,11 @@ class Window(QMainWindow):
             if key == Qt.Key.Key_Escape and self.browse.fullscreen_state is not None:
                 self.browse.set_fullscreen(False)
                 return True
-            if key == Qt.Key.Key_F11 and modifiers == Qt.KeyboardModifier.NoModifier:
+            if (
+                key in {Qt.Key.Key_F, Qt.Key.Key_F11}
+                and modifiers == Qt.KeyboardModifier.NoModifier
+                and not text_editing
+            ):
                 if not event.isAutoRepeat():
                     self.browse.toggle_fullscreen()
                 return True
@@ -3215,6 +3221,22 @@ class Window(QMainWindow):
         temporary = self.settings_path.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(self.settings, allow_unicode=True), encoding="utf-8")
         temporary.replace(self.settings_path)
+
+    def set_playback_volume(self, value):
+        value = max(0, min(100, int(value)))
+        self.settings["playback_volume"] = value
+        for player in (
+            getattr(self, "browse", None) and self.browse.player,
+            getattr(self, "player", None),
+            getattr(self, "export_player", None),
+        ):
+            if player is None or player.volume.value() == value:
+                continue
+            player.volume.blockSignals(True)
+            player.volume.setValue(value)
+            player.volume.blockSignals(False)
+            player.audio.setVolume(value / 100)
+        self.save_settings()
 
     def run_export(self):
         if self.worker is not None:

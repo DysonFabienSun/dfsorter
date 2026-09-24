@@ -15,6 +15,11 @@ def start_offset_seconds(settings):
     return value if type(value) is int and 1 <= value <= 86400 else 40
 
 
+def playback_volume(settings):
+    value = settings.get("playback_volume", 60)
+    return value if type(value) is int and 0 <= value <= 100 else 60
+
+
 class VideoSurface(QWidget):
     def __init__(self):
         super().__init__()
@@ -166,6 +171,7 @@ class Player(QWidget):
     position_changed = Signal(int)
     previous = Signal()
     next = Signal()
+    volume_changed = Signal(int)
 
     def __init__(self, settings=None):
         super().__init__()
@@ -180,7 +186,8 @@ class Player(QWidget):
         self.media = MpvBackend(self.video, self)
         self.media.videoSizeChanged.connect(self.video_container.set_video_size)
         self.audio = self.media
-        self.audio.setVolume(0.6)
+        initial_volume = playback_volume(self.settings)
+        self.audio.setVolume(initial_volume / 100)
         self.seek = RangeSlider()
         self.seek.sliderPressed.connect(self.begin_scrub)
         self.seek.sliderMoved.connect(self.queue_seek)
@@ -223,11 +230,11 @@ class Player(QWidget):
         controls.addWidget(self.mute)
         self.volume = VolumeSlider()
         self.volume.setRange(0, 100)
-        self.volume.setValue(60)
+        self.volume.setValue(initial_volume)
         self.volume.setFixedHeight(18)
         self.volume.setMaximumWidth(100)
         self.volume.setAccessibleName("Volume")
-        self.volume.valueChanged.connect(lambda value: self.audio.setVolume(value / 100))
+        self.volume.valueChanged.connect(self.set_volume)
         controls.addWidget(self.volume, 0, Qt.AlignmentFlag.AlignVCenter)
         self.time = QLabel("0:00 / 0:00")
         controls.addWidget(self.time, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -248,6 +255,7 @@ class Player(QWidget):
         self.status.hide()
         self.media.durationChanged.connect(self.seek.setMaximum)
         self.media.positionChanged.connect(self.position)
+
         self.media.playbackStateChanged.connect(
             lambda state: self.play.setIcon(
                 icon("pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play")
@@ -264,6 +272,10 @@ class Player(QWidget):
         self.load_timeout.timeout.connect(self.load_timed_out)
         self.loaded_clip = None
         self.retry_load = False
+
+    def set_volume(self, value):
+        self.audio.setVolume(value / 100)
+        self.volume_changed.emit(value)
 
     def set_status(self, message):
         self.status.setText(message)
