@@ -522,13 +522,15 @@ A Session does **not** snapshot clip metadata. Metadata remains live and editabl
 
 The Session panel shows the eligible library with normal search, filters, sorting, and selection. Clips associated with disabled capture folders cannot enter new Sessions through Selected, First N or All. Re-enabling restores eligibility. Existing frozen Sessions and project memberships remain unchanged. Clips retained after removing a folder remain eligible.
 
-A new Session may be created from:
+A new Session contains pending clips only and may be created from:
 
 - the currently selected clips;
 - the first `N` clips from the current filtered/sorted result;
 - all clips from the current filtered/sorted result.
 
 The resulting ordered clip-ID list is frozen when the Session is created.
+
+Selected ignores selected decided clips; First N counts pending clips before applying N; All includes all pending clips in the current filtered/sorted result. If the requested scope contains no pending clips, do not replace the active Session and report that no pending clips are available. Existing frozen Sessions retain clips after verdicts are assigned.
 
 By default, order follows the library's current sort. A common triage workflow is untriaged clips sorted oldest first.
 
@@ -539,6 +541,8 @@ Once locked, Session membership and ordering do not change because metadata or s
 The Session stores the current clip index across application restarts.
 
 While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters. An Editing-only header above the clip list shows **Session clips**, the current numeric position such as **17 / 50**, and a compact icon-only **Next pending clip** button on the right, with a downward navigation icon and an explanatory tooltip. It jumps to the next pending clip later in frozen Session order without changing metadata or verdicts, preserving drafts. It does not wrap; if none exists ahead, it stays on the current clip and reports that fact.
+
+A completed Session remains active for review. Ending a completed Session clears it immediately without confirmation. Ending a Session with pending clips retains confirmation. After ending, open Session and select Pending in the shared Clips filter; later manual filter choices persist normally.
 
 The Session view should display progress and the proportions/counts of:
 
@@ -619,7 +623,7 @@ The command bar receives one complete string.
 
 The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; the checklist tooltip distinguishes partial previews from complete drafts. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
 
-`tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `[LOW_FPS]`, `tag:LOW_FPS` or `tag:"audio issue"`. Bracket syntax accepts one non-empty token without spaces; `[]` and brackets containing spaces are invalid. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. For a valid tag draft matching any library clip case-insensitively, show `[TAG] · Existing` in the command feedback line. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
+`tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `[LOW_FPS]`, `tag:LOW_FPS` or `tag:"audio issue"`. Bracket syntax accepts one non-empty token without spaces; `[]` and brackets containing spaces are invalid. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. For a valid tag draft, replace the generic apply hint with `[TAG] Known tag` when it matches any library clip case-insensitively, or `[TAG] New tag` otherwise. Render the bracketed tag bold in primary text; render Known tag as secondary text and New tag in the accent color. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
 
 General syntax:
 

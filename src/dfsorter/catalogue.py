@@ -561,6 +561,9 @@ class Catalogue:
             raise ValueError("Session needs a nonempty unique list of existing clips")
         if self.session_excluded_ids().intersection(ids):
             raise ValueError("Clips from disabled capture folders cannot be added to a Session")
+        clips = {clip["clip_id"]: clip for clip in self.clips()}
+        if any(clips[clip_id]["triage"] is not None for clip_id in ids):
+            raise ValueError("Only pending clips can be added to a Session")
         self.set_state("session", {"ids": ids, "index": 0})
 
     def navigate(self, index):

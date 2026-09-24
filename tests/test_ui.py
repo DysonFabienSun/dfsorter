@@ -19,7 +19,7 @@ from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
-from dfsorter.theme import FONT_SIZES
+from dfsorter.theme import COLORS, FONT_SIZES
 from dfsorter.ui import ROOT, Window, style_application
 from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate
 
@@ -941,6 +941,12 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
     application.processEvents()
+    shortcut_document = QTextDocument()
+    shortcut_document.setHtml(window.shortcut_hint.text())
+    assert shortcut_document.toPlainText() == (
+        "Space Play/pause · I/O Range · Enter Metadata · "
+        "Shift+Enter Verdict + next · ? All shortcuts"
+    )
     window.command.setFocus()
     window.command.setText("jett vandal R4")
     QTest.keyClick(window.command, Qt.Key.Key_Return)
@@ -976,6 +982,74 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     assert window.right.isHidden() and window.command_area.isHidden()
     window.panel("Session")
     assert not window.filters.isHidden()
+
+
+def test_completed_session_ends_without_confirmation_and_decided_clips_do_not_reenter(
+    window, application, tmp_path, monkeypatch
+):
+    add_clips(window, tmp_path)
+    second = tmp_path / "captures" / "second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"],
+        [{"path": str(second), "game": "VALORANT"}],
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {"triage": "keep"})
+    window.panel("Editing")
+    monkeypatch.setattr(
+        window,
+        "confirm",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("confirmation shown")),
+    )
+
+    window.end_session()
+
+    assert window.catalogue.state("session") is None
+    assert window.current_panel == "Session"
+    assert window.clip_filter.selected_values() == {None}
+    pending = tmp_path / "captures" / "pending.mp4"
+    pending.write_bytes(b"test")
+    window.catalogue.ingest(
+        window.catalogue.folders()[0]["folder_id"],
+        [{"path": str(pending), "game": "VALORANT"}],
+    )
+    window.refresh_library()
+    pending_id = next(
+        clip["clip_id"] for clip in window.catalogue.clips() if clip["triage"] is None
+    )
+    window.create_session("all")
+    assert window.catalogue.state("session")["ids"] == [pending_id]
+
+
+def test_session_scopes_filter_decided_clips_before_selection_and_first_n(
+    window, application, tmp_path
+):
+    add_clips(window, tmp_path)
+    folder_id = window.catalogue.folders()[0]["folder_id"]
+    for index in range(3):
+        source = tmp_path / "captures" / f"scope-{index}.mp4"
+        source.write_bytes(b"test")
+        window.catalogue.ingest(folder_id, [{"path": str(source), "game": "VALORANT"}])
+    clips = window.catalogue.clips()
+    window.catalogue.patch(clips[0]["clip_id"], {"triage": "keep"})
+    window.catalogue.patch(clips[2]["clip_id"], {"triage": "discard"})
+    window.catalogue.set_state("session", None)
+    window.panel("Session")
+    window.clip_filter.set_selected_values({None, "keep", "discard"})
+    window.session_count.setValue(2)
+
+    window.create_session("first")
+
+    pending_ids = [clip["clip_id"] for clip in clips if clip["triage"] is None]
+    visible_ids = [
+        window.library.item(index).data(Qt.ItemDataRole.UserRole)
+        for index in range(window.library.count())
+    ]
+    expected = [clip_id for clip_id in visible_ids if clip_id in pending_ids][:2]
+    assert window.catalogue.state("session")["ids"] == expected
 
 
 def test_review_advance_is_separate_from_submission(window, application, tmp_path):
@@ -1073,12 +1147,20 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     assert "<u>player</u> clutch" in window.working_title.text().lower()
     assert "<u>player</u> clutch" in window.library.item(0).data(CLIP_ROLE)["rich_title"].lower()
     window.command.setText("[3rd] R4")
-    assert "[3rd] · Existing" in window.command_feedback.text()
+    document = QTextDocument()
+    document.setHtml(window.command_feedback.text())
+    assert document.toPlainText() == "[3rd] Known tag"
+    assert "font-weight:600" in window.command_feedback.text()
+    window.command.setText("[fresh] R4")
+    document.setHtml(window.command_feedback.text())
+    assert document.toPlainText() == "[fresh] New tag"
+    assert COLORS["accent_default"] in window.command_feedback.text()
     original_clips = window.catalogue.clips
     try:
         window.catalogue.clips = lambda: (_ for _ in ()).throw(AssertionError("full scan"))
         window.command.setText("[3RD] R4")
-        assert "[3RD] · Existing" in window.command_feedback.text()
+        document.setHtml(window.command_feedback.text())
+        assert document.toPlainText() == "[3RD] Known tag"
     finally:
         window.catalogue.clips = original_clips
     assert window.rating.command_preview == 4
@@ -1582,10 +1664,10 @@ def test_session_arrow_navigation_and_tag_display(window, application, tmp_path)
         path.write_bytes(b"test")
         window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
     ids += [clip["clip_id"] for clip in window.catalogue.clips() if clip["clip_id"] not in ids]
+    window.catalogue.create_session(ids, replace=True)
     window.catalogue.patch(ids[1], {"triage": "keep"})
     window.catalogue.patch(ids[2], {"triage": "discard"})
     window.catalogue.patch(ids[0], {"tag": "<bad>"})
-    window.catalogue.create_session(ids, replace=True)
     window.panel("Editing")
     data = window.library.item(0).data(CLIP_ROLE)
     assert data["title"].startswith("[<bad>] VAL_")
@@ -2284,7 +2366,7 @@ def test_next_undefined_navigation_is_editing_only(window, application, tmp_path
     window.catalogue.patch(ids[2], {"triage": "discard"})
     window.panel("Editing")
     assert not window.session_header.isHidden()
-    assert "Next pending clip" in window.next_undefined_button.toolTip()
+    assert window.next_undefined_button.toolTip() == "Next pending clip"
     window.command.setText("draft")
     window.next_undefined_button.click()
     assert window.current_id == ids[3]

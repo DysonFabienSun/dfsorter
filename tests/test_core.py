@@ -60,6 +60,19 @@ def test_folder_case_and_disabled_sessions(catalogue, tmp_path):
     assert video.exists()
 
 
+def test_new_sessions_accept_pending_clips_only(catalogue, clips):
+    decided_id = clips[0]["clip_id"]
+    pending_id = clips[1]["clip_id"]
+    catalogue.patch(decided_id, {"triage": "keep"})
+
+    with pytest.raises(ValueError, match="Only pending clips"):
+        catalogue.create_session([decided_id])
+
+    catalogue.create_session([pending_id])
+    catalogue.patch(pending_id, {"triage": "discard"})
+    assert catalogue.state("session")["ids"] == [pending_id]
+
+
 def test_ingest_backfills_only_missing_game(catalogue, tmp_path):
     root = tmp_path / "captures"
     root.mkdir()

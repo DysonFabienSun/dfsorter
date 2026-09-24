@@ -361,7 +361,7 @@ Command feedback
 Field checklist
 ```
 
-Retain bottom command area within center column and full-height left list. The command-area top margin is `8 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. The wrapping shortcut line uses the 11 px tertiary helper role so it reads as reference rather than task content. Feedback line and checklist reserve enough height to prevent baseline jumps. Put the range warning immediately left of Set In and Set Out in the player controls row and retain its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
+Retain bottom command area within center column and full-height left list. The command-area top margin is `8 + fontMetrics().lineSpacing()` logical pixels: intentional separation, not empty content bug. The wrapping shortcut line uses the 11 px tertiary helper role so it reads as reference rather than task content. Keep it to the core workflow: Space Play/pause, I/O Range, Enter Metadata, Shift+Enter Verdict + next, and ? All shortcuts; atomic Editing substitutes Save/Revert Exit. Keys use semibold primary text and actions use muted text. Feedback line and checklist reserve enough height to prevent baseline jumps. Put the range warning immediately left of Set In and Set Out in the player controls row and retain its slot when valid. Do not apply empty-row collapse indiscriminately to these reserved elements.
 
 Triage/rating groups remain compact and left aligned; help action anchors right. Description uses selectable plain text on separate row. Functional behavior and field availability follow main specs §13.
 

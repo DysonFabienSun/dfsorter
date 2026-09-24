@@ -153,6 +153,14 @@ class FilterMenuButton(QPushButton):
             return {value for _label, value in self._options}
         return set(self._selected)
 
+    def set_selected_values(self, selected):
+        values = {value for _label, value in self._options}
+        selected = set(selected).intersection(values)
+        self._all_selected = selected == values
+        self._selected = set() if self._all_selected else selected
+        self._rebuild_menu()
+        self.selectionChanged.emit()
+
     def all_selected(self):
         return self._all_selected
 
@@ -403,7 +411,7 @@ class Window(QMainWindow):
         session_header_layout.addStretch()
         self.next_undefined_button = tool(
             "list-todo",
-            "Next pending clip · Jump ahead without changing verdicts (no wrap)",
+            "Next pending clip",
             self.navigate_next_undefined,
         )
         self.next_undefined_button.setProperty("sessionAction", True)
@@ -504,9 +512,8 @@ class Window(QMainWindow):
         self.command_history.setWordWrap(True)
         self.command_history.hide()
         command_layout.addWidget(self.command_history)
-        self.shortcut_hint = QLabel(
-            "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Pending · Ctrl+Enter Add to project + Next · ? Shortcuts"
-        )
+        self.shortcut_hint = QLabel()
+        self.shortcut_hint.setTextFormat(Qt.TextFormat.RichText)
         role(self.shortcut_hint, "helper")
         self.shortcut_hint.setWordWrap(True)
         command_layout.addWidget(self.shortcut_hint)
@@ -521,7 +528,7 @@ class Window(QMainWindow):
         self.command_saved_timer.timeout.connect(self.update_command_state)
         command_layout.addWidget(self.command)
         self.command_feedback = QLabel()
-        self.command_feedback.setTextFormat(Qt.TextFormat.PlainText)
+        self.command_feedback.setTextFormat(Qt.TextFormat.RichText)
         self.command_feedback.setObjectName("muted")
         self.command_feedback.setWordWrap(True)
         self.command_feedback.setMinimumHeight(self.command_feedback.fontMetrics().height())
@@ -963,6 +970,8 @@ class Window(QMainWindow):
         self.update_theme_button()
         self.refresh_references()
         self.refresh_title_presentation()
+        self.refresh_shortcut_hint()
+        self.update_command_state()
         clip = self.effective_clip() if self.current_id else None
         if clip:
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
@@ -1294,11 +1303,7 @@ class Window(QMainWindow):
         self.command_area.setVisible(name == "Editing")
         self.command.setEnabled(name == "Editing")
         self.shortcut_hint.setVisible(name == "Editing")
-        self.shortcut_hint.setText(
-            "Space Play · ←/→ Seek · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Save/Revert to exit · ? Shortcuts"
-            if self.atomic_edit
-            else "Space Play · ←/→ Seek · ↑/↓ Clips · I/O Range · R1–5 Rate · Backspace Reject · / or Enter Metadata · Shift+Enter Verdict + Next Pending · Ctrl+Enter Add to project + Next · ? Shortcuts"
-        )
+        self.refresh_shortcut_hint()
         self.field_reminder.hide()
         self.session_header.setVisible(name == "Editing")
         self.session_heading.setText("Single clip" if self.atomic_edit else "Session clips")
@@ -2220,10 +2225,17 @@ class Window(QMainWindow):
             "Clear rating" if rating is None else "Rating pending · press Enter"
         )
         self.rating_clear.setAccessibleName("Clear rating" if rating is None else "Rating pending")
+        feedback = html.escape(message)
         if validation == "valid" and patch.get("tag"):
             candidate = patch["tag"]
-            if self.catalogue.tag_exists(candidate):
-                message = f"{message} · [{candidate}] · Existing"
+            known = self.catalogue.tag_exists(candidate)
+            label = "Known tag" if known else "New tag"
+            label_color = COLORS["text_secondary" if known else "accent_default"]
+            feedback = (
+                f'<span style="color:{COLORS["text_primary"]}; font-weight:600">'
+                f'[{html.escape(candidate)}]</span> '
+                f'<span style="color:{label_color}">{label}</span>'
+            )
         if validation == "empty":
             if self.command_saved_timer.isActive():
                 validation, message = "saved", "Saved"
@@ -2231,7 +2243,8 @@ class Window(QMainWindow):
                 message = "Saved · Space to resume"
             elif state == "paused" and not message:
                 message = "Type to enter commands"
-        self.command_feedback.setText(message)
+            feedback = html.escape(message)
+        self.command_feedback.setText(feedback)
         if self.command.property("validationState") != validation:
             self.command.setProperty("validationState", validation)
             self.command.style().unpolish(self.command)
@@ -2242,6 +2255,29 @@ class Window(QMainWindow):
         self.submit_resume = False
         self.player.setFocus()
         self.update_command_state()
+
+    def refresh_shortcut_hint(self):
+        pairs = (
+            [("Space", "Play/pause"), ("I/O", "Range"), ("Enter", "Metadata")]
+            + (
+                [("Save/Revert", "Exit")]
+                if self.atomic_edit
+                else [("Shift+Enter", "Verdict + next")]
+            )
+            + [("?", "All shortcuts")]
+        )
+        key_style = f'color:{COLORS["text_primary"]}; font-weight:600'
+        action_style = f'color:{COLORS["text_muted"]}'
+        self.shortcut_hint.setText(
+            " · ".join(
+                f'<span style="{key_style}">{html.escape(key)}</span> '
+                f'<span style="{action_style}">{html.escape(action)}</span>'
+                for key, action in pairs
+            )
+        )
+        self.shortcut_hint.setAccessibleName(
+            ", ".join(f"{key}: {action}" for key, action in pairs)
+        )
 
     def cancel_space(self):
         self.space_timer.stop()
@@ -2702,10 +2738,12 @@ class Window(QMainWindow):
         if not self.ensure_range_complete():
             return
         selected = {item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()}
-        ids = [
+        visible_ids = [
             self.library.item(index).data(Qt.ItemDataRole.UserRole)
             for index in range(self.library.count())
         ]
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        ids = [clip_id for clip_id in visible_ids if clips[clip_id]["triage"] is None]
         if mode == "selected":
             ids = [clip_id for clip_id in ids if clip_id in selected]
         elif mode == "first":
@@ -2726,12 +2764,16 @@ class Window(QMainWindow):
             return
         if not self.ensure_range_complete():
             return
-        if self.catalogue.state("session") and self.confirm(
-            "End this session? Clip metadata stays unchanged."
-        ):
+        session = self.catalogue.state("session")
+        if not session:
+            return
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        complete = all(clips[clip_id]["triage"] is not None for clip_id in session["ids"])
+        if complete or self.confirm("End this session? Clip metadata stays unchanged."):
             self.catalogue.set_state("session", None)
             self.current_id = None
             self.player.load(None)
+            self.clip_filter.set_selected_values({None})
             self.panel("Session")
 
     def selected_clip(self):
