@@ -842,6 +842,11 @@ def test_playback_preferences_persist(window, application):
     assert group_headings == {"Browse · Editing · Export", "Editing"}
     assert settings.start_near_end.isChecked()
     assert settings.start_offset.value() == 40
+    assert settings.start_offset.singleStep() == 5
+    settings.start_offset.stepUp()
+    assert settings.start_offset.value() == 45
+    settings.start_offset.stepDown()
+    assert settings.start_offset.value() == 40
     assert settings.paused_typing.isChecked()
     settings.paused_typing.setChecked(False)
     settings.start_offset.setValue(17)
@@ -1773,6 +1778,29 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
     assert window.right.isVisible()
     window.reset_layout()
     assert window.right.isHidden()
+
+
+def test_editing_mouse_click_returns_to_review_without_losing_draft(
+    window, application, tmp_path
+):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.settings["paused_typing_enabled"] = False
+    window.command.setText("unfinished")
+
+    for target in (window.triage_buttons["discard"], window.pages["Editing"][0]):
+        window.command.setFocus()
+        assert application.focusWidget() is window.command
+        QTest.mouseClick(target, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert application.focusWidget() is not window.command
+        assert window.command.property("commandState") == "review"
+        assert window.command.text() == "unfinished"
+    assert window.catalogue.clip(ids[0])["triage"] == "discard"
+
+    window.command.setFocus()
+    QTest.mouseClick(window.command, Qt.MouseButton.LeftButton)
+    assert application.focusWidget() is window.command
 
 
 def test_filename_fallback_deduplicates_game_prefix(window, application, tmp_path):

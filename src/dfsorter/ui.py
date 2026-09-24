@@ -2447,6 +2447,18 @@ class Window(QMainWindow):
             self.submit_resume = False
             self.update_command_state()
             self.cancel_space()
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and self.current_panel == "Editing"
+            and QApplication.focusWidget() is self.command
+            and isinstance(watched, QWidget)
+            and watched.window() is self
+            and watched is not self.command
+            and not self.command.isAncestorOf(watched)
+            and not QApplication.activeModalWidget()
+            and not QApplication.activePopupWidget()
+        ):
+            self.review_mode()
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
             if event.type() == QEvent.Type.ApplicationDeactivate:
                 self.submit_resume = False

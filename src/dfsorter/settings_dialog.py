@@ -38,6 +38,7 @@ class SettingsDialog(QDialog):
         offset_label = QLabel("Start before the end:")
         self.start_offset = QSpinBox()
         self.start_offset.setRange(1, 86400)
+        self.start_offset.setSingleStep(5)
         self.start_offset.setSuffix(" s")
         self.start_offset.setValue(start_offset_seconds(window.settings))
         self.start_offset.setEnabled(self.start_near_end.isChecked())

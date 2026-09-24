@@ -179,6 +179,9 @@ def stylesheet():
         "combo_chevron": (
             Path(__file__).resolve().parents[2] / "resources/icons/chevron-down.svg"
         ).as_posix(),
+        "spin_up_chevron": (
+            Path(__file__).resolve().parents[2] / "resources/icons/chevron-up.svg"
+        ).as_posix(),
     }
     return (
         """
@@ -214,6 +217,15 @@ def stylesheet():
             width: 24px; border: none; background: transparent;
         }
         QComboBox::down-arrow { image: url("%(combo_chevron)s"); width: 14px; height: 14px; }
+        QSpinBox::up-button, QSpinBox::down-button {
+            subcontrol-origin: border; width: 20px; border: none; background: transparent;
+        }
+        QSpinBox::up-button { subcontrol-position: top right; }
+        QSpinBox::down-button { subcontrol-position: bottom right; }
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: %(surface_hover)s; }
+        QSpinBox::up-button:pressed, QSpinBox::down-button:pressed { background: %(surface_pressed)s; }
+        QSpinBox::up-arrow { image: url("%(spin_up_chevron)s"); width: 12px; height: 12px; }
+        QSpinBox::down-arrow { image: url("%(combo_chevron)s"); width: 12px; height: 12px; }
         QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(border_strong)s; }
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
         QComboBox:focus { padding: 3px 27px 3px 7px; }

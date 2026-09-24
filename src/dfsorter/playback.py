@@ -107,6 +107,7 @@ class RangeSlider(QSlider):
         if self.maximum() <= 0:
             return
         painter = QPainter(self)
+        painter.setFont(font("md", "bold", base=painter.font()))
         if start is not None and end is not None:
             left = 8 + int((self.width() - 16) * start / self.maximum())
             width = int((self.width() - 16) * (end - start) / self.maximum())
