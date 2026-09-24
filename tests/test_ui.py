@@ -2619,12 +2619,15 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     utilities = [
         window.undo_button,
         window.redo_button,
-        window.projects_toggle,
         window.theme_button,
         window.settings_button,
     ]
     assert {control.height() for control in utilities} == {28}
     assert len({control.geometry().center().y() for control in utilities}) == 1
+    assert window.projects_toggle.height() == 30
+    assert window.projects_toggle.geometry().right() == window.central.width() - 1
+    assert window.projects_tab_edge.geometry().getRect() == (91, 4, 1, 22)
+    assert window.projects_tab_chevron.geometry().getRect() == (83, 11, 5, 7)
     assert window.projects_toggle.font().pixelSize() == FONT_SIZES["md"]
     assert window.projects_toggle.iconSize().height() == 18
     assert window.undo_button.property("navUtilityStyle") == "ghost"
@@ -2647,6 +2650,29 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
         painted_icon_height(window.projects_toggle)
         - painted_icon_height(window.theme_button)
     ) <= 1
+
+
+def test_projects_drawer_tab_and_pane_close(window):
+    assert not window.right.isVisible()
+    assert window.projects_toggle.isVisible()
+    assert window.projects_toggle.objectName() == "projectsDrawerTab"
+    assert window.projects_heading.text() == "Projects"
+    assert window.projects_heading.property("role") == "paneHeading"
+
+    window.projects_toggle.click()
+
+    assert window.right.isVisible()
+    assert not window.projects_toggle.isVisible()
+    assert window.projects_close.isVisible()
+
+    window.projects_close.click()
+
+    assert not window.right.isVisible()
+    assert window.projects_toggle.isVisible()
+
+    window.panel("Browse")
+    assert not window.right.isVisible()
+    assert not window.projects_toggle.isVisible()
 
 
 def test_settings_remain_available_in_browse(window):

@@ -326,7 +326,7 @@ Page and clip transitions keep the native video surface hidden until the surroun
 
 ### 9.2 Settings and Actions
 
-There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit to the left of Projects, with 4 px between them and a 16 px gap before Projects. Retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Undo, Redo, Projects, Theme and Settings use matching 28 px heights and one vertical centerline. Undo/Redo, Theme and Settings are frameless; Projects uses a quiet neutral frame. Use the 13 px medium semantic font for the vertically centered Projects label and retain the shared optical 1 px downward icon offset on icon-only utilities.
+There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit at the right with 4 px between them; retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Undo, Redo, Theme and Settings use matching 28 px heights and one vertical centerline with frameless styling. When available and closed, Projects uses a labeled folder-like tab hanging beneath Settings. Opening the pane hides the tab; the pane has a prominent Projects heading and its own close action. Retain the shared optical 1 px downward icon offset on icon-only utilities.
 
 Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations retain explicit confirmation.
 
@@ -348,7 +348,7 @@ The panel-navigation row and settings cog are present on every panel except duri
 The application uses a Premiere-inspired three-pane layout where relevant.
 
 - The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. A visible **Projects** toggle with a folder icon controls it and is highlighted while the pane is open; manual visibility overrides are remembered separately for normal/maximized states for the current run. Browse, Export and Config always hide it. Reset Layout restores defaults.
+- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. When closed, a visible **Projects** folder tab beneath Settings opens it and then disappears; an × action beside the pane heading closes it. Manual visibility overrides are remembered separately for normal/maximized states for the current run. Browse, Export and Config always hide it. Reset Layout restores defaults.
 - Both panes are manually resizable using splitters.
 - Resizing/maximizing the window primarily gives additional width to the center pane.
 - User-adjusted pane widths are not persisted across application restarts.

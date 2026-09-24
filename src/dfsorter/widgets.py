@@ -9,6 +9,7 @@ from PySide6.QtGui import (
     QIcon,
     QLinearGradient,
     QPainter,
+    QPen,
     QPixmap,
     QTextDocument,
     QTextLayout,
@@ -21,6 +22,28 @@ from .theme import COLORS, SIZES, font
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+class EdgeChevron(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        border = QColor(COLORS["border_default"])
+        muted = QColor(COLORS["text_muted"])
+        color = QColor(
+            round(border.red() * 0.6 + muted.red() * 0.4),
+            round(border.green() * 0.6 + muted.green() * 0.4),
+            round(border.blue() * 0.6 + muted.blue() * 0.4),
+        )
+        pen = QPen(color, 1)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.drawLine(4, 0, 1, 3)
+        painter.drawLine(1, 3, 4, 6)
 
 
 class ClipScrollFade(QWidget):

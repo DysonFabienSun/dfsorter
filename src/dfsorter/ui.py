@@ -75,6 +75,7 @@ from .widgets import (
     CaptureFolderDelegate,
     ClipDelegate,
     ClipScrollFade,
+    EdgeChevron,
     Rating,
     icon,
     refresh_icons,
@@ -276,6 +277,7 @@ class Window(QMainWindow):
         self.resize(1400, 918)
         self.status_bar = self.statusBar()
         central, outer = page()
+        self.central = central
         self.setCentralWidget(central)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -303,17 +305,19 @@ class Window(QMainWindow):
         navigation.addSpacing(16)
         self.projects_toggle = button("Projects", self.toggle_projects)
         set_icon(self.projects_toggle, "folder-open")
-        self.projects_toggle.setToolTip("Show / hide Projects")
-        self.projects_toggle.setAccessibleName("Show / hide Projects")
+        self.projects_toggle.setToolTip("Show Projects")
+        self.projects_toggle.setAccessibleName("Show Projects")
         self.projects_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.projects_toggle.setCheckable(True)
-        self.projects_toggle.setProperty("navUtility", True)
-        self.projects_toggle.setProperty("navUtilityStyle", "framed")
-        self.projects_toggle.setFixedSize(92, SIZES["toolbar"])
+        self.projects_toggle.setObjectName("projectsDrawerTab")
+        self.projects_toggle.setFixedSize(96, 30)
         self.projects_toggle.setIconSize(QSize(18, 18))
         self.projects_toggle.setFont(font("md", "medium"))
-        navigation.addWidget(self.projects_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
-        navigation.addSpacing(4)
+        self.projects_tab_edge = QWidget(self.projects_toggle)
+        self.projects_tab_edge.setObjectName("projectsDrawerTabEdge")
+        self.projects_tab_edge.setGeometry(91, 4, 1, 22)
+        self.projects_tab_edge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.projects_tab_chevron = EdgeChevron(self.projects_toggle)
+        self.projects_tab_chevron.setGeometry(83, 11, 5, 7)
         self.theme_button = tool("moon", "Switch to dark mode", self.toggle_theme)
         self.theme_button.setProperty("navUtility", True)
         self.theme_button.setProperty("navUtilityStyle", "ghost")
@@ -331,6 +335,8 @@ class Window(QMainWindow):
         navigation.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(8)
         outer.addWidget(self.navigation_strip)
+        self.projects_toggle.setParent(self.central)
+        self.projects_toggle.raise_()
         self.splitter = QSplitter()
         self.splitter.setObjectName("workspaceSplitter")
         self.splitter.setHandleWidth(5)
@@ -474,7 +480,18 @@ class Window(QMainWindow):
         self.pages = {}
         self.build_pages()
         self.right, right_layout = page()
+        self.right.setObjectName("projectsPane")
         role(self.right, "sidebar")
+        projects_header = QHBoxLayout()
+        projects_header.setContentsMargins(0, 0, 0, 0)
+        self.projects_heading = QLabel("Projects")
+        role(self.projects_heading, "paneHeading")
+        projects_header.addWidget(self.projects_heading)
+        projects_header.addStretch()
+        self.projects_close = tool("x", "Close Projects", self.toggle_projects)
+        self.projects_close.setObjectName("projectsPaneClose")
+        projects_header.addWidget(self.projects_close)
+        right_layout.addLayout(projects_header)
         self.active_label = QLabel()
         role(self.active_label, "secondary")
         self.active_label.setWordWrap(True)
@@ -1133,6 +1150,8 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
+        if hasattr(self, "projects_toggle"):
+            self.position_projects_toggle()
 
     def effective_snapshot(self):
         if self.atomic_edit and self.current_id == self.atomic_edit.clip_id:
@@ -2358,8 +2377,8 @@ class Window(QMainWindow):
         allowed = self.current_panel not in {"Browse", "Export", "Config"}
         visible = allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
         self.right.setVisible(visible)
-        self.projects_toggle.setEnabled(allowed)
-        self.projects_toggle.setChecked(visible)
+        self.projects_toggle.setVisible(allowed and not visible)
+        self.position_projects_toggle()
         for action in self.projects.actions():
             action.setEnabled(
                 not self.atomic_edit
@@ -2374,6 +2393,13 @@ class Window(QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "right"):
             self.update_projects_visibility()
+
+    def position_projects_toggle(self):
+        self.projects_toggle.move(
+            self.central.width() - self.projects_toggle.width(),
+            self.navigation_strip.height(),
+        )
+        self.projects_toggle.raise_()
 
     def edit_tag(self):
         if self.current_panel == "Browse":

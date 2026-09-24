@@ -251,6 +251,13 @@ def stylesheet():
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QToolButton[sessionAction="true"] { padding: 4px 2px 0px 2px; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
+        QPushButton#projectsDrawerTab { background: %(surface_sidebar)s; border: 1px solid %(border_subtle)s; border-top: none; border-top-left-radius: 0px; border-top-right-radius: 0px; border-bottom-left-radius: 9px; border-bottom-right-radius: 0px; padding: 3px 9px 5px 8px; }
+        QPushButton#projectsDrawerTab:hover { background: %(surface_hover)s; border-color: %(border_default)s; border-top-color: transparent; }
+        QPushButton#projectsDrawerTab:pressed { background: %(surface_pressed)s; border-color: %(border_default)s; border-top-color: transparent; }
+        QWidget#projectsDrawerTabEdge { background: %(border_default)s; border: none; }
+        QToolButton#projectsPaneClose { background: transparent; border-color: transparent; }
+        QToolButton#projectsPaneClose:hover { background: %(surface_hover)s; }
+        QToolButton#projectsPaneClose:pressed { background: %(surface_pressed)s; }
         QPushButton[navUtility="true"] { min-height: 24px; max-height: 24px; padding: 1px 6px; }
         QToolButton[navUtility="true"] { min-height: 22px; max-height: 22px; padding: 3px 2px 1px 2px; }
         QPushButton[navUtilityStyle="framed"], QToolButton[navUtilityStyle="framed"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; }
