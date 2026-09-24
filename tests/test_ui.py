@@ -2116,6 +2116,54 @@ def test_library_rebuild_keeps_viewport(window, application, tmp_path):
     assert window.library.verticalScrollBar().value() == scroll
 
 
+def test_navigation_keeps_selection_and_viewport_per_clip_pane(
+    window, application, tmp_path
+):
+    root = tmp_path / "PaneStateLibrary"
+    root.mkdir()
+    paths = [root / f"clip-{index:03}.mp4" for index in range(50)]
+    for path in paths:
+        path.touch()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder, [{"path": str(path), "game": "VALORANT"} for path in paths]
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids)
+
+    window.panel("Browse")
+    application.processEvents()
+    window.library.setCurrentRow(8)
+    window.library.scrollToItem(
+        window.library.item(8), window.library.ScrollHint.PositionAtCenter
+    )
+    application.processEvents()
+    browse_id = window.selected_id(window.library)
+    browse_scroll = window.library.verticalScrollBar().value()
+
+    window.panel("Editing")
+    application.processEvents()
+    window.library.setCurrentRow(40)
+    window.library.scrollToItem(
+        window.library.item(40), window.library.ScrollHint.PositionAtCenter
+    )
+    application.processEvents()
+    editing_id = window.selected_id(window.library)
+    editing_scroll = window.library.verticalScrollBar().value()
+    assert editing_id != browse_id
+    assert editing_scroll != browse_scroll
+
+    window.panel("Browse")
+    application.processEvents()
+    assert window.selected_id(window.library) == browse_id
+    assert window.library.verticalScrollBar().value() == browse_scroll
+
+    window.panel("Editing")
+    application.processEvents()
+    assert window.selected_id(window.library) == editing_id
+    assert window.library.verticalScrollBar().value() == editing_scroll
+
+
 def test_real_clip_switch_reveals_local_preview(window, application, tmp_path):
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg required for playback fixtures")

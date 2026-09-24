@@ -248,6 +248,8 @@ class Window(QMainWindow):
         self.browse_newest = True
         self.browse_id = None
         self.browse_selected_id = None
+        self.library_page_states = {}
+        self.library_page_switch = False
         self.atomic_edit = None
         self.history = defaultdict(list)
         self.drafts = {}
@@ -1284,6 +1286,9 @@ class Window(QMainWindow):
         self.browse.player.media.pause()
         if self.current_panel == "Browse" and name != "Browse":
             self.browse.leave()
+        changing_panel = name != self.current_panel
+        if changing_panel:
+            self.remember_library_page(self.current_panel)
         entering_browse = name == "Browse" and self.current_panel != "Browse"
         if entering_browse:
             self.browse_id = self.browse_selected_id
@@ -1324,6 +1329,7 @@ class Window(QMainWindow):
         )
         self.library.blockSignals(library_signals_blocked)
         self.refresh_references()
+        self.library_page_switch = changing_panel
         self.refresh_library()
         QTimer.singleShot(0, lambda panel=name: self.position_clip_page_once(panel))
         if name == "Editing":
@@ -1608,6 +1614,19 @@ class Window(QMainWindow):
         self.browse.player.previous_button.setEnabled(row > 0)
         self.browse.player.next_button.setEnabled(0 <= row < self.library.count() - 1)
 
+    def remember_library_page(self, panel=None):
+        panel = panel or self.current_panel
+        self.library_page_states[panel] = {
+            "current": self.selected_id(self.library),
+            "selected": {
+                item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()
+            },
+            "scroll": (
+                self.library.horizontalScrollBar().value(),
+                self.library.verticalScrollBar().value(),
+            ),
+        }
+
     def position_selected_clip(self):
         row = self.library.currentRow()
         if row < 0:
@@ -1700,15 +1719,25 @@ class Window(QMainWindow):
                         else self.library_newest
                     ),
                 )
-            selected = {
-                item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()
-            }
-            current = self.selected_id(self.library)
-            if self.current_panel == "Home":
+            page_state = (
+                self.library_page_states.get(self.current_panel)
+                if self.library_page_switch
+                else None
+            )
+            selected = (
+                set(page_state["selected"])
+                if page_state
+                else {
+                    item.data(Qt.ItemDataRole.UserRole)
+                    for item in self.library.selectedItems()
+                }
+            )
+            current = page_state["current"] if page_state else self.selected_id(self.library)
+            if self.current_panel == "Home" and not page_state:
                 current = None
                 selected = set()
             elif self.current_panel == "Browse":
-                current = self.browse_id
+                current = page_state["current"] if page_state else self.browse_id
                 if current not in {clip["clip_id"] for clip in clips}:
                     current = clips[0]["clip_id"] if clips else None
                 selected = {current}
@@ -1717,7 +1746,16 @@ class Window(QMainWindow):
             elif self.current_panel == "Editing" and self.catalogue.state("session"):
                 session = self.catalogue.state("session")
                 current = session["ids"][session["index"]]
-            scroll = self.library.verticalScrollBar().value()
+            horizontal_scroll = (
+                page_state["scroll"][0]
+                if page_state
+                else self.library.horizontalScrollBar().value()
+            )
+            scroll = (
+                page_state["scroll"][1]
+                if page_state
+                else self.library.verticalScrollBar().value()
+            )
             anchor = self.library.itemAt(1, 1)
             anchor_id = anchor.data(Qt.ItemDataRole.UserRole) if anchor else None
             anchor_offset = self.library.visualItemRect(anchor).top() if anchor else 0
@@ -1731,17 +1769,20 @@ class Window(QMainWindow):
                     self.library.setCurrentItem(item)
                 item.setSelected(clip["clip_id"] in selected or clip["clip_id"] == current)
             self.library.doItemsLayout()
-            for index in range(self.library.count()):
-                item = self.library.item(index)
-                if item.data(Qt.ItemDataRole.UserRole) == anchor_id:
-                    scroll = (
-                        self.library.verticalScrollBar().value()
-                        + self.library.visualItemRect(item).top()
-                        - anchor_offset
-                    )
-                    break
+            if not page_state:
+                for index in range(self.library.count()):
+                    item = self.library.item(index)
+                    if item.data(Qt.ItemDataRole.UserRole) == anchor_id:
+                        scroll = (
+                            self.library.verticalScrollBar().value()
+                            + self.library.visualItemRect(item).top()
+                            - anchor_offset
+                        )
+                        break
+            self.library.horizontalScrollBar().setValue(horizontal_scroll)
             self.library.verticalScrollBar().setValue(scroll)
             self.library.blockSignals(False)
+            self.library_page_switch = False
             if self.current_panel == "Browse":
                 self.browse_id = current
                 self.browse.load(self.catalogue.clip(current) if current else None)
