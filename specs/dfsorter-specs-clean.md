@@ -962,7 +962,7 @@ Confirm through a red "Permanently delete originals" button in the preview, enab
 
 ### 19.2 Unified settings
 
-The top-right Lucide settings cog retains its action menu. Settings… opens a dialog with General and Projects tabs, with General initially selected; Capture folders… navigates to Home. General contains the configurable near-end playback start and paused-typing preferences. Project-pane controls remain available. Capture-folder management lives only on Home.
+The top-right Lucide settings cog retains its action menu. Settings… opens a dialog with General, Appearance and Projects tabs in that order, with General initially selected; Capture folders… navigates to Home. General groups preferences in rounded boxes labelled with their affected panes: near-end playback applies to Browse, Editing and Export on the next clip load; paused typing applies only to Editing; title and generated-filename casing applies to Browse, Editing and Export. Avoid introductory prose between settings. Project-pane controls remain available. Capture-folder management lives only on Home.
 
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 

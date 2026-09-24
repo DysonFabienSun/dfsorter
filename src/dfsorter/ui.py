@@ -906,7 +906,6 @@ class Window(QMainWindow):
             action = QAction(name, self)
             action.triggered.connect(callback)
             if name in {
-                "Settings…",
                 "Reset clip metadata…",
                 "Edit tag…",
                 "Delete rejected originals…",
@@ -937,7 +936,7 @@ class Window(QMainWindow):
         self.command_error.setVisible(bool(str(message)))
 
     def open_settings(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
+        if self.atomic_edit:
             return
         dialog = SettingsDialog(self)
         self.settings_dialog = dialog

@@ -13,7 +13,15 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog, QLabel, QListWidgetItem, QProgressDialog
+from PySide6.QtWidgets import (
+    QApplication,
+    QInputDialog,
+    QLabel,
+    QListWidgetItem,
+    QProgressDialog,
+    QTabWidget,
+    QWidget,
+)
 
 from dfsorter.catalogue import Catalogue
 from dfsorter.deletion import preview
@@ -817,6 +825,21 @@ def test_settings_preserves_capture_folder_case(window, tmp_path):
 
 def test_playback_preferences_persist(window, application):
     settings = SettingsDialog(window)
+    tabs = settings.findChild(QTabWidget)
+    assert [tabs.tabText(index) for index in range(tabs.count())] == [
+        "General",
+        "Appearance",
+        "Projects",
+    ]
+    assert tabs.currentIndex() == 0
+    group_headings = {
+        label.text()
+        for group in settings.findChildren(QWidget)
+        if group.property("role") == "group"
+        for label in group.findChildren(QLabel)
+        if label.property("settingsGroupHeading")
+    }
+    assert group_headings == {"Browse · Editing · Export", "Editing"}
     assert settings.start_near_end.isChecked()
     assert settings.start_offset.value() == 40
     assert settings.paused_typing.isChecked()
@@ -832,6 +855,7 @@ def test_playback_preferences_persist(window, application):
         assert not restored.start_near_end.isChecked()
         assert not restored.paused_typing.isChecked()
         assert restarted.player.settings["start_near_end_seconds"] == 17
+        assert restarted.browse.player.settings["start_near_end_seconds"] == 17
         assert restarted.export_player.settings["start_near_end_enabled"] is False
         restored.close()
     finally:
@@ -2474,6 +2498,15 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
         )
         <= 1
     )
+
+
+def test_settings_remain_available_in_browse(window):
+    actions = {action.text(): action for action in window.settings_menu.actions()}
+    window.panel("Browse")
+    assert actions["Settings…"].isEnabled()
+    assert not actions["Reset clip metadata…"].isEnabled()
+    assert not actions["Edit tag…"].isEnabled()
+    assert not actions["Delete rejected originals…"].isEnabled()
 
 
 def test_history_controls_availability(window, tmp_path):
