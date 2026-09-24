@@ -723,10 +723,14 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         "status": "Enabled",
         "enabled": True,
         "summary": "3 clips · Avg 20.0s",
-        "details": "VALORANT 2   Escape from Tarkov 1",
+        "details": "VALORANT: 2 (2 new)   Escape from Tarkov: 1 (1 new)",
+        "game_details": [
+            {"text": "VALORANT: 2", "new": 2},
+            {"text": "Escape from Tarkov: 1", "new": 1},
+        ],
     }
     assert second_data["status"] == "Paused"
-    assert second_data["details"] == "Unknown 1"
+    assert second_data["details"] == "Unknown: 1 (1 new)"
     assert (FONT_SIZES["md"], FONT_SIZES["sm"], FONT_SIZES["xs"]) == (13, 12, 11)
 
     artifact = ROOT / "cache/verification/home-folders"
@@ -736,6 +740,23 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
     window.set_theme("dark")
     application.processEvents()
     window.grab().save(str(artifact / "hierarchy-dark.png"))
+
+
+def test_home_folder_new_counts_use_opening_catalogue_baseline(window, tmp_path):
+    folder = tmp_path / "captures"
+    folder.mkdir()
+    folder_id = window.catalogue.add_folder(folder)
+    existing = folder / "existing.mp4"
+    window.catalogue.ingest(folder_id, [{"path": str(existing), "game": "VALORANT"}])
+    window.opening_clip_ids.add(window.catalogue.clips()[0]["clip_id"])
+    added = folder / "added.mp4"
+    window.catalogue.ingest(folder_id, [{"path": str(added), "game": "VALORANT"}])
+
+    window.refresh_references()
+
+    data = window.folders.item(0).data(FOLDER_ROLE)
+    assert data["details"] == "VALORANT: 2 (1 new)"
+    assert data["game_details"] == [{"text": "VALORANT: 2", "new": 1}]
 
 
 def test_home_removes_folder_entries_after_confirmation(window, application, tmp_path, monkeypatch):

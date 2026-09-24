@@ -385,14 +385,48 @@ class CaptureFolderDelegate(QStyledItemDelegate):
         )
         detail_top = summary_top + summary_metrics.height() + 2
         painter.setFont(detail_font)
-        painter.setPen(QColor(COLORS["text_muted"]))
-        painter.drawText(
-            QRect(left, detail_top, right - left, detail_metrics.height()),
-            Qt.AlignmentFlag.AlignVCenter,
-            detail_metrics.elidedText(
-                data.get("details", ""), Qt.TextElideMode.ElideRight, right - left
-            ),
-        )
+        game_details = data.get("game_details")
+        if game_details:
+            detail_left = left
+            for position, detail in enumerate(game_details):
+                prefix = ("   " if position else "") + detail["text"]
+                new_text = f" ({detail['new']} new)" if detail["new"] else ""
+                remaining = right - detail_left
+                combined = prefix + new_text
+                if detail_metrics.horizontalAdvance(combined) > remaining:
+                    painter.setPen(QColor(COLORS["text_muted"]))
+                    painter.drawText(
+                        QRect(detail_left, detail_top, remaining, detail_metrics.height()),
+                        Qt.AlignmentFlag.AlignVCenter,
+                        detail_metrics.elidedText(
+                            combined, Qt.TextElideMode.ElideRight, remaining
+                        ),
+                    )
+                    break
+                painter.setPen(QColor(COLORS["text_muted"]))
+                painter.drawText(
+                    QRect(detail_left, detail_top, remaining, detail_metrics.height()),
+                    Qt.AlignmentFlag.AlignVCenter,
+                    prefix,
+                )
+                detail_left += detail_metrics.horizontalAdvance(prefix)
+                if new_text:
+                    painter.setPen(QColor(COLORS["status_success"]))
+                    painter.drawText(
+                        QRect(detail_left, detail_top, right - detail_left, detail_metrics.height()),
+                        Qt.AlignmentFlag.AlignVCenter,
+                        new_text,
+                    )
+                    detail_left += detail_metrics.horizontalAdvance(new_text)
+        else:
+            painter.setPen(QColor(COLORS["text_muted"]))
+            painter.drawText(
+                QRect(left, detail_top, right - left, detail_metrics.height()),
+                Qt.AlignmentFlag.AlignVCenter,
+                detail_metrics.elidedText(
+                    data.get("details", ""), Qt.TextElideMode.ElideRight, right - left
+                ),
+            )
         painter.restore()
 
 

@@ -233,6 +233,7 @@ class Window(QMainWindow):
         if self.settings.get("theme") not in {"system", "light", "dark"}:
             self.settings["theme"] = "light"
         apply_theme(QApplication.instance(), self.settings["theme"])
+        self.opening_clip_ids = {clip["clip_id"] for clip in self.catalogue.clips()}
         self.current_id = None
         self.current_panel = "Home"
         self.library_newest = False
@@ -1381,6 +1382,11 @@ class Window(QMainWindow):
                 )
             ]
             counts = Counter(clips[clip_id]["game"] or "Unknown" for clip_id in ids)
+            new_counts = Counter(
+                clips[clip_id]["game"] or "Unknown"
+                for clip_id in ids
+                if clip_id not in self.opening_clip_ids
+            )
             durations = [
                 self.media_info.get(clips[clip_id]["source_path"], {}).get("duration")
                 for clip_id in ids
@@ -1393,9 +1399,17 @@ class Window(QMainWindow):
             )
             linked_clip_count += len(ids)
             text = f"{folder['path']}\n"
-            games = "   ".join(
-                f"{name} {count}"
+            game_details = [
+                {
+                    "text": f"{name}: {count}",
+                    "new": new_counts[name],
+                }
                 for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            ]
+            games = "   ".join(
+                detail["text"]
+                + (f" ({detail['new']} new)" if detail["new"] else "")
+                for detail in game_details
             )
             text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · Avg {average}\n"
             text += games or "No detected games"
@@ -1409,6 +1423,7 @@ class Window(QMainWindow):
                     "enabled": bool(folder["enabled"]),
                     "summary": f"{len(ids)} clips · Avg {average}",
                     "details": games or "No detected games",
+                    "game_details": game_details,
                 },
             )
             self.folders.addItem(item)
