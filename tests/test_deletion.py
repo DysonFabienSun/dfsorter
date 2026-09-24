@@ -75,6 +75,17 @@ def test_partial_failure_cancel_and_missing(catalogue, clips):
     assert len(calls) == 2
 
 
+def test_bulk_preview_omits_explicitly_deleted_but_keeps_other_missing(catalogue, clips):
+    discard(catalogue, clips[:2])
+    for clip in clips[:2]:
+        Path(clip["source_path"]).unlink()
+    with catalogue.connection() as database:
+        database.execute("INSERT INTO deleted_sources VALUES (?)", (clips[0]["clip_id"],))
+    reviewed = preview(catalogue)
+    assert [item.clip_id for item in reviewed] == [clips[1]["clip_id"]]
+    assert reviewed[0].date == "Unavailable"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows handle deletion")
 def test_open_writer_blocks_deletion(catalogue, clips):
     discard(catalogue, clips[:1])

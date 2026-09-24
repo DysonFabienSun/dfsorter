@@ -219,7 +219,7 @@ Quoted values are supported:
 wpn:"M4A1 SOPMOD"
 ```
 
-A prefixed free-form assignment consumes its value until another recognized field assignment, reserved structured token, or `--` separator begins. Repeating the same prefix may provide multiple values when the field is configured with `multiple: true`.
+A prefixed free-form assignment consumes its value until another recognized field assignment, reserved structured token, configured enum value or alias (including a multiword phrase beginning at the next token), or `--` separator begins. A quoted free-form value remains whole even when it contains enum-like words. Repeating the same prefix may provide multiple values when the field is configured with `multiple: true`.
 
 Field-prefix aliases may be configured for free-form fields.
 
@@ -322,7 +322,7 @@ toolbar switches immediately between explicit Light and Dark modes. When the sav
 System, the quick toggle selects the explicit mode opposite the currently resolved system
 appearance. Settings provides all three choices under Appearance.
 
-Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. The first time each applicable navigation page opens, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. Later mouse selection, keyboard navigation, library rebuilds, page returns and window resizes do not reapply this prescribed placement. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. The first time each applicable navigation page opens, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. Successfully creating or replacing a Session re-arms this one-time placement for Editing so the first queued clip receives it; ordinary Resume Session entries preserve the Editing viewport. Later mouse selection, keyboard navigation, library rebuilds, page returns and window resizes do not reapply this prescribed placement. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
 ### 9.2 Settings and Actions
 
@@ -394,7 +394,7 @@ tag:LOW_FPS
 
 Plain terms search human-facing text such as source filename, `mainline`, and `description`.
 
-Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable.
+Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable. Home, Session and Browse search update on every text change. Invalid or incomplete structured expressions show the inline error while retaining the last valid result list. Plain terms match the source filename, tag, complete displayed working title (game-code prefix, structured metadata and mainline), and description; ratings remain unsearchable.
 
 Ratings are deliberately **not** searchable or filterable in the initial design. Rating exists mainly as an editorial reference and optional export-grouping value.
 
@@ -596,7 +596,7 @@ Description text is secondary and is never automatically appended to the working
 
 Structured field widgets may display the current stored values for direct inspection/editing, but the command line remains the primary high-throughput input mechanism.
 
-Immediately left of Set In and Set Out on the playback-controls row, show a red danger icon and `I/O not set` when exactly one range endpoint is set, or `I/O invalid` for invalid endpoint order. Hide the indicator when neither endpoint is set or the range is valid, while retaining its layout space. Range warnings must not open a separate error row or resize the video; retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
+Immediately left of Set In and Set Out on the playback-controls row, show a red danger icon and `I/O not set` when exactly one range endpoint is set, or `I/O invalid` for invalid endpoint order. Hide the indicator when neither endpoint is set or the range is valid, while retaining its layout space. When Shift+Enter is blocked, additionally show a red command-area message identifying the missing or invalid endpoint and directing completion or Clear range; clear it once the range is valid or cleared. Retain completion guidance in the indicator tooltip and preserve pending-range navigation safeguards.
 
 ### 13.2 Command-Bar Focus and Playback Keys
 
@@ -868,6 +868,8 @@ Selected fields follow the game's YAML `display_order`.
 
 `description` is not included in generated filenames.
 
+The generated-name Share dialog used outside Browse opens with every individual field, **All fields**, and **Game code prefix** off. **All fields** selects or clears all metadata/mainline fields and reflects checked only when every individual field is selected; the prefix remains independent. Confirmation remains disabled until a non-whitespace custom filename, at least one individual field, or an available game-code prefix is selected. Browse retains its separate required-custom-title Share panel.
+
 The source file extension is preserved.
 
 Output names are sanitized for the destination filesystem without changing the stored metadata.
@@ -960,6 +962,8 @@ File → Delete rejected originals is an explicit exception to source preservati
 Before deletion, show a read-only preview grouped by actual parent folder, with full paths, per-folder rejected/to-delete counts, clip dates, individual sizes, folder totals and estimated overall size. Prefer cached media capture dates; label filesystem modification dates when used as fallback. Missing, linked/junction and non-regular sources are excluded with reasons. Logical file size is an estimate of space recovered.
 
 Confirm through a red "Permanently delete originals" button in the preview, enabled when eligible files exist; no typed confirmation is required. Recheck catalogue identity, Discard status, path and file identity/size/timestamps before each deletion. On Windows, delete through a verified file handle that excludes concurrent writers and replacement; locked or changed sources are skipped. Never delete a folder or adjacent sidecar. Preserve catalogue records and project/session references as unavailable media. Cancellation stops subsequent deletions; report each success, skip, failure and cancellation. Deleted originals cannot be restored by metadata Undo. Do not run concurrently with scanning, sharing or export.
+
+The bulk rejected-originals preview omits sources already recorded as explicitly deleted. Other missing rejected sources remain visible as unavailable/excluded. If a source recorded as explicitly deleted exists again, the normal marker-clearing behavior makes it eligible for later previews.
 
 ### 19.2 Unified settings
 

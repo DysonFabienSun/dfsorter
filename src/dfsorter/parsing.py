@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import Registry
+from .config import Registry, title
 
 
 @dataclass
@@ -104,6 +104,18 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
             or (game and lowered.split(":", 1)[0] in game.prefixes and ":" in lowered)
         )
 
+    def enum_boundary(start):
+        if tokens[start].quoted:
+            return False
+        for end in range(start, len(tokens)):
+            if any(item.quoted for item in tokens[start : end + 1]):
+                break
+            phrase = " ".join(item.value for item in tokens[start : end + 1]).casefold()
+            resolved = game.values.get(phrase)
+            if resolved and game.fields[resolved[0]]["type"] == "enum":
+                return True
+        return False
+
     index = 0
     while index < len(tokens):
         token = tokens[index].value.strip()
@@ -139,15 +151,28 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
                 raise ValueError(f"Unknown field prefix: {prefix}")
             definition = game.fields[key]
             if definition["type"] == "freeform":
-                while index + 1 < len(tokens) and not recognized(tokens[index + 1]):
+                while (
+                    index + 1 < len(tokens)
+                    and not recognized(tokens[index + 1])
+                    and not enum_boundary(index + 1)
+                ):
                     gap = parts[0][tokens[index].end : tokens[index + 1].start]
                     index += 1
                     value += gap + tokens[index].value
             else:
-                resolved = game.values.get(value.strip().casefold())
+                consumed = index
+                candidate = value.strip()
+                resolved = game.values.get(candidate.casefold())
+                for end in range(index + 1, len(tokens)):
+                    candidate += " " + tokens[end].value
+                    possible = game.values.get(candidate.casefold())
+                    if possible and possible[0] == key:
+                        resolved = possible
+                        consumed = end
                 if not resolved or resolved[0] != key:
                     raise ValueError(f"Unknown {key}: {value}")
                 value = resolved[1]
+                index = consumed
             value = value.strip()
             if not value:
                 raise ValueError(f"{key} needs a value")
@@ -227,6 +252,8 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
                     in " ".join(
                         [
                             Path(clip["source_path"]).name,
+                            clip.get("tag") or "",
+                            title(clip, registry, lowercase=False),
                             clip.get("mainline") or "",
                             clip.get("description") or "",
                         ]

@@ -16,6 +16,6 @@ fields:
     type: enum
     multiple: true
     values: [Classic, Shorty, Frenzy, Ghost, Bandit, Sheriff, Stinger, Spectre, Bucky, Judge, Bulldog, Guardian, Warden, Phantom, Vandal, Marshal, Outlaw, Operator, Ares, Odin, Headhunter, Tour de Force, Bladestorm, Showstopper, Overdrive, Nanoswarm]
-    aliases: {hh: Headhunter, op: Operator, tdf: Tour de Force, nano: Nanoswarm}
+    aliases: {hh: Headhunter, op: Operator, awp: Operator, tdf: Tour de Force, nano: Nanoswarm}
 display_order: [clutch, kill, agent, map, weapon, mainline]
 suggested_fields: [agent, weapon]

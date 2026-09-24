@@ -15,8 +15,12 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidgetItem,
     QProgressDialog,
     QTabWidget,
@@ -59,6 +63,12 @@ def wait_for(application, predicate, timeout=12):
             return True
         QTest.qWait(20)
     return False
+
+
+def test_status_bar_exists_before_deferred_startup_work(window):
+    assert window.status_bar is window.statusBar()
+    assert not window.status_bar.isHidden()
+    assert window.status_bar.currentMessage() == ""
 
 
 def test_video_surface_fits_landscape_and_portrait_sources(application):
@@ -498,6 +508,59 @@ def test_browse_temporary_range_and_share(window, application, tmp_path, monkeyp
     assert wait_for(application, lambda: not browse.player.awaiting_frame)
     assert (browse.in_ms, browse.out_ms) == (500, 1500)
     assert not browse.custom_title.text()
+
+
+def test_search_updates_live_and_invalid_query_preserves_results(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    window.catalogue.patch(
+        window.catalogue.clips()[0]["clip_id"],
+        {"mainline": "Ace", "metadata": {"agent": "Jett"}, "tag": "Highlight"},
+    )
+    window.refresh_library()
+    for panel, search in (("Home", window.search), ("Browse", window.browse_search)):
+        window.panel(panel)
+        search.setText("highlight")
+        application.processEvents()
+        assert window.library.count() == 1
+        search.setText("agent:")
+        application.processEvents()
+        assert window.library.count() == 1
+        assert not window.library_error.isHidden()
+        search.setText("jett")
+        application.processEvents()
+        assert window.library.count() == 1
+        assert window.library_error.isHidden()
+
+
+def test_generated_share_dialog_defaults_and_master_toggle(
+    window, application, tmp_path, monkeypatch
+):
+    add_clips(window, tmp_path)
+    window.panel("Editing")
+
+    def inspect(dialog):
+        custom = dialog.findChild(QLineEdit, "shareCustomFilename")
+        all_fields = dialog.findChild(QCheckBox, "shareAllFields")
+        prefix = dialog.findChild(QCheckBox, "shareGamePrefix")
+        fields = [check for check in dialog.findChildren(QCheckBox) if check.objectName().startswith("shareField_")]
+        confirm = dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok)
+        assert not custom.text() and not all_fields.isChecked() and not prefix.isChecked()
+        assert fields and not any(check.isChecked() for check in fields)
+        assert not confirm.isEnabled()
+        custom.setText("   ")
+        assert not confirm.isEnabled()
+        all_fields.setChecked(True)
+        assert all(check.isChecked() for check in fields) and confirm.isEnabled()
+        fields[0].setChecked(False)
+        assert not all_fields.isChecked()
+        prefix.setChecked(True)
+        for check in fields:
+            check.setChecked(False)
+        assert prefix.isChecked() and confirm.isEnabled()
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", inspect)
+    window.share()
 
 
 def test_all_players_mix_tracks_and_ignore_stale_loads(window, application, tmp_path):
@@ -1846,12 +1909,15 @@ def test_range_markers_in_either_order(window, tmp_path, monkeypatch, first):
     )
     assert window.command_error.isHidden()
     assert not window.ensure_range_complete()
+    assert "Clear range" in window.command_feedback.text()
+    assert window.command.property("validationState") == "invalid"
     assert window.catalogue.clip(ids[0])["in_ms"] is None
     assert window.catalogue.clip(ids[0])["out_ms"] is None
     assert getattr(window.player.seek, f"pending_{first}") == position[0]
     mark("out" if first == "in" else "in", 3000 if first == "in" else 0)
     assert not window.has_pending_range()
     assert window.ensure_range_complete()
+    assert "Clear range" not in window.command_feedback.text()
     assert window.catalogue.clip(ids[0])["in_ms"] == 0
     assert window.range_warning.isHidden()
     assert window.catalogue.clip(ids[0])["out_ms"] == 3000
@@ -2214,6 +2280,38 @@ def test_navigation_keeps_selection_and_viewport_per_clip_pane(
     application.processEvents()
     assert window.selected_id(window.library) == editing_id
     assert window.library.verticalScrollBar().value() == editing_scroll
+
+
+def test_replacement_session_rearms_first_editing_position(window, application, tmp_path):
+    root = tmp_path / "ReplacementSession"
+    root.mkdir()
+    paths = [root / f"clip-{index:03}.mp4" for index in range(40)]
+    for path in paths:
+        path.touch()
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder, [{"path": str(path), "game": "VALORANT"} for path in paths]
+    )
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids)
+    window.panel("Editing")
+    application.processEvents()
+    window.library.scrollToItem(window.library.item(30), window.library.ScrollHint.PositionAtCenter)
+    application.processEvents()
+    assert window.library.verticalScrollBar().value() > 0
+    window.panel("Session")
+    window.library.setCurrentRow(0)
+    window.library.selectAll()
+    window.confirm = lambda message: True
+    window.create_session("all")
+    application.processEvents()
+    assert window.library.currentRow() == 0
+    assert window.library.visualItemRect(window.library.item(0)).top() == 0
+    scroll = window.library.verticalScrollBar().value()
+    window.panel("Home")
+    window.panel("Editing")
+    application.processEvents()
+    assert window.library.verticalScrollBar().value() == scroll
 
 
 def test_real_clip_switch_reveals_local_preview(window, application, tmp_path):

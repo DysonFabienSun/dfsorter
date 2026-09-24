@@ -329,6 +329,26 @@ def test_freeform_and_quoted_boundaries(registry):
         parse_command("1v3", "Battlefield 6", registry)
 
 
+@pytest.mark.parametrize("map_value", ["woods", "streets", "Streets of Tarkov"])
+def test_freeform_stops_at_bare_enum_phrase(registry, map_value):
+    expected = "Streets of Tarkov" if "street" in map_value.lower() else "Woods"
+    assert parse_command(f"wpn:M4A1 {map_value}", "Escape from Tarkov", registry) == {
+        "metadata": {"weapon": ["M4A1"], "map": expected}
+    }
+    assert parse_command(f"wpn:M4A1 map:{map_value}", "Escape from Tarkov", registry) == {
+        "metadata": {"weapon": ["M4A1"], "map": expected}
+    }
+
+
+def test_quoted_freeform_keeps_enum_words_and_valorant_awp_alias(registry):
+    assert parse_command('wpn:"M4 Woods" streets', "Escape from Tarkov", registry) == {
+        "metadata": {"weapon": ["M4 Woods"], "map": "Streets of Tarkov"}
+    }
+    assert parse_command("awp", "VALORANT", registry) == {
+        "metadata": {"weapon": ["Operator"]}
+    }
+
+
 def test_invalid_config_is_reported(tmp_path):
     raw = {
         "name": "Test",
@@ -493,6 +513,9 @@ def test_queries(catalogue, clips, registry):
     )
     assert len(query_clips(catalogue.clips(), "tag:low_fps triage:keep", registry)) == 1
     assert len(query_clips(catalogue.clips(), "clip-0", registry)) == 1
+    catalogue.patch(clips[0]["clip_id"], {"mainline": "Ace", "tag": "Highlight"})
+    for term in ("highlight", "VAL_", "jett", "operator", "ace"):
+        assert query_clips(catalogue.clips(), term, registry)[0]["clip_id"] == clips[0]["clip_id"]
     with pytest.raises(ValueError, match="Rating"):
         query_clips(catalogue.clips(), "rating:5", registry)
 

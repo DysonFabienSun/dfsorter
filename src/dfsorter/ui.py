@@ -267,12 +267,14 @@ class Window(QMainWindow):
         self.clip_folder_names = self.catalogue.clip_folder_names()
         self.pending_in = None
         self.pending_out = None
+        self.range_block_message = ""
         self.worker = None
         self.refreshing = False
         self.positioned_clip_pages = set()
         self.setWindowTitle("DFSorter")
         self.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
         self.resize(1400, 918)
+        self.status_bar = self.statusBar()
         central, outer = page()
         self.setCentralWidget(central)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -345,7 +347,7 @@ class Window(QMainWindow):
         role(self.left, "sidebar")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search or game:VAL agent:Jett kill:>=4")
-        self.search.returnPressed.connect(self.refresh_library)
+        self.search.textChanged.connect(self.refresh_library)
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(8, 0, 0, 0)
         search_layout.addWidget(self.search)
@@ -401,7 +403,7 @@ class Window(QMainWindow):
         role(self.browse_filters, "transparent")
         self.browse_search = QLineEdit()
         self.browse_search.setPlaceholderText("Search clips")
-        self.browse_search.returnPressed.connect(self.refresh_library)
+        self.browse_search.textChanged.connect(self.refresh_library)
         browse_filters_layout.addWidget(self.browse_search)
         left_layout.insertWidget(1, self.browse_filters)
         self.library_error = QLabel()
@@ -2293,6 +2295,9 @@ class Window(QMainWindow):
             elif state == "paused" and not message:
                 message = "Type to enter commands"
             feedback = html.escape(message)
+        if self.range_block_message:
+            validation = "invalid"
+            feedback = html.escape(self.range_block_message)
         self.command_feedback.setText(feedback)
         if self.command.property("validationState") != validation:
             self.command.setProperty("validationState", validation)
@@ -2648,7 +2653,9 @@ class Window(QMainWindow):
             reason = "Set Out to complete the range"
         else:
             reason = "Set In earlier than Out to complete a valid range"
+        self.range_block_message = f"{reason}, or use Clear range."
         self.update_range_warning()
+        self.update_command_state()
         self.range_warning.setToolTip(f"{reason}, or use Clear range, before leaving this clip.")
         return False
 
@@ -2666,6 +2673,9 @@ class Window(QMainWindow):
         )
         self.range_warning.setVisible(visible)
         self.range_warning_icon.setVisible(visible)
+        if not visible and getattr(self, "range_block_message", ""):
+            self.range_block_message = ""
+            self.update_command_state()
 
     def reset_pending_range(self):
         self.pending_in = self.pending_out = None
@@ -2816,6 +2826,8 @@ class Window(QMainWindow):
             return
         try:
             self.catalogue.create_session(ids, replace)
+            self.positioned_clip_pages.discard("Editing")
+            self.library_page_states.pop("Editing", None)
             self.panel("Editing")
         except ValueError as error:
             self.error(error)
@@ -3429,16 +3441,20 @@ class Window(QMainWindow):
 
         layout.addRow(button("Browse", browse))
         custom = QLineEdit()
+        custom.setObjectName("shareCustomFilename")
         custom.setPlaceholderText("Leave empty to generate; .mp4 is appended")
         layout.addRow("Custom filename stem", custom)
+        all_fields = QCheckBox("All fields")
+        all_fields.setObjectName("shareAllFields")
+        layout.addRow(all_fields)
         prefix = QCheckBox("Game code prefix")
-        prefix.setChecked(True)
+        prefix.setObjectName("shareGamePrefix")
         layout.addRow(prefix)
         game = self.registry.game(clip["game"])
         checks = []
         for field in game.display_order if game else ["mainline"]:
             check = QCheckBox(field)
-            check.setChecked(True)
+            check.setObjectName(f"shareField_{field}")
             checks.append(check)
             layout.addRow(check)
         buttons = QDialogButtonBox(
@@ -3447,6 +3463,30 @@ class Window(QMainWindow):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addRow(buttons)
+        confirm = buttons.button(QDialogButtonBox.StandardButton.Ok)
+
+        def update_choices():
+            all_fields.blockSignals(True)
+            all_fields.setChecked(bool(checks) and all(check.isChecked() for check in checks))
+            all_fields.blockSignals(False)
+            usable_prefix = bool(game and game.code.strip() and prefix.isChecked())
+            confirm.setEnabled(
+                bool(custom.text().strip())
+                or any(check.isChecked() for check in checks)
+                or usable_prefix
+            )
+
+        def toggle_all(checked):
+            for check in checks:
+                check.setChecked(checked)
+            update_choices()
+
+        all_fields.toggled.connect(toggle_all)
+        for check in checks:
+            check.toggled.connect(update_choices)
+        prefix.toggled.connect(update_choices)
+        custom.textChanged.connect(update_choices)
+        update_choices()
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         folder = destination.text().strip()
@@ -3456,7 +3496,7 @@ class Window(QMainWindow):
         self.settings["share_folder"] = folder
         self.save_settings()
         fields = [check.text() for check in checks if check.isChecked()]
-        custom_name = custom.text() or None
+        custom_name = custom.text().strip() or None
         folders = self.catalogue.folders()
         include_prefix = prefix.isChecked()
         selected_range = mode.currentData()

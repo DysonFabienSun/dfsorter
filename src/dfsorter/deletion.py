@@ -61,6 +61,7 @@ def signature(details):
 
 def preview(catalogue, media_info=None, cancelled=lambda: False, progress=lambda text: None, *, clip_id=None):
     candidates = []
+    explicitly_deleted = set() if clip_id is not None else catalogue.hidden_deleted_ids()
     for clip in catalogue.clips():
         if cancelled():
             raise InterruptedError("Deletion preview cancelled; no files deleted")
@@ -68,6 +69,8 @@ def preview(catalogue, media_info=None, cancelled=lambda: False, progress=lambda
             if clip["clip_id"] != clip_id:
                 continue
         elif clip["triage"] != "discard":
+            continue
+        if clip["clip_id"] in explicitly_deleted:
             continue
         path = clip["source_path"]
         displayed = display_path(path)
