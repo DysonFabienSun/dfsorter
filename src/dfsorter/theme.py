@@ -239,7 +239,15 @@ def stylesheet():
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QToolButton[sessionAction="true"] { padding: 4px 2px 0px 2px; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
-        QToolButton[navUtility="true"] { padding: 3px 2px 1px 2px; }
+        QPushButton[navUtility="true"] { min-height: 24px; max-height: 24px; padding: 1px 6px; }
+        QToolButton[navUtility="true"] { min-height: 22px; max-height: 22px; padding: 3px 2px 1px 2px; }
+        QPushButton[navUtilityStyle="framed"], QToolButton[navUtilityStyle="framed"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; }
+        QPushButton[navUtilityStyle="framed"]:hover, QToolButton[navUtilityStyle="framed"]:hover { background: %(surface_hover)s; border-color: %(border_default)s; }
+        QPushButton[navUtilityStyle="framed"]:pressed, QToolButton[navUtilityStyle="framed"]:pressed { background: %(surface_pressed)s; border-color: %(border_default)s; }
+        QPushButton[navUtilityStyle="ghost"], QToolButton[navUtilityStyle="ghost"] { background: transparent; border-color: transparent; }
+        QPushButton[navUtilityStyle="ghost"]:hover, QToolButton[navUtilityStyle="ghost"]:hover { background: %(surface_hover)s; border-color: transparent; }
+        QPushButton[navUtilityStyle="ghost"]:pressed, QToolButton[navUtilityStyle="ghost"]:pressed { background: %(surface_pressed)s; border-color: transparent; }
+        QPushButton[navUtilityStyle="ghost"]:disabled, QToolButton[navUtilityStyle="ghost"]:disabled { background: transparent; border-color: transparent; }
         QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx; font-weight: 500; padding: 0px 16px; min-height: 32px; }
         QPushButton#navigation:hover { color: %(text_primary)s; background: %(surface_hover)s; }
         QPushButton#navigation:checked { background: transparent; color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }

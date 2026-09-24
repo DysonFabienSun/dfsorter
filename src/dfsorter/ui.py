@@ -18,6 +18,7 @@ from PySide6.QtCore import (
     QEvent,
     QObject,
     QPoint,
+    QSize,
     Qt,
     QThread,
     QTimer,
@@ -67,7 +68,7 @@ from .parsing import parse_command, preview_command, query_clips
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
-from .theme import COLORS, SIZES, apply_theme, resolved_scheme, role, title_styles
+from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
 from .widgets import (
     CLIP_ROLE,
     FOLDER_ROLE,
@@ -291,6 +292,8 @@ class Window(QMainWindow):
         navigation.addStretch()
         self.undo_button = tool("undo-2", "Undo · Ctrl+Z", lambda: self.undo(False))
         self.redo_button = tool("redo-2", "Redo · Ctrl+Shift+Z", lambda: self.undo(True))
+        self.undo_button.setProperty("navUtilityStyle", "ghost")
+        self.redo_button.setProperty("navUtilityStyle", "ghost")
         self.update_history_controls()
         navigation.addWidget(self.undo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
@@ -302,14 +305,20 @@ class Window(QMainWindow):
         self.projects_toggle.setAccessibleName("Show / hide Projects")
         self.projects_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.projects_toggle.setCheckable(True)
-        self.projects_toggle.setFixedHeight(SIZES["toolbar"])
+        self.projects_toggle.setProperty("navUtility", True)
+        self.projects_toggle.setProperty("navUtilityStyle", "framed")
+        self.projects_toggle.setFixedSize(92, SIZES["toolbar"])
+        self.projects_toggle.setIconSize(QSize(18, 18))
+        self.projects_toggle.setFont(font("md", "medium"))
         navigation.addWidget(self.projects_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
         self.theme_button = tool("moon", "Switch to dark mode", self.toggle_theme)
         self.theme_button.setProperty("navUtility", True)
+        self.theme_button.setProperty("navUtilityStyle", "ghost")
         navigation.addWidget(self.theme_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
         self.settings_button = tool("settings", "Settings and actions", lambda: None)
+        self.settings_button.setProperty("navUtilityStyle", "ghost")
         for control in (
             self.undo_button,
             self.redo_button,

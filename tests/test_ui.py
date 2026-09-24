@@ -2490,14 +2490,37 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     assert window.catalogue.clip(ids[0])["rating"] is None
     window.redo_button.click()
     assert window.catalogue.clip(ids[0])["rating"] == 4
-    assert window.projects_toggle.height() == window.settings_button.height()
-    assert (
-        abs(
-            window.projects_toggle.geometry().center().y()
-            - window.settings_button.geometry().center().y()
-        )
-        <= 1
-    )
+    utilities = [
+        window.undo_button,
+        window.redo_button,
+        window.projects_toggle,
+        window.theme_button,
+        window.settings_button,
+    ]
+    assert {control.height() for control in utilities} == {28}
+    assert len({control.geometry().center().y() for control in utilities}) == 1
+    assert window.projects_toggle.font().pixelSize() == FONT_SIZES["md"]
+    assert window.projects_toggle.iconSize().height() == 18
+    assert window.undo_button.property("navUtilityStyle") == "ghost"
+    assert window.redo_button.property("navUtilityStyle") == "ghost"
+    assert window.theme_button.property("navUtilityStyle") == "ghost"
+    assert window.settings_button.property("navUtilityStyle") == "ghost"
+
+    def painted_icon_height(control):
+        image = control.icon().pixmap(control.iconSize()).toImage()
+        rows = [
+            y
+            for y in range(image.height())
+            if any(image.pixelColor(x, y).alpha() for x in range(image.width()))
+        ]
+        return max(rows) - min(rows) + 1
+
+    window.set_theme("dark", persist=False)
+    assert window.theme_button.property("iconName") == "sun"
+    assert abs(
+        painted_icon_height(window.projects_toggle)
+        - painted_icon_height(window.theme_button)
+    ) <= 1
 
 
 def test_settings_remain_available_in_browse(window):
