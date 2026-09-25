@@ -388,8 +388,10 @@ Place new panel information in an existing row where practical. A new row can ca
 
 Preserve existing workflows and page-specific constraints. Apply the same shared surface,
 typography, form alignment, button hierarchy and state styling used elsewhere. Export's final
-commit action is primary; setup and utility actions remain secondary. Config remains a compact
-utility page and must not grow decorative cards merely to occupy space.
+commit action is primary; setup and utility actions remain secondary. Config uses a game list
+in the left pane and compact Identity, Fields, and Title & review tabs in the center. Its
+single Save action is primary; Revert, Reload and row actions remain secondary. Keep structured
+tables legible in Light and Dark without adding decorative cards merely to occupy space.
 
 ## 7. Qt implementation patterns
 

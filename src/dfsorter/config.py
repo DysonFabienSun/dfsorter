@@ -4,6 +4,11 @@ from pathlib import Path
 
 import yaml
 
+GLOBAL_FIELDS = {
+    "rating", "game", "triage", "mainline", "description", "tag", "clip_id",
+    "source_path", "in_ms", "out_ms", "catalogue_modified_at",
+}
+
 
 @dataclass
 class Game:
@@ -19,16 +24,22 @@ class Game:
 
 
 class Registry:
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, replacements: dict[str, object] | None = None):
         self.directory = directory
         self.games: dict[str, Game] = {}
         self.aliases: dict[str, str] = {}
         self.errors: list[str] = []
-        if not list(directory.glob("*.yaml")):
+        paths = {path.name: path for path in directory.glob("*.yaml")}
+        if replacements:
+            paths.update({name: directory / name for name in replacements})
+        if not paths:
             self.errors.append(f"No game YAML files found in {directory}")
-        for path in sorted(directory.glob("*.yaml")):
+        for name, path in sorted(paths.items()):
             try:
-                self._load(yaml.safe_load(path.read_text(encoding="utf-8")))
+                raw = replacements[name] if replacements and name in replacements else yaml.safe_load(
+                    path.read_text(encoding="utf-8")
+                )
+                self._load(raw)
             except (
                 OSError,
                 ValueError,
@@ -44,19 +55,7 @@ class Registry:
         if not isinstance(name, str) or not name.strip() or not re.fullmatch(r"[A-Z0-9]{3}", code):
             raise ValueError("Expected a game name and three-character uppercase display code")
         fields = raw["fields"]
-        reserved = {
-            "rating",
-            "game",
-            "triage",
-            "mainline",
-            "description",
-            "tag",
-            "clip_id",
-            "source_path",
-            "in_ms",
-            "out_ms",
-            "catalogue_modified_at",
-        }
+        reserved = GLOBAL_FIELDS
         if not isinstance(fields, dict) or reserved.intersection(fields):
             raise ValueError("Fields must be a mapping without global clip field names")
         fields = {"kill": {}, **fields}

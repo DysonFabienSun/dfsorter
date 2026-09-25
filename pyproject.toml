@@ -7,6 +7,7 @@ dependencies = [
     "PySide6>=6.9,<7",
     "python-mpv==1.0.8",
     "PyYAML>=6,<7",
+    "ruamel.yaml>=0.18,<0.19",
 ]
 
 [project.scripts]

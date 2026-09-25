@@ -284,6 +284,9 @@ def stylesheet():
         QListWidget::item { padding: 2px 4px; }
         QListWidget::item:selected { background: %(accent_selection)s; color: %(text_primary)s; }
         QListWidget::item:hover { background: %(surface_hover)s; }
+        QTableWidget { background: %(surface_control)s; color: %(text_primary)s; border: 1px solid %(border_default)s; gridline-color: %(border_subtle)s; selection-background-color: %(accent_selection)s; selection-color: %(text_primary)s; outline: none; }
+        QTableWidget::item:hover { background: %(surface_hover)s; }
+        QHeaderView::section { background: %(surface_subtle)s; color: %(text_secondary)s; border: none; border-bottom: 1px solid %(border_subtle)s; padding: 4px 8px; }
         QComboBox QAbstractItemView { background: %(surface_panel)s; selection-background-color: %(accent_selection)s; }
         QMenuBar, QMenu { background: %(surface_panel)s; }
         QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }

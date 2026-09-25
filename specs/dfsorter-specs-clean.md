@@ -368,7 +368,7 @@ The exact content of each pane depends on the active panel.
 | Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
 | Editing | Locked session queue | Video + clip metadata | Projects | Visible |
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
-| Config | Library/reference view | Config placeholder/status | Hidden | Hidden |
+| Config | Game list | Game-config editor and validation status | Hidden | Hidden |
 
 Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Frozen Editing sessions and Export membership are unaffected.
 
@@ -385,7 +385,7 @@ The general library view supports:
 
 Library views support multi-selection outside Editing; Editing uses single selection. Frozen Session ordering and stable-boundary refresh follow §12.2.
 
-Every metadata-style left-pane clip list shows `Game · R# · Capture folder` on the second line when rated and `Game · Capture folder` when unrated, with a bold theme-aware `R1`–`R5` label. Use the capture folder's final path component, or `Unlinked` for retained clips without a registered folder. Keep, Discard and Pending are represented only by the colored status dot at the left of the line. This applies to Home, Session, Editing, Export and Config. Browse retains capture time and folder on that line. The explicit rating text remains present independently of color.
+Every metadata-style left-pane clip list shows `Game · R# · Capture folder` on the second line when rated and `Game · Capture folder` when unrated, with a bold theme-aware `R1`–`R5` label. Use the capture folder's final path component, or `Unlinked` for retained clips without a registered folder. Keep, Discard and Pending are represented only by the colored status dot at the left of the line. This applies to Home, Session, Editing and Export. Browse retains capture time and folder on that line. The explicit rating text remains present independently of color.
 
 The search bar does **not** expose raw SQL.
 
@@ -774,7 +774,7 @@ Changing a clip away from Keep does not automatically delete existing project me
 
 ### 13.9 Atomic single-clip Editing
 
-Clip cards on Home, Browse, Session, Export and Config expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space and Editing itself have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
+Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
 
 Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation, catalogue Undo/Redo and permanent source deletion are unavailable. Native text-field undo remains available.
 
@@ -925,15 +925,11 @@ Re-exporting the same Project later is a new copy operation. Existing files are 
 
 ## 17. Config Panel
 
-A full graphical game-config editor is postponed.
+Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
 
-In v1, game definitions are edited directly as YAML files under `configs/games/`.
+Edits remain drafts until Save. Revert restores the loaded file; leaving a dirty draft offers Save, Discard or Cancel. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 
-The Config panel may remain a lightweight placeholder or status view. It should not invent a separate configuration model.
-
-The application should validate loaded game configs and report errors clearly.
-
-Configuration changes must never silently delete existing clip metadata.
+Removing a field or canonical enum value used by clips shows affected counts and requires confirmation. Stored clip metadata is retained, including values hidden by a removed field. Dependent aliases and inference links are removed from the saved definition when their field or canonical value is removed. Configuration file changes are outside catalogue Undo/Redo.
 
 ---
 

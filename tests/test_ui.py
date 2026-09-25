@@ -330,10 +330,10 @@ def test_atomic_entry_controls_and_context_target(window, application, tmp_path,
     assert window.atomic_edit.clip_id == clip_id
     monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
     window.revert_atomic_edit()
-    window.panel("Config")
+    window.panel("Home")
     window.context_clip_id = clip_id
     window.edit_context_clip()
-    assert window.atomic_edit.origin == "Config"
+    assert window.atomic_edit.origin == "Home"
 
 
 def test_atomic_navigation_reverts_and_shift_enter_is_disabled(
@@ -1639,7 +1639,7 @@ def test_clip_card_rating_scope(window, tmp_path):
     window.clip_folder_names = window.catalogue.clip_folder_names()
     item = QListWidgetItem()
 
-    for panel in ("Home", "Session", "Editing", "Export", "Config"):
+    for panel in ("Home", "Session", "Editing", "Export"):
         window.current_panel = panel
         window.render_card(item, clip)
         assert item.text().endswith("VALORANT · R4 · captures")

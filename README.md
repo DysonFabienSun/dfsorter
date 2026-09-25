@@ -40,7 +40,7 @@ Set temporary I/O with `I`/`O`, supply a required custom title and output folder
 
 ## Configuration and search
 
-Edit `configs/games/*.yaml`, then use **Config → Reload configurations**. Enum aliases resolve to canonical capitalization. Free-form prefixes support quoted values, for example `wpn:"M4A1 SOPMOD"`. Multiword enum names may be quoted or entered directly. Mainline and description retain the exact text between separators, including spaces. Removing YAML fields hides their stored values; restoring the stable field key restores access.
+Use **Config** to create and edit game definitions in `configs/games/*.yaml`. Select a game on the left; Identity, Fields, and Title & review provide structured controls. Save validates and reloads the definition. Invalid YAML opens in a repair view, and externally changed files require reloading before saving. YAML files can still be edited externally, then reloaded from Config. Enum aliases resolve to canonical capitalization. Free-form prefixes support quoted values, for example `wpn:"M4A1 SOPMOD"`. Multiword enum names may be quoted or entered directly. Mainline and description retain the exact text between separators, including spaces. Removing YAML fields hides their stored values; restoring the stable field key restores access.
 
 Queries include `game:val agent:jett`, `triage:keep kill:>=4`, and `tag:LOW_FPS`. Quote multiword query values: `game:"Escape from Tarkov"`. Plain words search filename, mainline, and description. Rating queries are deliberately rejected. Use the triage dropdown to include discarded clips, which are otherwise hidden.
 
@@ -77,7 +77,7 @@ uv run ruff format --check src tests
 
 GUI tests open temporary windows and use disposable catalogues, never the working catalogue. They generate H.264/AV1 media, check decoded frames/audio/seek behavior, and capture normal/maximized windows. Windows can emit a handled COM exception through Python's faulthandler while creating a Qt window; the command above avoids that misleading diagnostic.
 
-Home manages capture folders; Config remains lightweight. Automatic folder polling, an installer, a graphical schema editor, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
+Home manages capture folders; Config edits game YAML definitions. Automatic folder polling, an installer, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
 
 Scans persist duration, capture date and inspection failures in SQLite. Unchanged paths,
 sizes and nanosecond modification times reuse results across restarts with zero probes.

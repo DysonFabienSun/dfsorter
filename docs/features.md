@@ -1,5 +1,11 @@
 # DFSorter v1 delivery checklist
 
+## Graphical game configuration editor
+
+- [x] Config lists game YAML files and provides structured Identity, Fields, and Title & review editing, including values, aliases, prefixes, links, display order, suggestions and command examples.
+- [x] Drafts use Save/Revert; prospective registry validation, atomic writes, external-change detection and round-trip YAML preservation protect existing definitions. Invalid files can be repaired in the source view.
+- [x] New games start with `kill`; existing canonical names and field keys remain stable. Removing used schema entries requires an impact confirmation and retains clip metadata.
+
 ## Working-title and generated-filename casing
 
 - [x] Default lowercase generated title/filename bodies with uppercase game codes; canonical catalogue values, custom filenames, original-name fallbacks, source extensions and UI tags retain casing. Settings → General can restore stored capitalization; preference persists and refreshes visible titles without reloading playback.

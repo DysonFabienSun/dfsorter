@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (
 from .browse import BrowsePage
 from .catalogue import Catalogue
 from .config import Registry, has_review_metadata, source_fallback, title
+from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
@@ -363,6 +364,7 @@ class Window(QMainWindow):
         workspace_layout.addWidget(self.splitter)
         outer.addWidget(workspace, 1)
         self.left, left_layout = page()
+        self.left_layout = left_layout
         self.left.setObjectName("clipLibraryPane")
         left_layout.setContentsMargins(0, 4, 8, 4)
         role(self.left, "sidebar")
@@ -976,20 +978,10 @@ class Window(QMainWindow):
         exporting.addWidget(self.group_rating)
         self.export_button = button("Export project", self.run_export)
         exporting.addWidget(self.export_button)
-        configuration = self.pages["Config"][1]
-        config_heading = QLabel("Game configurations")
-        role(config_heading, "heading")
-        configuration.addWidget(config_heading)
-        config_explanation = QLabel(
-            "Review loaded game definitions or open the YAML folder to edit them."
-        )
-        role(config_explanation, "secondary")
-        configuration.addWidget(config_explanation)
-        self.config_status = QPlainTextEdit()
-        self.config_status.setReadOnly(True)
-        configuration.addWidget(self.config_status)
-        configuration.addWidget(button("Open game YAML folder", self.open_configs))
-        configuration.addWidget(button("Reload configurations", self.reload_configs))
+        self.config_editor = ConfigEditor(self)
+        self.pages["Config"][1].addWidget(self.config_editor)
+        self.left_layout.addWidget(self.config_editor.sidebar, 1)
+        self.config_editor.sidebar.hide()
 
     def build_settings_menu(self):
         self.settings_menu = QMenu(self)
@@ -1381,6 +1373,12 @@ class Window(QMainWindow):
         self.library.verticalScrollBar().setValue(vertical)
 
     def panel(self, name):
+        if self.current_panel == "Config" and name != "Config":
+            was_dirty = self.config_editor.dirty
+            if not self.config_editor.confirm_discard():
+                return
+            if was_dirty:
+                self.config_editor.revert()
         if self.atomic_edit and self.current_panel == "Editing" and name != "Editing":
             if not self.confirm_revert_atomic():
                 return
@@ -1430,9 +1428,12 @@ class Window(QMainWindow):
         self.player.previous_button.setEnabled(not self.atomic_edit)
         self.player.next_button.setEnabled(not self.atomic_edit)
         self.add_project_next.setVisible(not self.atomic_edit)
-        self.search.setVisible(name not in {"Browse", "Editing", "Export"})
-        self.filters.setVisible(name not in {"Editing", "Export"})
+        self.search.setVisible(name not in {"Browse", "Editing", "Export", "Config"})
+        self.filters.setVisible(name not in {"Editing", "Export", "Config"})
         self.browse_filters.setVisible(name == "Browse")
+        self.library.setVisible(name != "Config")
+        self.library_error.setVisible(name != "Config" and bool(self.library_error.text()))
+        self.config_editor.sidebar.setVisible(name == "Config")
         self.update_time_sort_control()
         self.library.setSelectionMode(
             QListWidget.SelectionMode.SingleSelection
@@ -1584,10 +1585,6 @@ class Window(QMainWindow):
         )
         self.refresh_library_overview(list(clips.values()))
         self.refresh_session_status(clips)
-        self.config_status.setPlainText(
-            "\n".join(self.registry.errors)
-            or "Configurations valid:\n" + "\n".join(self.registry.games)
-        )
         self.refreshing = False
 
     def refresh_session_status(self, clips=None):
@@ -1836,6 +1833,9 @@ class Window(QMainWindow):
         if getattr(self, "settings_dialog", None) is not None:
             self.settings_dialog.refresh()
         if self.refreshing:
+            return
+        if self.current_panel == "Config":
+            self.library_page_switch = False
             return
         try:
             self.clip_folder_names = self.catalogue.clip_folder_names()
@@ -3764,6 +3764,9 @@ class Window(QMainWindow):
         self.update_projects_visibility()
 
     def closeEvent(self, event):
+        if self.current_panel == "Config" and not self.config_editor.confirm_discard():
+            event.ignore()
+            return
         if self.worker:
             self.worker.cancelled.set()
             self.error("Cancelling current operation; close again after it finishes")
