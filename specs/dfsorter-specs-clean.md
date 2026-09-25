@@ -467,6 +467,8 @@ Capture folders are persisted across application runs. Successful scheduled or f
 
 On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, missing-source entries and frozen Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available. Additionally, request quiet incremental scans every 30 seconds and when the application regains focus. Coalesce requests and defer while another background operation or modal dialog is active; retry after it finishes. Quiet scans use the same inspection cache and enabled-folder rules without modal progress or error dialogs. Report failures in the status bar. Preserve selection, viewport anchor, playback, temporary Browse fields and frozen Session membership/order when refreshing results.
 
+Closing the application during a background operation requests cancellation and closes the window automatically after the worker stops. Do not restart automatic scans or show scan results while closure is pending.
+
 ### 11.1 Capture-Folder Classification
 
 DFSorter supports ShadowPlay/Instant-Replay-style roots containing game-specific subdirectories.

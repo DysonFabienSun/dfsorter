@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -286,6 +287,7 @@ class Window(QMainWindow):
         self.pending_out = None
         self.range_block_message = ""
         self.worker = None
+        self.close_requested = False
         self.refreshing = False
         self.positioned_clip_pages = set()
         self.setWindowTitle("DFSorter")
@@ -736,20 +738,16 @@ class Window(QMainWindow):
         home.addWidget(note)
         session = self.pages["Session"][1]
         session_scroll = QScrollArea()
+        session_scroll.setObjectName("sessionOverviewScroll")
         session_scroll.setWidgetResizable(True)
         session_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        session_content = QWidget()
-        session_content.setProperty("role", "transparent")
-        session_content_layout = QVBoxLayout(session_content)
-        session_content_layout.setContentsMargins(0, 0, 0, 0)
-        session_content_layout.setSpacing(24)
         overview_group = QWidget()
-        overview_group.setMinimumWidth(620)
-        overview_group.setMaximumWidth(820)
+        overview_group.setObjectName("sessionOverview")
         role(overview_group, "group")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setContentsMargins(16, 16, 16, 16)
         overview_layout.setSpacing(8)
+        overview_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         overview_heading = QLabel("Library overview")
         role(overview_heading, "sectionHeading")
         overview_layout.addWidget(overview_heading)
@@ -791,25 +789,40 @@ class Window(QMainWindow):
         self.overview_undated.setWordWrap(True)
         self.overview_undated.hide()
         overview_layout.addWidget(self.overview_undated)
-        session_content_layout.addWidget(
-            overview_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
-        )
+        overview_layout.addStretch()
+        session_scroll.setWidget(overview_group)
+        session.addWidget(session_scroll, 1)
         session_group = QWidget()
-        session_group.setMaximumWidth(440)
+        session_group.setObjectName("sessionSetup")
+        session_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         role(session_group, "group")
         session_setup = QVBoxLayout(session_group)
         session_setup.setContentsMargins(16, 16, 16, 16)
-        session_setup.setSpacing(12)
+        session_setup.setSpacing(8)
         session_heading = QLabel("Session setup")
         role(session_heading, "sectionHeading")
         session_setup.addWidget(session_heading)
+        setup_columns = QHBoxLayout()
+        setup_columns.setSpacing(24)
+        active_session = QVBoxLayout()
+        active_session.setSpacing(8)
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)
+        self.session_status.setMinimumHeight(self.session_status.fontMetrics().lineSpacing() * 4)
         role(self.session_status, "secondary")
-        session_setup.addWidget(self.session_status)
+        active_session.addWidget(self.session_status)
+        existing_actions = QHBoxLayout()
+        existing_actions.setSpacing(8)
+        existing_actions.addWidget(button("Resume session", lambda: self.panel("Editing")))
+        existing_actions.addWidget(button("End session", self.end_session))
+        existing_actions.addStretch()
+        active_session.addLayout(existing_actions)
+        setup_columns.addLayout(active_session, 1)
+        create_session = QVBoxLayout()
+        create_session.setSpacing(8)
         scope_label = QLabel("Scope")
         role(scope_label, "muted")
-        session_setup.addWidget(scope_label)
+        create_session.addWidget(scope_label)
         self.session_count = QSpinBox()
         self.session_count.setRange(1, 1000000)
         self.session_count.setValue(50)
@@ -831,29 +844,15 @@ class Window(QMainWindow):
             session_choices.addWidget(control)
         session_choices.addWidget(self.session_count)
         session_choices.addStretch()
-        session_setup.addLayout(session_choices)
-        session_setup.addWidget(
-            button("Create Session", lambda: self.create_session(self.session_mode))
+        create_session.addLayout(session_choices)
+        create_session.addWidget(
+            button("Create Session", lambda: self.create_session(self.session_mode)),
+            0,
+            Qt.AlignmentFlag.AlignLeft,
         )
-        session_divider = QWidget()
-        session_divider.setFixedHeight(1)
-        role(session_divider, "divider")
-        session_setup.addWidget(session_divider)
-        existing_heading = QLabel("Existing session")
-        role(existing_heading, "muted")
-        session_setup.addWidget(existing_heading)
-        existing_actions = QHBoxLayout()
-        existing_actions.setSpacing(8)
-        existing_actions.addWidget(button("Resume session", lambda: self.panel("Editing")))
-        existing_actions.addWidget(button("End session", self.end_session))
-        existing_actions.addStretch()
-        session_setup.addLayout(existing_actions)
-        session_content_layout.addWidget(
-            session_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
-        )
-        session_content_layout.addStretch()
-        session_scroll.setWidget(session_content)
-        session.addWidget(session_scroll)
+        setup_columns.addLayout(create_session)
+        session_setup.addLayout(setup_columns)
+        session.addWidget(session_group)
         editing = self.pages["Editing"][1]
         self.player = Player(self.settings)
         self.player.volume_changed.connect(self.set_playback_volume)
@@ -3169,6 +3168,8 @@ class Window(QMainWindow):
             self.render_clip()
 
     def background(self, function, done, label="Working…", *, quiet=False):
+        if self.close_requested:
+            return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
@@ -3176,13 +3177,19 @@ class Window(QMainWindow):
         results = []
         if quiet:
             self.worker.succeeded.connect(results.append)
-            self.worker.failed.connect(
-                lambda message: self.statusBar().showMessage(f"Automatic scan: {message}", 12000)
-            )
+
+            def failed_quietly(message):
+                if not self.close_requested:
+                    self.statusBar().showMessage(f"Automatic scan: {message}", 12000)
+
+            self.worker.failed.connect(failed_quietly)
 
             def finished_quietly():
                 self.worker.deleteLater()
                 self.worker = None
+                if self.close_requested:
+                    QTimer.singleShot(0, self.close)
+                    return
                 if results:
                     try:
                         done(results[0])
@@ -3214,7 +3221,8 @@ class Window(QMainWindow):
             results.append(result)
 
         def failed(message):
-            self.error(message)
+            if not self.close_requested:
+                self.error(message)
 
         def finished():
             progress.canceled.disconnect(cancel)
@@ -3222,6 +3230,9 @@ class Window(QMainWindow):
             progress.deleteLater()
             self.worker.deleteLater()
             self.worker = None
+            if self.close_requested:
+                QTimer.singleShot(0, self.close)
+                return
             if results:
                 try:
                     continuation = done(results[0])
@@ -3308,16 +3319,22 @@ class Window(QMainWindow):
         self.rescan(force=True)
 
     def request_auto_scan(self):
+        if self.close_requested:
+            return
         if not self.scan_retry_timer.isActive():
             self.scan_retry_timer.start()
 
     def auto_scan(self):
+        if self.close_requested:
+            return
         if self.worker is not None or QApplication.activeModalWidget() is not None:
             self.scan_retry_timer.start()
             return
         self.rescan(quiet=True)
 
     def rescan(self, force=False, *, quiet=False):
+        if self.close_requested:
+            return
         self.scan_retry_timer.stop()
         if not any(folder["enabled"] for folder in self.catalogue.folders()):
             return
@@ -3764,12 +3781,19 @@ class Window(QMainWindow):
         self.update_projects_visibility()
 
     def closeEvent(self, event):
-        if self.current_panel == "Config" and not self.config_editor.confirm_discard():
+        if (
+            not self.close_requested
+            and self.current_panel == "Config"
+            and not self.config_editor.confirm_discard()
+        ):
             event.ignore()
             return
         if self.worker:
+            self.close_requested = True
+            self.scan_timer.stop()
+            self.scan_retry_timer.stop()
             self.worker.cancelled.set()
-            self.error("Cancelling current operation; close again after it finishes")
+            self.statusBar().showMessage("Closing after the current operation stops…")
             event.ignore()
             return
         self.atomic_edit = None

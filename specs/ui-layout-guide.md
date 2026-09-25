@@ -277,19 +277,18 @@ turn every statistic into a card. The explanatory sentence remains tertiary and 
 
 ### Session
 
-Compose the existing setup controls as one deliberate compact region with a comfortable
-maximum width. Present the session count summary first, then Scope, its Selected / First N /
-All controls and count field, followed by the primary Create Session action. Separate existing-
-session actions into a subordinate group containing Resume session and End session. A single
-subtle panel surface around this region is permitted. Do not stretch controls across the empty
-workspace or change behavior and terminology.
+Keep Session setup as a compact, fixed-height panel below the overview. Its left side contains
+the session status, Resume session and End session; its right side contains Scope, Selected /
+First N / All, the count field and Create Session. Keep the current behavior and terminology.
+The setup panel fills the center workspace without changing the clip-library or Projects panes.
 
-Place the library overview above Session setup as a responsive quiet-surface group capped near
-820 px. Use visible compact segmented period controls, 16 px proportional verdict bars, and
-exact text counts beneath each bar. Keep uses success green, Discard danger red and Pending
+Place the library overview above Session setup as a responsive quiet-surface group filling the
+center workspace. When the Projects pane opens, the overview narrows with the center pane.
+Scroll the overview vertically when its rows exceed the available height while keeping Session
+setup visible at the bottom. Use visible compact segmented period controls, 16 px proportional
+verdict bars, and exact text counts beneath each bar. Keep uses success green, Discard danger red and Pending
 muted gray; color is never the only state indicator. The aggregate row is visually stronger
-than game rows without turning individual statistics into cards. Allow the Session content area
-to scroll vertically at reduced window heights.
+than game rows without turning individual statistics into cards.
 
 Empty space is valid on both pages. Content should be anchored to shared page edges and grouped
 with intentional widths so it does not appear accidentally stranded in the upper-left corner.

@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidgetItem,
     QProgressDialog,
+    QPushButton,
+    QScrollArea,
     QTabWidget,
     QWidget,
 )
@@ -114,6 +116,42 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
     selected = window.clip_filter.selected_values()
     window.set_overview_period("7 days")
     assert window.clip_filter.selected_values() == selected
+
+
+def test_session_overview_scrolls_above_pinned_setup(window, application):
+    window.panel("Session")
+    window.resize(1400, 600)
+    for index in range(40):
+        window.overview_rows.addWidget(QLabel(f"Additional game {index}"))
+    application.processEvents()
+
+    scroll = window.findChild(QScrollArea, "sessionOverviewScroll")
+    overview = window.findChild(QWidget, "sessionOverview")
+    setup = window.findChild(QWidget, "sessionSetup")
+    controls = {control.text(): control for control in setup.findChildren(QPushButton)}
+    assert scroll.verticalScrollBar().maximum() > 0
+    assert abs(overview.width() - scroll.viewport().width()) <= 2
+    assert setup.width() == scroll.width()
+    assert setup.geometry().top() > scroll.geometry().bottom()
+    assert controls["Resume session"].x() < controls["Create Session"].x()
+    assert controls["End session"].x() < controls["Create Session"].x()
+
+    setup_height = setup.height()
+    overview_width = overview.width()
+    window.projects_toggle.click()
+    application.processEvents()
+    assert overview.width() < overview_width
+    assert setup.height() == setup_height
+    assert scroll.verticalScrollBar().maximum() > 0
+
+    window.session_status.setText(
+        "Position 1 / 50\nkeep: 10 (20%)\ndiscard: 5 (10%)\npending: 35 (70%)"
+    )
+    application.processEvents()
+    assert setup.height() == setup_height
+
+    window.refresh_library_overview([])
+    assert wait_for(application, lambda: scroll.verticalScrollBar().maximum() == 0, timeout=1)
 
 
 def test_video_surface_fits_landscape_and_portrait_sources(application):
@@ -2454,6 +2492,33 @@ def test_background_completion(window, application):
     window.background(lambda cancelled, progress: 42, results.append)
     assert wait_for(application, lambda: window.worker is None)
     assert results == [42]
+
+
+@pytest.mark.parametrize("quiet", [True, False])
+def test_close_during_background_operation_finishes_after_cancellation(
+    window, application, quiet
+):
+    release = threading.Event()
+    results = []
+
+    def operation(cancelled, progress):
+        release.wait(5)
+        return cancelled()
+
+    window.background(operation, results.append, quiet=quiet)
+    worker = window.worker
+    try:
+        assert not window.close()
+        assert window.isVisible()
+        assert worker.cancelled.is_set()
+        assert window.close_requested
+        assert not window.scan_timer.isActive()
+        assert not window.scan_retry_timer.isActive()
+    finally:
+        release.set()
+    assert wait_for(application, lambda: not window.isVisible())
+    assert window.worker is None
+    assert results == []
 
 
 def test_background_locks_immediately_until_cancel_finishes(window, application):
