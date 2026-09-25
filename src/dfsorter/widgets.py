@@ -2,7 +2,7 @@ import html
 from functools import lru_cache
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFontMetrics,
@@ -121,7 +121,7 @@ def tag_prefix(clip, rich=False):
 
 
 @lru_cache(maxsize=128)
-def icon(name, color=None, fill=False, size=24):
+def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0):
     result = QIcon()
     source = (ICONS / f"{name}.svg").read_bytes()
     for mode, state, tint in [
@@ -136,20 +136,33 @@ def icon(name, color=None, fill=False, size=24):
         if fill:
             data = data.replace(b'fill="none"', f'fill="{tint}"'.encode())
         for scale in (1, 2, 3):
-            pixmap = QPixmap(size * scale, size * scale)
+            pixmap = QPixmap((size + right_padding) * scale, size * scale)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
-            QSvgRenderer(data).render(painter)
+            if y_offset:
+                painter.translate(0, y_offset * scale)
+            QSvgRenderer(data).render(painter, QRectF(0, 0, size * scale, size * scale))
             painter.end()
             pixmap.setDevicePixelRatio(scale)
             result.addPixmap(pixmap, mode, state)
     return result
 
 
-def set_icon(control, name, color_role=None):
+def set_icon(control, name, color_role=None, *, size=24, y_offset=0, right_padding=0):
     control.setProperty("iconName", name)
     control.setProperty("iconColorRole", color_role)
-    control.setIcon(icon(name, COLORS[color_role] if color_role else None))
+    control.setProperty("iconRenderSize", size)
+    control.setProperty("iconYOffset", y_offset)
+    control.setProperty("iconRightPadding", right_padding)
+    control.setIcon(
+        icon(
+            name,
+            COLORS[color_role] if color_role else None,
+            size=size,
+            y_offset=y_offset,
+            right_padding=right_padding,
+        )
+    )
 
 
 def refresh_icons(root):
@@ -158,7 +171,15 @@ def refresh_icons(root):
         name = control.property("iconName")
         if name:
             color_role = control.property("iconColorRole")
-            control.setIcon(icon(name, COLORS[color_role] if color_role else None))
+            control.setIcon(
+                icon(
+                    name,
+                    COLORS[color_role] if color_role else None,
+                    size=control.property("iconRenderSize") or 24,
+                    y_offset=control.property("iconYOffset") or 0,
+                    right_padding=control.property("iconRightPadding") or 0,
+                )
+            )
 
 
 def tool(name, label, callback):

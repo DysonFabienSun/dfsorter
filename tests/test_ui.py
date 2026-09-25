@@ -9,7 +9,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import PySide6
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSize, Qt
 from PySide6.QtGui import QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
@@ -2729,7 +2729,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     assert window.projects_tab_edge.geometry().getRect() == (91, 4, 1, 22)
     assert window.projects_tab_chevron.geometry().getRect() == (83, 11, 5, 7)
     assert window.projects_toggle.font().pixelSize() == FONT_SIZES["md"]
-    assert window.projects_toggle.iconSize().height() == 18
+    assert window.projects_toggle.iconSize() == QSize(17, 16)
     assert window.undo_button.property("navUtilityStyle") == "ghost"
     assert window.redo_button.property("navUtilityStyle") == "ghost"
     assert window.theme_button.property("navUtilityStyle") == "ghost"
@@ -2746,10 +2746,10 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
 
     window.set_theme("dark", persist=False)
     assert window.theme_button.property("iconName") == "sun"
-    assert abs(
-        painted_icon_height(window.projects_toggle)
-        - painted_icon_height(window.theme_button)
-    ) <= 1
+    assert 1 <= (
+        painted_icon_height(window.theme_button)
+        - painted_icon_height(window.projects_toggle)
+    ) <= 3
 
 
 def test_projects_drawer_tab_and_pane_close(window):
