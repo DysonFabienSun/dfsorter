@@ -1053,6 +1053,19 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     window.command.setText("abc")
     QTest.keyClick(window.command, Qt.Key.Key_Backspace)
     assert window.command.text() == "ab"
+    window.command.setText("jettvandal")
+    window.command.setCursorPosition(4)
+    QTest.keyClick(window.command, Qt.Key.Key_Equal)
+    assert window.command.text() == "jett -- vandal"
+    assert window.command.cursorPosition() == 8
+    QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.command.text() == "jettvandal"
+    assert window.command.cursorPosition() == 4
+    QTest.keyClick(window.command, Qt.Key.Key_Equal)
+    QTest.keyClick(window.command, Qt.Key.Key_Left)
+    QTest.keyClick(window.command, Qt.Key.Key_Right)
+    QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.command.text() == "jett --vandal"
     window.command.clear()
     QTest.keyClick(window.command, Qt.Key.Key_Backspace)
     assert window.catalogue.clip(ids[0])["triage"] is None
