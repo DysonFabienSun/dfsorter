@@ -71,7 +71,7 @@ from .parsing import (
     preview_command_details,
     query_clips,
 )
-from .playback import Player
+from .playback import Player, playback_volume, volume_step
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
@@ -249,6 +249,12 @@ class Window(QMainWindow):
             except (OSError, ValueError, yaml.YAMLError) as error:
                 self.registry.errors.append(f"Settings: {error}")
                 self.settings = {}
+        if "playback_volume" in self.settings:
+            stored_volume = self.settings["playback_volume"]
+            normalized_volume = playback_volume(self.settings)
+            if type(stored_volume) is not int or stored_volume != normalized_volume:
+                self.settings["playback_volume"] = normalized_volume
+                self.save_settings()
         if self.settings.get("theme") not in {"system", "light", "dark"}:
             self.settings["theme"] = "light"
         apply_theme(QApplication.instance(), self.settings["theme"])
@@ -2703,6 +2709,14 @@ class Window(QMainWindow):
             if key == Qt.Key.Key_Escape and self.browse.fullscreen_state is not None:
                 self.browse.set_fullscreen(False)
                 return True
+            if self.browse.fullscreen_state is not None and not text_editing and not modifiers:
+                if key in {Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight}:
+                    self.navigate(-1 if key == Qt.Key.Key_BracketLeft else 1)
+                    return True
+                if key in {Qt.Key.Key_Up, Qt.Key.Key_Down}:
+                    volume = self.browse.player.volume
+                    volume.setValue(volume.value() + (5 if key == Qt.Key.Key_Up else -5))
+                    return True
             if (
                 key in {Qt.Key.Key_F, Qt.Key.Key_F11}
                 and modifiers == Qt.KeyboardModifier.NoModifier
@@ -3549,7 +3563,7 @@ class Window(QMainWindow):
         temporary.replace(self.settings_path)
 
     def set_playback_volume(self, value):
-        value = max(0, min(100, int(value)))
+        value = volume_step(value)
         self.settings["playback_volume"] = value
         for player in (
             getattr(self, "browse", None) and self.browse.player,

@@ -171,6 +171,7 @@ def test_player_volume_track_drag_updates_continuously(window, application):
     QTest.mouseMove(volume, middle)
     application.processEvents()
     assert 45 <= volume.value() <= 55
+    assert volume.value() % 5 == 0
     QTest.mouseMove(volume, end)
     QTest.mouseRelease(volume, Qt.MouseButton.LeftButton, pos=end)
 
@@ -181,17 +182,33 @@ def test_player_volume_is_shared_and_persists(window, application):
     import yaml
 
     window.browse.player.volume.setValue(37)
-    assert window.player.volume.value() == 37
-    assert window.export_player.volume.value() == 37
+    assert window.browse.player.volume.value() == 35
+    assert window.player.volume.value() == 35
+    assert window.export_player.volume.value() == 35
     assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
         "playback_volume"
-    ] == 37
+    ] == 35
 
     restarted = Window(window.root)
     try:
-        assert restarted.browse.player.volume.value() == 37
-        assert restarted.player.volume.value() == 37
-        assert restarted.export_player.volume.value() == 37
+        assert restarted.browse.player.volume.value() == 35
+        assert restarted.player.volume.value() == 35
+        assert restarted.export_player.volume.value() == 35
+    finally:
+        restarted.close()
+        application.processEvents()
+
+    settings = yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))
+    settings["playback_volume"] = 38
+    window.settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
+    restarted = Window(window.root)
+    try:
+        assert restarted.browse.player.volume.value() == 40
+        assert restarted.player.volume.value() == 40
+        assert restarted.export_player.volume.value() == 40
+        assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
+            "playback_volume"
+        ] == 40
     finally:
         restarted.close()
         application.processEvents()
@@ -3091,6 +3108,43 @@ def test_browse_form_alignment_and_title_style(window, application):
         assert title_right == mode_right
         assert browse.custom_title.width() > browse.destination.width() == 480
         assert browse.working_title.font() == window.working_title.font()
+
+
+def test_browse_fullscreen_clip_and_volume_keys(window, application, tmp_path):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    window.panel("Browse")
+    window.library.setCurrentRow(1)
+    player = window.browse.player
+
+    QTest.keyClick(player, Qt.Key.Key_Up)
+    assert window.library.currentRow() == 0
+    window.library.setCurrentRow(1)
+    window.browse.set_fullscreen(True)
+    assert window.isFullScreen()
+
+    QTest.keyClick(player, Qt.Key.Key_BracketLeft)
+    assert window.library.currentRow() == 0
+    QTest.keyClick(player, Qt.Key.Key_BracketLeft)
+    assert window.library.currentRow() == 0
+    QTest.keyClick(player, Qt.Key.Key_BracketRight)
+    assert window.library.currentRow() == 1
+
+    player.volume.setValue(60)
+    QTest.keyClick(player, Qt.Key.Key_Up)
+    assert window.library.currentRow() == 1
+    assert player.volume.value() == 65
+    assert window.player.volume.value() == 65
+    QTest.keyClick(player, Qt.Key.Key_Down)
+    assert player.volume.value() == 60
+    window.browse.set_fullscreen(False)
+    QTest.keyClick(player, Qt.Key.Key_BracketRight)
+    assert window.library.currentRow() == 1
 
 
 @pytest.mark.parametrize("maximized", [False, True])
