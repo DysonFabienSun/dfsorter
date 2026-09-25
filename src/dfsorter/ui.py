@@ -64,7 +64,11 @@ from .config import Registry, has_review_metadata, source_fallback, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
-from .parsing import parse_command, preview_command, query_clips
+from .parsing import (
+    parse_command_details,
+    preview_command_details,
+    query_clips,
+)
 from .playback import Player
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -94,7 +98,9 @@ class AtomicEditState:
     baseline: tuple
     draft: tuple
     scroll_position: tuple[int, int]
-    history: list[str] = dataclass_field(default_factory=list)
+    history: list[str | tuple[str, list[tuple[str, object]]]] = dataclass_field(
+        default_factory=list
+    )
 
 
 class Worker(QThread):
@@ -538,6 +544,7 @@ class Window(QMainWindow):
         command_layout.setContentsMargins(12, 8 + self.fontMetrics().lineSpacing(), 12, 4)
         command_layout.setSpacing(4)
         self.command_history = QLabel()
+        self.command_history.setTextFormat(Qt.TextFormat.RichText)
         role(self.command_history, "muted")
         self.command_history.setWordWrap(True)
         self.command_history.hide()
@@ -1004,6 +1011,7 @@ class Window(QMainWindow):
         clip = self.effective_clip() if self.current_id else None
         if clip:
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
+            self.render_command_history()
         for player in (self.player, self.export_player, self.browse.player):
             player.seek.update()
             player.fast_indicator.update()
@@ -1974,14 +1982,31 @@ class Window(QMainWindow):
         self.description.setVisible(bool((clip["description"] or "").strip()))
         self.player.seek.marker_range = (clip["in_ms"], clip["out_ms"])
         self.player.seek.update()
-        command_history = (
-            self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
-        )
-        self.command_history.setText("\n".join(command_history[-3:]))
-        self.command_history.setVisible(bool(self.command_history.text()))
+        self.render_command_history()
         self.refresh_session_status()
         self.atomic_save_button.setEnabled(self.can_save_atomic())
         self.update_command_state()
+
+    def render_command_history(self):
+        command_history = self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
+        history_lines = []
+        for entry in command_history[-3:]:
+            if isinstance(entry, tuple):
+                command_text, inferred = entry
+                details = ", ".join(
+                    f"{key.replace('_', ' ').title()} = "
+                    + (", ".join(map(str, value)) if isinstance(value, list) else str(value))
+                    for key, value in inferred
+                )
+                history_lines.append(
+                    f"{html.escape(command_text)} "
+                    f'<span style="font-size:11px; color:{COLORS["text_muted"]}">'
+                    f"(Inferred: {html.escape(details)})</span>"
+                )
+            else:
+                history_lines.append(html.escape(entry))
+        self.command_history.setText("<br>".join(history_lines))
+        self.command_history.setVisible(bool(self.command_history.text()))
 
     def render_field_reminder(self, clip, game):
         self.update_range_warning()
@@ -1990,8 +2015,16 @@ class Window(QMainWindow):
             self.field_reminder.clear()
             return
         state = "Saved metadata."
+        inferred_fields = set()
         if self.command.text().strip():
-            patch, validation, _ = preview_command(self.command.text(), clip["game"], self.registry)
+            result, validation, _ = preview_command_details(
+                self.command.text(),
+                clip["game"],
+                self.registry,
+                existing_metadata=clip["metadata"],
+            )
+            patch = result.patch
+            inferred_fields = {key for key, _value in result.inferred}
             clip = {
                 **clip,
                 **patch,
@@ -2003,7 +2036,8 @@ class Window(QMainWindow):
                 else "Partial command preview; finish or correct the command before saving."
             )
         self.field_reminder.setToolTip(
-            state + " ✓ populated · ! suggested · o optional · x invalid for current configuration."
+            state
+            + " ✓ populated · ◇ inferred · ! suggested · o optional · x invalid for current configuration."
         )
         fields = list(
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
@@ -2036,6 +2070,8 @@ class Window(QMainWindow):
                     valid = isinstance(value, str)
             if not valid:
                 mark, color = "x", "status_danger"
+            elif key in inferred_fields:
+                mark, color = '<span style="font-size:9px">◇</span>', "accent_default"
             elif not missing:
                 mark, color = "✓", "status_success"
             elif key in game.suggested_fields:
@@ -2074,7 +2110,10 @@ class Window(QMainWindow):
         text = self.command.text()
         try:
             clip = self.effective_clip()
-            patch = parse_command(text, clip["game"], self.registry)
+            result = parse_command_details(
+                text, clip["game"], self.registry, existing_metadata=clip["metadata"]
+            )
+            patch = result.patch
             if self.atomic_edit:
                 self.atomic_edit.draft = self.catalogue.draft_snapshot(
                     self.atomic_edit.draft, patch, editing=True,
@@ -2084,7 +2123,7 @@ class Window(QMainWindow):
                 self.catalogue.patch(self.current_id, patch, editing=True)
             if text.strip():
                 history = self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
-                history.append(text)
+                history.append((text, result.inferred) if result.inferred else text)
                 del history[:-3]
             self.command.clear()
             self.command_error.clear()
@@ -2275,12 +2314,14 @@ class Window(QMainWindow):
         validation, message, patch = "empty", "", {}
         if self.current_id:
             clip = self.effective_clip()
-            patch, validation, message = preview_command(
+            result, validation, message = preview_command_details(
                 self.command.text(),
                 clip["game"],
                 self.registry,
                 submitted=self.command_submitted_error,
+                existing_metadata=clip["metadata"],
             )
+            patch = result.patch
         rating = (
             patch.get("rating")
             if validation == "valid" and self.current_panel == "Editing"

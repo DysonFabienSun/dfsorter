@@ -14,6 +14,7 @@ class Game:
     suggested_fields: list[str]
     values: dict[str, tuple[str, str]]
     prefixes: dict[str, str]
+    links: dict[str, dict[str, dict[str, object]]]
     command_example: str = ""
 
 
@@ -59,7 +60,7 @@ class Registry:
         if not isinstance(fields, dict) or reserved.intersection(fields):
             raise ValueError("Fields must be a mapping without global clip field names")
         fields = {"kill": {}, **fields}
-        values, prefixes = {}, {}
+        values, prefixes, links = {}, {}, {}
         for key, definition in fields.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", key):
                 raise ValueError(f"Invalid field key: {key}")
@@ -99,6 +100,10 @@ class Registry:
                 if re.fullmatch(r"(\d+k|1v\d+|r\d+)", folded):
                     raise ValueError(f"Alias conflicts with reserved token: {alias}")
                 values[folded] = target
+            field_links = definition.get("links", {})
+            if not isinstance(field_links, dict):
+                raise ValueError(f"{key}: links must be a mapping")
+            links[key] = field_links
         order = raw["display_order"]
         suggested = raw.get("suggested_fields", raw.get("required_for_export", []))
         if not isinstance(order, list) or not isinstance(suggested, list):
@@ -107,6 +112,54 @@ class Registry:
             raise ValueError("Invalid display_order")
         if any(key not in fields for key in suggested):
             raise ValueError("Unknown suggested_fields field")
+        normalized_links = {}
+        for source_key, field_links in links.items():
+            source_definition = fields[source_key]
+            normalized_links[source_key] = {}
+            for source_value, targets in field_links.items():
+                if not isinstance(source_value, (str, int)) or not isinstance(targets, dict) or not targets:
+                    raise ValueError(f"{source_key}: link entries need a source value and targets")
+                if source_definition.get("type") == "enum" and source_value not in source_definition["values"]:
+                    raise ValueError(f"{source_key}: unknown link source value {source_value}")
+                normalized_targets = {}
+                for target_key, target_value in targets.items():
+                    if target_key not in fields:
+                        raise ValueError(f"{source_key}: unknown link target field {target_key}")
+                    target_definition = fields[target_key]
+                    multiple = target_definition.get("multiple", False)
+                    target_values = target_value if isinstance(target_value, list) else [target_value]
+                    if multiple != isinstance(target_value, list):
+                        expected = "a list" if multiple else "a scalar"
+                        raise ValueError(f"{source_key}: {target_key} link target must be {expected}")
+                    if target_definition.get("type") == "enum" and any(
+                        value not in target_definition["values"] for value in target_values
+                    ):
+                        raise ValueError(f"{source_key}: unknown {target_key} link value")
+                    if target_key in {"kill", "clutch"} and (
+                        type(target_value) is not int or target_value < (0 if target_key == "kill" else 1)
+                    ):
+                        raise ValueError(f"{source_key}: invalid {target_key} link value")
+                    normalized_targets[target_key] = target_value
+                normalized_links[source_key][str(source_value).casefold()] = normalized_targets
+        graph = {
+            source: {target for targets in field_links.values() for target in targets}
+            for source, field_links in normalized_links.items()
+        }
+        visiting, visited = set(), set()
+
+        def check_cycle(field):
+            if field in visiting:
+                raise ValueError("Field links must not contain cycles")
+            if field in visited:
+                return
+            visiting.add(field)
+            for target in graph.get(field, set()):
+                check_cycle(target)
+            visiting.remove(field)
+            visited.add(field)
+
+        for field in graph:
+            check_cycle(field)
         aliases = [name, *raw.get("aliases", [])]
         if name in self.games or any(game.code == code for game in self.games.values()):
             raise ValueError("Duplicate game name or display code")
@@ -116,7 +169,7 @@ class Registry:
         if not isinstance(command_example, str):
             raise ValueError("command_example must be text")
         self.games[name] = Game(
-            name, code, fields, order, suggested, values, prefixes, command_example
+            name, code, fields, order, suggested, values, prefixes, normalized_links, command_example
         )
         for alias in aliases:
             self.aliases[alias.casefold()] = name

@@ -169,6 +169,12 @@ Any ordinary field may additionally specify:
 
 - `multiple: false` for a scalar value;
 - `multiple: true` for an ordered list of values.
+- value-specific `links` that infer values for other game-defined structured fields.
+
+Link source and target values use canonical configured values. Links may chain, but cycles are
+invalid. Explicit values in the same command and existing populated target fields take precedence.
+Competing links that infer different values for the same empty target reject the command atomically.
+For example, VALORANT's `Headhunter` and `Tour de Force` weapon values infer `agent: Chamber`.
 
 This is sufficient for the intended initial game schemas. Do not build a general-purpose schema language without a concrete need.
 
@@ -623,6 +629,10 @@ Use native Qt video presentation and prefer hardware decoding, allowing logged s
 The command bar receives one complete string.
 
 The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; the checklist tooltip distinguishes partial previews from complete drafts. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
+
+Fields inferred by YAML links use a cyan `◇` marker while previewing. After submission they use the
+normal populated marker. Command history appends smaller muted provenance such as
+`(Inferred: Agent = Chamber)` only when a link actually supplied the saved value.
 
 `tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `[LOW_FPS]`, `tag:LOW_FPS` or `tag:"audio issue"`. Bracket syntax accepts one non-empty token without spaces; `[]` and brackets containing spaces are invalid. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. For a valid tag draft, replace the generic apply hint with `[TAG] Known tag` when it matches any library clip case-insensitively, or `[TAG] New tag` otherwise. Render the bracketed tag bold in primary text; render Known tag as secondary text and New tag in the accent color. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
 

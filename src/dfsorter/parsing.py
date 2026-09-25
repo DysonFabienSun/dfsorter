@@ -13,6 +13,12 @@ class Token:
     end: int = 0
 
 
+@dataclass
+class ParsedCommand:
+    patch: dict
+    inferred: list[tuple[str, object]]
+
+
 def segments(text: str) -> list[str]:
     result, start, quote = [], 0, None
     index = 0
@@ -67,7 +73,12 @@ def tokenize(text: str) -> list[Token]:
     return result
 
 
-def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
+def parse_command_details(
+    text: str,
+    game_name: str | None,
+    registry: Registry,
+    existing_metadata: dict | None = None,
+) -> ParsedCommand:
     parts = segments(text)
     patch, metadata = {}, {}
     if len(parts) > 1:
@@ -192,27 +203,66 @@ def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
         index += 1
     if metadata:
         patch["metadata"] = metadata
-    return patch
+    inferred = []
+    if game and metadata:
+        explicit = set(metadata)
+        existing = existing_metadata or {}
+        pending = [(key, value) for key, value in metadata.items()]
+        inferred_values = {}
+        while pending:
+            source_key, source_value = pending.pop(0)
+            source_values = source_value if isinstance(source_value, list) else [source_value]
+            for value in source_values:
+                targets = game.links.get(source_key, {}).get(str(value).casefold(), {})
+                for target_key, target_value in targets.items():
+                    if target_key in explicit or existing.get(target_key) not in (None, "", []):
+                        continue
+                    previous = inferred_values.get(target_key)
+                    if previous is not None and previous != target_value:
+                        raise ValueError(f"Conflicting inferred values for {target_key}")
+                    if previous is not None:
+                        continue
+                    inferred_values[target_key] = target_value
+                    metadata[target_key] = target_value
+                    inferred.append((target_key, target_value))
+                    pending.append((target_key, target_value))
+    return ParsedCommand(patch, inferred)
 
 
-def preview_command(text: str, game_name: str | None, registry: Registry, *, submitted=False):
-    """Return a presentation-only patch, validation state and explanation."""
+def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:
+    return parse_command_details(text, game_name, registry).patch
+
+
+def preview_command_details(
+    text: str,
+    game_name: str | None,
+    registry: Registry,
+    *,
+    submitted=False,
+    existing_metadata: dict | None = None,
+):
+    """Return a presentation-only parse result, validation state and explanation."""
     if not text.strip():
-        return {}, "empty", ""
+        return ParsedCommand({}, []), "empty", ""
     try:
-        return parse_command(text, game_name, registry), "valid", "Enter to apply"
+        return (
+            parse_command_details(text, game_name, registry, existing_metadata),
+            "valid",
+            "Enter to apply",
+        )
     except ValueError as error:
         message = str(error)
-    patch = {}
+    result = ParsedCommand({}, [])
     game = registry.game(game_name)
     missing_enum_value = bool(
         game and text.rstrip().endswith(":")
         and text.split()[-1][:-1].casefold() in game.prefixes
     )
-    # Reuse the submission grammar: only fully parseable prefixes can contribute.
     for boundary in reversed(list(re.finditer(r"\s+", text))):
         try:
-            patch = parse_command(text[:boundary.start()], game_name, registry)
+            result = parse_command_details(
+                text[:boundary.start()], game_name, registry, existing_metadata
+            )
             break
         except ValueError:
             continue
@@ -223,20 +273,26 @@ def preview_command(text: str, game_name: str | None, registry: Registry, *, sub
         if missing_enum_value:
             message = "Enter a value after the field prefix"
     elif message.startswith("Unknown "):
-        # An unknown token still being typed is not an error until delimited.
         state = "invalid"
         if not text[-1].isspace():
-            # Only defer errors if removing the final token leaves valid input.
             prefix = text.rsplit(None, 1)[0] if len(text.split()) > 1 else ""
             try:
-                parse_command(prefix, game_name, registry)
+                parse_command_details(prefix, game_name, registry, existing_metadata)
             except ValueError:
                 pass
             else:
                 state = "typing"
     else:
         state = "invalid"
-    return patch, state, "" if state == "typing" else message
+    return result, state, "" if state == "typing" else message
+
+
+def preview_command(text: str, game_name: str | None, registry: Registry, *, submitted=False):
+    """Return a presentation-only patch, validation state and explanation."""
+    result, state, message = preview_command_details(
+        text, game_name, registry, submitted=submitted
+    )
+    return result.patch, state, message
 
 
 def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[dict]:

@@ -8,7 +8,7 @@ from dfsorter.catalogue import Catalogue, normalized
 from dfsorter.config import Registry, source_fallback, title
 from dfsorter.media import discover
 from dfsorter.output import copy_one, export_project, safe_stem, share_clip, validate
-from dfsorter.parsing import parse_command, preview_command, query_clips
+from dfsorter.parsing import parse_command, parse_command_details, preview_command, query_clips
 
 
 @pytest.mark.parametrize(
@@ -194,6 +194,66 @@ def test_canonical_patch_and_text(registry):
         "description": "Notes",
     }
     assert parse_command("phantom", "VALORANT", registry) == {"metadata": {"weapon": ["Phantom"]}}
+
+
+@pytest.mark.parametrize(
+    ("command", "weapon"),
+    [
+        ("hh", "Headhunter"),
+        ("tdf", "Tour de Force"),
+        ("Headhunter", "Headhunter"),
+        ("Tour de Force", "Tour de Force"),
+    ],
+)
+def test_valorant_weapon_links_infer_chamber(registry, command, weapon):
+    result = parse_command_details(command, "VALORANT", registry)
+    assert result.patch == {"metadata": {"weapon": [weapon], "agent": "Chamber"}}
+    assert result.inferred == [("agent", "Chamber")]
+
+
+def test_field_links_respect_explicit_and_saved_values(registry):
+    explicit = parse_command_details("jett hh", "VALORANT", registry)
+    assert explicit.patch["metadata"]["agent"] == "Jett"
+    assert explicit.inferred == []
+    saved = parse_command_details(
+        "tdf", "VALORANT", registry, existing_metadata={"agent": "Cypher"}
+    )
+    assert saved.patch == {"metadata": {"weapon": ["Tour de Force"]}}
+    assert saved.inferred == []
+
+
+def test_field_link_validation_rejects_cycles_and_conflicts(tmp_path):
+    cyclic = {
+        "name": "Test",
+        "code": "TST",
+        "fields": {
+            "first": {"type": "enum", "values": ["One"], "links": {"One": {"second": "Two"}}},
+            "second": {"type": "enum", "values": ["Two"], "links": {"Two": {"first": "One"}}},
+        },
+        "display_order": ["first", "second"],
+    }
+    config_path = tmp_path / "test.yaml"
+    config_path.write_text(yaml.safe_dump(cyclic), encoding="utf-8")
+    assert "cycles" in Registry(tmp_path).errors[0]
+
+    conflicting = {
+        "name": "Test",
+        "code": "TST",
+        "fields": {
+            "trigger": {
+                "type": "enum",
+                "multiple": True,
+                "values": ["One", "Two"],
+                "links": {"One": {"result": "A"}, "Two": {"result": "B"}},
+            },
+            "result": {"type": "enum", "values": ["A", "B"]},
+        },
+        "display_order": ["trigger", "result"],
+    }
+    config_path.write_text(yaml.safe_dump(conflicting), encoding="utf-8")
+    game_registry = Registry(tmp_path)
+    with pytest.raises(ValueError, match="Conflicting inferred values"):
+        parse_command_details("One Two", "Test", game_registry)
 
 
 def test_cs2_config_and_weapon_aliases(registry):

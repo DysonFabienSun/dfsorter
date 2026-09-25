@@ -1229,6 +1229,31 @@ def test_field_checklist_previews_commands_without_saving(window, application, t
     assert "✓&nbsp;tag" in window.field_reminder.text()
 
 
+def test_inferred_field_preview_and_history(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.command.setText("hh")
+    assert '<span style="font-size:9px">◇</span>&nbsp;agent' in window.field_reminder.text()
+    assert COLORS["accent_default"] in window.field_reminder.text()
+    assert window.catalogue.clip(ids[0])["metadata"] == {}
+    window.submit()
+    application.processEvents()
+    assert window.catalogue.clip(ids[0])["metadata"] == {
+        "weapon": ["Headhunter"],
+        "agent": "Chamber",
+    }
+    document = QTextDocument()
+    document.setHtml(window.command_history.text())
+    assert document.toPlainText() == "hh (Inferred: Agent = Chamber)"
+    assert "font-size:11px" in window.command_history.text()
+    assert "✓&nbsp;agent" in window.field_reminder.text()
+
+    window.command.setText("jett tdf")
+    window.submit()
+    document.setHtml(window.command_history.text())
+    assert "jett tdf (Inferred:" not in document.toPlainText()
+
+
 def test_bracket_tag_rating_preview_and_third_party_title(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.catalogue.patch(ids[0], {"tag": "3RD", "mainline": "Player clutch"})
