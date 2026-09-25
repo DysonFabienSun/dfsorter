@@ -41,7 +41,7 @@ class VideoSurface(QWidget):
         palette.setColor(QPalette.ColorRole.Window, QColor(COLORS["surface_video"]))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
-        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors)
+        # Native ancestors keep the first embedded mpv frame at the correct screen position.
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
 
     def clear(self):
@@ -219,6 +219,7 @@ class FullscreenChromePanel(QWidget):
 
 class Player(QWidget):
     loading_started = Signal()
+    preview_render_ready = Signal()
     loading_finished = Signal()
     position_changed = Signal(int)
     previous = Signal()
@@ -239,6 +240,7 @@ class Player(QWidget):
         layout.addWidget(self.video_container, 1)
         self.media = MpvBackend(self.video, self)
         self.media.videoSizeChanged.connect(self.video_container.set_video_size)
+        self.media.videoSizeChanged.connect(self.finish_preview_if_ready)
         self.audio = self.media
         initial_volume = playback_volume(self.settings)
         self.audio.setVolume(initial_volume / 100)
@@ -327,11 +329,17 @@ class Player(QWidget):
         self.media.errorOccurred.connect(self.load_error)
         self.media.frameReady.connect(self.first_frame)
         self.awaiting_frame = False
+        self.preview_frame_ready = False
         self.fast_state = None
         self.load_timeout = QTimer(self)
         self.load_timeout.setSingleShot(True)
         self.load_timeout.setInterval(15000)
         self.load_timeout.timeout.connect(self.load_timed_out)
+        self.preview_reveal_timer = QTimer(self)
+        self.preview_reveal_timer.setSingleShot(True)
+        self.preview_reveal_timer.timeout.connect(self.complete_preview)
+        self.preview_reveal_generation = None
+        self.native_surface_warmed = False
         self.loaded_clip = None
         self.retry_load = False
         self.chrome_top = FullscreenChromePanel(self.video_container, "top")
@@ -539,8 +547,10 @@ class Player(QWidget):
         self.loaded_clip = clip
         self.retry_load = False
         self.initial_seek_done = False
+        self.preview_frame_ready = False
         self.ended = False
         self.load_timeout.stop()
+        self.preview_reveal_timer.stop()
         self.awaiting_frame = False
         self.loading_started.emit()
         self.fast(False)
@@ -583,13 +593,44 @@ class Player(QWidget):
                 )
             self.media.setPosition(start if valid_range else fallback)
         elif self.awaiting_frame:
-            self.awaiting_frame = False
-            self.play.setEnabled(True)
-            self.seek.setEnabled(True)
-            self.load_timeout.stop()
-            self.loading_finished.emit()
+            self.preview_frame_ready = True
+            self.finish_preview_if_ready()
+
+    def finish_preview_if_ready(self, *_):
+        if not self.awaiting_frame or not self.preview_frame_ready:
+            return
+        if self.video_container.aspect_ratio is None:
+            return
+        if self.preview_reveal_timer.isActive():
+            return
+        screen = self.screen()
+        refresh_rate = screen.refreshRate() if screen else 60
+        if refresh_rate <= 0:
+            refresh_rate = 60
+        self.preview_reveal_generation = self.media.generation
+        self.preview_render_ready.emit()
+        frame_delay = max(1, round(2000 / refresh_rate))
+        self.preview_reveal_timer.start(
+            frame_delay if self.native_surface_warmed else max(100, frame_delay)
+        )
+
+    def complete_preview(self):
+        if (
+            not self.awaiting_frame
+            or not self.preview_frame_ready
+            or self.video_container.aspect_ratio is None
+            or self.preview_reveal_generation != self.media.generation
+        ):
+            return
+        self.awaiting_frame = False
+        self.native_surface_warmed = self.native_surface_warmed or self.video.isVisible()
+        self.play.setEnabled(True)
+        self.seek.setEnabled(True)
+        self.load_timeout.stop()
+        self.loading_finished.emit()
 
     def load_error(self, error, message):
+        self.preview_reveal_timer.stop()
         self.set_status(message)
         self.play.setEnabled(False)
         self.seek.setEnabled(False)
@@ -600,6 +641,7 @@ class Player(QWidget):
 
     def load_timed_out(self):
         if self.awaiting_frame:
+            self.preview_reveal_timer.stop()
             self.awaiting_frame = False
             self.media.stop()
             self.retry_load = True

@@ -2186,6 +2186,60 @@ def test_page_reveal_waits_and_delays_indicator(window, application):
     assert window.player.status.text() == "Invalid media"
 
 
+def test_page_reveal_clips_native_surface_during_warmup(window, application):
+    window.panel("Browse")
+    application.processEvents()
+    player = window.browse.player
+    window.begin_page_transition("clip")
+    assert player.video.isHidden()
+
+    player.preview_render_ready.emit()
+    assert window.transition_cover.isVisible()
+    assert player.video.isVisible()
+    assert player.video.mask().boundingRect().size() == QSize(1, 1)
+
+    window.begin_page_transition("clip")
+    assert player.video.isHidden()
+    assert player.video.mask().isEmpty()
+    window.reveal_page(window.transition_generation)
+    assert not window.transition_pending
+
+
+@pytest.mark.parametrize("player_name", ["player", "export_player", "browse_player"])
+@pytest.mark.parametrize("size_at_ready", [False, True])
+def test_preview_reveal_waits_for_display_size(
+    window, application, player_name, size_at_ready
+):
+    player = window.browse.player if player_name == "browse_player" else getattr(window, player_name)
+    player.video_container.set_video_size(0, 0)
+    player.media._video_size = (0, 0)
+    player.media._prepared = True
+    player.awaiting_frame = True
+    player.initial_seek_done = True
+    player.preview_frame_ready = False
+    finished = []
+    player.loading_finished.connect(lambda: finished.append(player.video.geometry()))
+
+    player.media._receive(player.media.generation, "ready", (320, 180) if size_at_ready else (0, 0))
+    assert player.preview_frame_ready
+    if not size_at_ready:
+        assert player.awaiting_frame
+        assert finished == []
+        player.media._receive(
+            player.media.generation, "video-out-params", {"dw": 320, "dh": 180}
+        )
+
+    assert player.awaiting_frame
+    assert player.preview_reveal_timer.isActive()
+    QTest.qWait(player.preview_reveal_timer.interval() + 20)
+    application.processEvents()
+    assert not player.awaiting_frame
+    assert len(finished) == 1
+    assert player.video_container.aspect_ratio == pytest.approx(16 / 9)
+    assert abs(finished[0].width() * 180 - finished[0].height() * 320) <= 320
+    assert not player.native_surface_warmed
+
+
 @pytest.mark.parametrize("panel", ["Editing", "Export"])
 def test_clip_click_keeps_list_and_viewport(
     window, application, tmp_path, monkeypatch, panel

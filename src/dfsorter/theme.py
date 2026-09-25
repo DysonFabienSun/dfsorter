@@ -205,7 +205,7 @@ def stylesheet():
         QWidget#fullscreenChromeContent QToolButton:hover { background: rgba(255, 255, 255, 35); }
         QWidget#fullscreenChromeContent QToolButton:pressed { background: rgba(255, 255, 255, 55); }
         QWidget#fullscreenChromeContent QToolButton:disabled { background: transparent; border-color: transparent; color: rgba(241, 244, 246, 110); }
-        QWidget#pageLoading, QWidget#commandCover { background: %(surface_canvas)s; }
+        QWidget#pageLoading, QWidget#commandCover { background: %(surface_workspace)s; }
         QLabel { background: transparent; }
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }

@@ -175,7 +175,11 @@ class MpvBackend(QObject):
 
         @engine.event_callback("playback-restart")
         def ready(event):
-            send("ready")
+            try:
+                size = display_size(engine.command("get_property", "video-out-params"))
+            except Exception:
+                size = (0, 0)
+            send("ready", size)
 
         @engine.event_callback("end-file")
         def ended(event):
@@ -194,6 +198,7 @@ class MpvBackend(QObject):
             self._prepared = True
             self._set_status(QMediaPlayer.MediaStatus.LoadedMedia)
         elif name == "ready" and self._prepared:
+            self._set_video_size(value)
             self._seeking = False
             self.frameReady.emit()
         elif name == "duration" and value is not None:

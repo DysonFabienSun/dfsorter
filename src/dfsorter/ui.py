@@ -25,7 +25,7 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QIcon
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QRegion
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -638,6 +638,9 @@ class Window(QMainWindow):
         self.command_cover.hide()
         for player in (self.player, self.export_player, self.browse.player):
             player.loading_started.connect(lambda player=player: self.player_loading(player))
+            player.preview_render_ready.connect(
+                lambda player=player: self.player_render_ready(player)
+            )
             player.loading_finished.connect(lambda player=player: self.player_ready(player))
         self.build_settings_menu()
         self.update_theme_button()
@@ -1165,6 +1168,19 @@ class Window(QMainWindow):
         if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
             self.begin_page_transition("clip")
 
+    def player_render_ready(self, player):
+        if (
+            self.transition_pending
+            and self.current_panel in {"Browse", "Editing", "Export"}
+            and player is self.active_player()
+        ):
+            player.video_container.layout_surface()
+            # A native video child can paint above the Qt cover on its first show.
+            player.video.setMask(QRegion(0, 0, 1, 1))
+            player.video.show()
+            self.command_cover.raise_()
+            self.transition_cover.raise_()
+
     def player_ready(self, player):
         if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
             self.queue_page_reveal()
@@ -1192,6 +1208,7 @@ class Window(QMainWindow):
             policy.setRetainSizeWhenHidden(True)
             player.video.setSizePolicy(policy)
             player.video.hide()
+            player.video.clearMask()
         self.position_transition_covers()
         self.command_cover.setVisible(
             self.transition_scope == "clip" and self.current_panel == "Editing"
@@ -1214,11 +1231,13 @@ class Window(QMainWindow):
             return
         self.loading_indicator_timer.stop()
         self.transition_pending = False
-        self.transition_cover.hide()
-        self.command_cover.hide()
         self.centralWidget().layout().activate()
         for player in (self.player, self.export_player, self.browse.player):
+            player.video_container.layout_surface()
+            player.video.clearMask()
             player.video.show()
+        self.transition_cover.hide()
+        self.command_cover.hide()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
