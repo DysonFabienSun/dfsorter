@@ -10,7 +10,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSize, Qt
-from PySide6.QtGui import QMouseEvent, QTextDocument
+from PySide6.QtGui import QCursor, QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -3210,6 +3210,67 @@ def test_browse_fullscreen_clip_and_volume_keys(window, application, tmp_path):
     window.browse.set_fullscreen(False)
     QTest.keyClick(player, Qt.Key.Key_BracketRight)
     assert window.library.currentRow() == 1
+
+
+def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
+    original_cursor_position = QCursor.pos()
+    add_clips(window, tmp_path, valid=True)
+    window.panel("Browse")
+    application.processEvents()
+    browse = window.browse
+    player = browse.player
+    assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
+    normal_seek_parent = player.seek.parent()
+    normal_bar_parent = player.control_bar.parent()
+
+    browse.set_fullscreen(True)
+    application.processEvents()
+    assert player.chrome_enabled
+    assert player.chrome_title.text() == browse.fullscreen_title()
+    assert COLORS["player_chrome_muted"] in player.chrome_title.text()
+    assert player.seek.parent() is player.chrome_bottom.content
+    assert player.control_bar.parent() is player.chrome_bottom.content
+    assert player.seek.isVisible() and player.control_bar.isVisible()
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.chrome_top.y() == 0
+    assert player.chrome_bottom.height() >= 60
+    assert player.chrome_bottom.geometry().bottom() == player.video_container.height() - 1
+    assert player.previous_button.x() < player.play.x() < player.next_button.x()
+    assert browse.fullscreen_share_button.isVisible()
+
+    player.media.play()
+    assert wait_for(application, lambda: player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
+    QTest.qWait(100)
+    player.cursor_timer.stop()
+    player.chrome_timer.setInterval(80)
+    player.chrome_timer.start()
+    assert wait_for(
+        application,
+        lambda: not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible(),
+        timeout=1,
+    )
+    player.last_cursor_position = QCursor.pos()
+    target = player.video.mapToGlobal(QPoint(100, 100))
+    if target == player.last_cursor_position:
+        target = player.video.mapToGlobal(QPoint(120, 100))
+    QCursor.setPos(target)
+    player.check_cursor_motion()
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    player.media.pause()
+    application.processEvents()
+    assert not player.chrome_timer.isActive()
+    window.set_theme("dark", persist=False)
+    application.processEvents()
+    assert player.chrome_title.text() == browse.fullscreen_title()
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+
+    browse.fullscreen_share_button.click()
+    application.processEvents()
+    assert not window.isFullScreen()
+    assert browse.custom_title.hasFocus()
+    assert player.seek.parent() is normal_seek_parent
+    assert player.control_bar.parent() is normal_bar_parent
+    QCursor.setPos(original_cursor_position)
 
 
 @pytest.mark.parametrize("maximized", [False, True])

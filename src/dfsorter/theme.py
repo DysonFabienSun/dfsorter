@@ -20,6 +20,10 @@ THEMES = {
         "text_muted": "#65717C",
         "text_disabled": "#A3ABB3",
         "text_inverse": "#FFFFFF",
+        "player_chrome_text": "#F1F4F6",
+        "player_chrome_secondary": "#E0E5E9",
+        "player_chrome_muted": "#CDD5DC",
+        "player_chrome_tag": "#E8C45A",
         "border_default": "#C8D1D9",
         "border_subtle": "#DEE5EA",
         "border_strong": "#AEB8C1",
@@ -76,6 +80,10 @@ THEMES = {
         "text_muted": "#8E99A4",
         "text_disabled": "#626C76",
         "text_inverse": "#111317",
+        "player_chrome_text": "#F1F4F6",
+        "player_chrome_secondary": "#E0E5E9",
+        "player_chrome_muted": "#CDD5DC",
+        "player_chrome_tag": "#E8C45A",
         "border_default": "#39424C",
         "border_subtle": "#2D343D",
         "border_strong": "#515C67",
@@ -189,6 +197,14 @@ def stylesheet():
         QMainWindow { background: %(surface_canvas)s; }
         QWidget#videoSurface { background: %(surface_video)s; }
         QWidget#videoContainer { background: %(surface_canvas)s; }
+        QWidget#fullscreenChromeContent { background: rgba(0, 0, 0, 185); }
+        QWidget#fullscreenChromeContent[chromePosition="bottom"] { background: rgba(0, 0, 0, 160); }
+        QWidget#playerControlBar { background: transparent; }
+        QWidget#fullscreenChromeContent QLabel { color: %(player_chrome_text)s; }
+        QWidget#fullscreenChromeContent QToolButton { color: %(player_chrome_text)s; }
+        QWidget#fullscreenChromeContent QToolButton:hover { background: rgba(255, 255, 255, 35); }
+        QWidget#fullscreenChromeContent QToolButton:pressed { background: rgba(255, 255, 255, 55); }
+        QWidget#fullscreenChromeContent QToolButton:disabled { background: transparent; border-color: transparent; color: rgba(241, 244, 246, 110); }
         QWidget#pageLoading, QWidget#commandCover { background: %(surface_canvas)s; }
         QLabel { background: transparent; }
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
@@ -300,6 +316,7 @@ def stylesheet():
         QTabBar::tab:selected { color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }
         QSplitter#workspaceSplitter::handle { background: transparent; }
         QSplitter#workspaceSplitter::handle:hover { background: %(border_subtle)s; }
+        QSlider#timeline, QSlider#volume { background: transparent; border: none; }
         QSlider::groove:horizontal { height: 4px; background: %(component_volume_track)s; border-radius: 2px; }
         QSlider::sub-page:horizontal { background: %(component_volume_progress)s; border-radius: 2px; }
         QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: %(accent_default)s; border-radius: 3px; }
@@ -324,6 +341,7 @@ def stylesheet():
         QWidget[role="warning"] { color: %(status_warning)s; }
         QWidget[role="success"] { color: %(status_success)s; }
         QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled { background: %(surface_subtle)s; border-color: %(border_subtle)s; color: %(text_disabled)s; }
+        QToolButton:disabled { background: transparent; border-color: transparent; }
         QLabel:disabled, QMenu::item:disabled, QMenuBar::item:disabled { color: %(text_disabled)s; }
         """
         % values
@@ -343,7 +361,8 @@ def apply_theme(application, mode="light"):
     COLORS.clear()
     COLORS.update(THEMES[ACTIVE_SCHEME])
     application.setProperty("appearanceMode", str(mode or "light").casefold())
-    application.setStyle(ApplicationStyle("Fusion"))
+    if not isinstance(application.style(), ApplicationStyle):
+        application.setStyle(ApplicationStyle("Fusion"))
     available = set(QFontDatabase.families())
     family = next(
         (name for name in ("Segoe UI", "Inter", "Arial") if name in available), "sans-serif"
@@ -377,12 +396,15 @@ def apply_theme(application, mode="light"):
     return ACTIVE_SCHEME
 
 
-def title_styles(card=False):
+def title_styles(card=False, on_video=False):
     small = FONT_SIZES["sm" if card else "md"]
     large = FONT_SIZES["md" if card else "lg"]
+    muted = COLORS["player_chrome_muted" if on_video else "text_muted"]
+    secondary = COLORS["player_chrome_secondary" if on_video else "text_secondary"]
+    primary = COLORS["player_chrome_text"] if on_video else COLORS["text_primary"]
     return {
-        "prefix": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
-        "metadata": f"color:{COLORS['text_secondary']}; font-size:{small}px; font-weight:400",
-        "separator": f"color:{COLORS['text_muted']}; font-size:{small}px; font-weight:400",
-        "mainline": f"color:{COLORS['text_primary']}; font-size:{large}px; font-weight:700",
+        "prefix": f"color:{muted}; font-size:{small}px; font-weight:400",
+        "metadata": f"color:{secondary}; font-size:{small}px; font-weight:400",
+        "separator": f"color:{muted}; font-size:{small}px; font-weight:400",
+        "mainline": f"color:{primary}; font-size:{large}px; font-weight:700",
     }

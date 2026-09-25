@@ -110,13 +110,14 @@ class ClipScrollFade(QWidget):
         painter.fillRect(self.rect(), gradient)
 
 
-def tag_prefix(clip, rich=False):
+def tag_prefix(clip, rich=False, on_video=False):
     value = (clip.get("tag") or "").strip()
     if not value:
         return ""
     text = f"[{value}]"
     if rich:
-        return f'<b style="color:{COLORS["tag"]}">{html.escape(text)}</b> '
+        color = COLORS["player_chrome_tag" if on_video else "tag"]
+        return f'<b style="color:{color}">{html.escape(text)}</b> '
     return text + " "
 
 

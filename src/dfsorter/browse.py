@@ -23,7 +23,7 @@ from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
 from .theme import role, title_styles
-from .widgets import set_icon, tool
+from .widgets import set_icon, tag_prefix, tool
 
 
 class BrowsePage(QWidget):
@@ -75,6 +75,9 @@ class BrowsePage(QWidget):
         self.edit_button.setAccessibleName("Edit clip")
         self.edit_button.setEnabled(False)
         self.player.controls.addWidget(self.edit_button)
+        self.fullscreen_share_button = tool("share-2", "Share clip…", self.show_share_form)
+        self.fullscreen_share_button.hide()
+        self.player.controls.addWidget(self.fullscreen_share_button)
         self.fullscreen_button = tool("maximize", "Fullscreen · F / F11", self.toggle_fullscreen)
         self.player.controls.addWidget(self.fullscreen_button)
         form = QGridLayout()
@@ -149,7 +152,11 @@ class BrowsePage(QWidget):
             for layout in layouts:
                 layout.setContentsMargins(0, 0, 0, 0)
             window.showFullScreen()
+            self.fullscreen_share_button.show()
+            self.player.set_fullscreen_chrome(True, self.fullscreen_title())
         else:
+            self.player.set_fullscreen_chrome(False)
+            self.fullscreen_share_button.hide()
             state, geometry, sizes, widgets, layouts = self.fullscreen_state
             self.fullscreen_state = None
             window.setWindowState(state)
@@ -159,11 +166,26 @@ class BrowsePage(QWidget):
             for layout, margins in layouts:
                 layout.setContentsMargins(margins)
             window.splitter.setSizes(sizes)
-        set_icon(self.fullscreen_button, "minimize" if enabled else "maximize")
+        set_icon(self.fullscreen_button, "minimize" if enabled else "maximize",
+                 "player_chrome_text" if enabled else None)
         label = "Exit fullscreen · Esc / F / F11" if enabled else "Fullscreen · F / F11"
         self.fullscreen_button.setToolTip(label)
         self.fullscreen_button.setAccessibleName(label)
         self.player.setFocus()
+
+    def show_share_form(self):
+        self.set_fullscreen(False)
+        self.custom_title.setFocus()
+
+    def fullscreen_title(self):
+        return (
+            tag_prefix(self.clip, rich=True, on_video=True) + title(
+                self.clip, self.window.registry, rich=True, mainline_separator=" | ",
+                lowercase=self.window.settings.get("lowercase_generated_titles", True),
+                rich_styles=title_styles(on_video=True),
+                underline_first_mainline_word=(self.clip.get("tag") or "").strip().casefold() == "3rd",
+            ) if self.clip else ""
+        )
 
     def load(self, clip):
         if clip and self.clip and clip["clip_id"] == self.clip["clip_id"]:
@@ -184,11 +206,17 @@ class BrowsePage(QWidget):
 
     def render_title(self):
         self.working_title.setText(
-            title(self.clip, self.window.registry, rich=True, mainline_separator=" | ",
-                  lowercase=self.window.settings.get("lowercase_generated_titles", True),
-                  rich_styles=title_styles()) if self.clip else ""
+            tag_prefix(self.clip, rich=True) + title(
+                self.clip, self.window.registry, rich=True, mainline_separator=" | ",
+                lowercase=self.window.settings.get("lowercase_generated_titles", True),
+                rich_styles=title_styles(),
+                underline_first_mainline_word=(self.clip.get("tag") or "").strip().casefold() == "3rd",
+            ) if self.clip else ""
         )
         self.filename.setText(Path(self.clip["source_path"]).name if self.clip else "")
+        if self.fullscreen_state is not None:
+            self.player.chrome_title.setText(self.fullscreen_title())
+            self.player.update_chrome_geometry()
 
     def leave(self):
         self.set_fullscreen(False)
@@ -248,6 +276,7 @@ class BrowsePage(QWidget):
             return
         available = bool(self.clip and Path(self.clip["source_path"]).is_file())
         self.delete_button.setEnabled(available)
+        self.fullscreen_share_button.setEnabled(available)
         for control in self.marker_buttons:
             control.setEnabled(available and self.player.media.duration() > 0)
         self.share_button.setEnabled(

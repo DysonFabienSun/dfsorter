@@ -1,13 +1,22 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QPainter, QPalette
+from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QPainter, QPalette
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QGraphicsOpacityEffect,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .mpv_backend import MpvBackend
 from .theme import COLORS, SIZES, font, role
-from .widgets import icon, tool
+from .widgets import set_icon, tool
 
 
 def start_offset_seconds(settings):
@@ -171,6 +180,43 @@ class VolumeSlider(QSlider):
         super().mouseReleaseEvent(event)
 
 
+class FullscreenChromePanel(QWidget):
+    """Floating chrome window with animatable Qt content."""
+
+    def __init__(self, parent, position):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.content = QWidget(self)
+        self.content.setObjectName("fullscreenChromeContent")
+        self.content.setProperty("chromePosition", position)
+        outer.addWidget(self.content)
+        self.effect = QGraphicsOpacityEffect(self.content)
+        self.content.setGraphicsEffect(self.effect)
+        self.animation = QPropertyAnimation(self.effect, b"opacity", self)
+        self.animation.setDuration(180)
+        self.animation.finished.connect(self.finish_fade)
+        self.target_opacity = 1
+        self.effect.setOpacity(1)
+        self.hide()
+
+    def finish_fade(self):
+        if self.target_opacity == 0 and self.effect.opacity() == 0:
+            self.hide()
+
+    def fade_to(self, opacity):
+        self.target_opacity = opacity
+        self.animation.stop()
+        if opacity:
+            self.show()
+            self.raise_()
+        self.animation.setStartValue(self.effect.opacity())
+        self.animation.setEndValue(opacity)
+        self.animation.start()
+
+
 class Player(QWidget):
     loading_started = Signal()
     loading_finished = Signal()
@@ -182,12 +228,14 @@ class Player(QWidget):
     def __init__(self, settings=None):
         super().__init__()
         self.settings = settings if settings is not None else {}
+        self.chrome_enabled = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         layout = QVBoxLayout(self)
         self.video = VideoSurface()
         self.video_container = AspectVideoContainer(self.video)
         self.video_container.setObjectName("videoContainer")
         self.video_container.setMinimumSize(260, 150)
+        self.video_container.installEventFilter(self)
         layout.addWidget(self.video_container, 1)
         self.media = MpvBackend(self.video, self)
         self.media.videoSizeChanged.connect(self.video_container.set_video_size)
@@ -231,7 +279,10 @@ class Player(QWidget):
         self.mute.setCheckable(True)
         self.mute.toggled.connect(self.audio.setMuted)
         self.audio.mutedChanged.connect(
-            lambda muted: self.mute.setIcon(icon("volume-x" if muted else "volume-2"))
+            lambda muted: set_icon(
+                self.mute, "volume-x" if muted else "volume-2",
+                "player_chrome_text" if self.chrome_enabled else None,
+            )
         )
         controls.addWidget(self.mute)
         self.volume = VolumeSlider()
@@ -249,13 +300,17 @@ class Player(QWidget):
         controls.addStretch()
         self.controls = QHBoxLayout()
         self.controls.addStretch()
-        controls_row = QGridLayout()
+        self.control_bar = QWidget()
+        self.control_bar.setObjectName("playerControlBar")
+        controls_row = QGridLayout(self.control_bar)
+        controls_row.setContentsMargins(0, 0, 0, 0)
         controls_row.addLayout(controls, 0, 0)
         controls_row.addWidget(self.fast_indicator, 0, 1)
         controls_row.addLayout(self.controls, 0, 2)
         controls_row.setColumnStretch(0, 1)
         controls_row.setColumnStretch(2, 1)
-        layout.addLayout(controls_row)
+        self.controls_row = controls_row
+        layout.addWidget(self.control_bar)
         self.status = QLabel()
         role(self.status, "warning")
         self.status.setWordWrap(True)
@@ -265,11 +320,10 @@ class Player(QWidget):
         self.media.positionChanged.connect(self.position)
 
         self.media.playbackStateChanged.connect(
-            lambda state: self.play.setIcon(
-                icon("pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play")
-            )
+            self.update_play_icon
         )
         self.media.playbackStateChanged.connect(self.playback_state_changed)
+        self.media.playbackStateChanged.connect(self.update_chrome_for_playback)
         self.media.errorOccurred.connect(self.load_error)
         self.media.frameReady.connect(self.first_frame)
         self.awaiting_frame = False
@@ -280,6 +334,150 @@ class Player(QWidget):
         self.load_timeout.timeout.connect(self.load_timed_out)
         self.loaded_clip = None
         self.retry_load = False
+        self.chrome_top = FullscreenChromePanel(self.video_container, "top")
+        top_layout = QHBoxLayout(self.chrome_top.content)
+        top_layout.setContentsMargins(20, 14, 20, 14)
+        self.chrome_title = QLabel()
+        self.chrome_title.setTextFormat(Qt.TextFormat.RichText)
+        self.chrome_title.setWordWrap(True)
+        self.chrome_title.setFont(font("lg", "bold"))
+        top_layout.addWidget(self.chrome_title, 1)
+        self.chrome_bottom = FullscreenChromePanel(self.video_container, "bottom")
+        self.chrome_bottom_layout = QVBoxLayout(self.chrome_bottom.content)
+        self.chrome_bottom_layout.setContentsMargins(16, 8, 16, 12)
+        self.chrome_bottom_layout.setSpacing(2)
+        self.chrome_timer = QTimer(self)
+        self.chrome_timer.setSingleShot(True)
+        self.chrome_timer.setInterval(2500)
+        self.chrome_timer.timeout.connect(self.hide_chrome)
+        self.cursor_timer = QTimer(self)
+        self.cursor_timer.setInterval(80)
+        self.cursor_timer.timeout.connect(self.check_cursor_motion)
+        self.last_cursor_position = None
+
+    def update_play_icon(self, state):
+        name = "pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play"
+        set_icon(self.play, name, "player_chrome_text" if self.chrome_enabled else None)
+
+    def update_chrome_for_playback(self, state):
+        if not self.chrome_enabled:
+            return
+        self.show_chrome()
+
+    def set_fullscreen_chrome(self, enabled, title=""):
+        if enabled == self.chrome_enabled:
+            if enabled:
+                self.chrome_title.setText(title)
+                self.update_chrome_geometry()
+            return
+        self.chrome_enabled = enabled
+        if enabled:
+            self.chrome_title.setText(title)
+            for panel in (self.chrome_top, self.chrome_bottom):
+                panel.setParent(
+                    self.window(),
+                    Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint,
+                )
+                panel.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+            self.layout().removeWidget(self.seek)
+            self.layout().removeWidget(self.control_bar)
+            self.chrome_bottom_layout.addWidget(self.seek)
+            self.chrome_bottom_layout.addWidget(self.control_bar)
+            self.controls_row.setColumnStretch(0, 0)
+            self.controls_row.setColumnStretch(1, 1)
+            self.controls_row.setColumnStretch(2, 0)
+            QApplication.instance().installEventFilter(self)
+            self.last_cursor_position = QCursor.pos()
+            self.cursor_timer.start()
+            self.update_chrome_geometry()
+            self.show_chrome()
+        else:
+            self.chrome_timer.stop()
+            self.cursor_timer.stop()
+            QApplication.instance().removeEventFilter(self)
+            self.chrome_top.animation.stop()
+            self.chrome_bottom.animation.stop()
+            self.chrome_top.hide()
+            self.chrome_bottom.hide()
+            self.chrome_top.setParent(self.video_container)
+            self.chrome_bottom.setParent(self.video_container)
+            self.chrome_bottom_layout.removeWidget(self.seek)
+            self.chrome_bottom_layout.removeWidget(self.control_bar)
+            self.layout().insertWidget(1, self.seek)
+            self.layout().insertWidget(2, self.control_bar)
+            self.controls_row.setColumnStretch(0, 1)
+            self.controls_row.setColumnStretch(1, 0)
+            self.controls_row.setColumnStretch(2, 1)
+        for button in [self.previous_button, self.play, self.next_button, self.mute]:
+            name = button.property("iconName")
+            set_icon(button, name, "player_chrome_text" if enabled else None)
+        for item in range(self.controls.count()):
+            widget = self.controls.itemAt(item).widget()
+            if widget is not None and widget.property("iconName"):
+                set_icon(widget, widget.property("iconName"),
+                         "player_chrome_text" if enabled else None)
+        self.update_play_icon(self.media.playbackState())
+
+    def update_chrome_geometry(self):
+        if not self.chrome_enabled:
+            return
+        width = self.video_container.width()
+        top_origin = self.video_container.mapToGlobal(
+            self.video_container.rect().topLeft()
+        )
+        self.chrome_top.setGeometry(
+            top_origin.x(), top_origin.y(), width, self.chrome_top.sizeHint().height()
+        )
+        height = self.chrome_bottom.sizeHint().height()
+        origin = self.video_container.mapToGlobal(
+            self.video_container.rect().bottomLeft()
+        )
+        self.chrome_bottom.setGeometry(origin.x(), origin.y() - height + 1, width, height)
+        self.chrome_top.raise_()
+        self.chrome_bottom.raise_()
+
+    def show_chrome(self):
+        if not self.chrome_enabled:
+            return
+        self.update_chrome_geometry()
+        self.chrome_top.fade_to(1)
+        self.chrome_bottom.fade_to(1)
+        if self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.chrome_timer.start()
+        else:
+            self.chrome_timer.stop()
+
+    def hide_chrome(self):
+        if not self.chrome_enabled or self.media.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        self.chrome_top.fade_to(0)
+        self.chrome_bottom.fade_to(0)
+
+    def check_cursor_motion(self):
+        position = QCursor.pos()
+        if position == self.last_cursor_position:
+            return
+        self.last_cursor_position = position
+        if self.video_container.rect().contains(self.video_container.mapFromGlobal(position)):
+            self.show_chrome()
+
+    def eventFilter(self, watched: QObject, event):
+        if watched is self.video_container and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self.update_chrome_geometry)
+        if self.chrome_enabled and event.type() in {
+            QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+            QEvent.Type.Wheel, QEvent.Type.KeyPress,
+        }:
+            if watched is self or (
+                isinstance(watched, QWidget)
+                and (
+                    self.isAncestorOf(watched)
+                    or any(panel is watched or panel.isAncestorOf(watched)
+                           for panel in (self.chrome_top, self.chrome_bottom))
+                )
+            ):
+                self.show_chrome()
+        return super().eventFilter(watched, event)
 
     def set_volume(self, value):
         stepped = volume_step(value)
