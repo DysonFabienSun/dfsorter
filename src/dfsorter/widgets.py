@@ -9,6 +9,7 @@ from PySide6.QtGui import (
     QIcon,
     QLinearGradient,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QTextDocument,
@@ -22,6 +23,47 @@ from .theme import COLORS, SIZES, font
 ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+class VerdictBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.counts = (0, 0, 0)
+        self.setFixedHeight(16)
+        self.setMinimumWidth(120)
+        self.setAccessibleName("No clips")
+
+    def set_counts(self, keep, discard, pending):
+        self.counts = (keep, discard, pending)
+        text = f"{keep} Keep, {discard} Discard, {pending} Pending"
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(self.rect().adjusted(0, 0, -1, -1), 5, 5)
+        painter.setClipPath(path)
+        painter.fillRect(self.rect(), QColor(COLORS["surface_pressed"]))
+        total = sum(self.counts)
+        if not total:
+            return
+        widths = [round(self.width() * count / total) for count in self.counts]
+        for index, count in enumerate(self.counts):
+            if count and widths[index] == 0:
+                widths[index] = 1
+        widths[-1] += self.width() - sum(widths)
+        left = 0
+        for width, color in zip(
+            widths,
+            ("status_success", "status_danger", "text_muted"),
+            strict=True,
+        ):
+            if width > 0:
+                painter.fillRect(left, 0, width, self.height(), QColor(COLORS[color]))
+            left += width
 
 
 class EdgeChevron(QWidget):

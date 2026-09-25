@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressDialog,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -64,6 +65,7 @@ from .config import Registry, has_review_metadata, source_fallback, title
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
+from .overview import PERIOD_DAYS, capture_datetime, library_overview
 from .parsing import (
     parse_command_details,
     preview_command_details,
@@ -81,6 +83,7 @@ from .widgets import (
     ClipScrollFade,
     EdgeChevron,
     Rating,
+    VerdictBar,
     icon,
     refresh_icons,
     set_icon,
@@ -724,6 +727,65 @@ class Window(QMainWindow):
         role(note, "muted")
         home.addWidget(note)
         session = self.pages["Session"][1]
+        session_scroll = QScrollArea()
+        session_scroll.setWidgetResizable(True)
+        session_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        session_content = QWidget()
+        session_content.setProperty("role", "transparent")
+        session_content_layout = QVBoxLayout(session_content)
+        session_content_layout.setContentsMargins(0, 0, 0, 0)
+        session_content_layout.setSpacing(24)
+        overview_group = QWidget()
+        overview_group.setMinimumWidth(620)
+        overview_group.setMaximumWidth(820)
+        role(overview_group, "group")
+        overview_layout = QVBoxLayout(overview_group)
+        overview_layout.setContentsMargins(16, 16, 16, 16)
+        overview_layout.setSpacing(8)
+        overview_heading = QLabel("Library overview")
+        role(overview_heading, "sectionHeading")
+        overview_layout.addWidget(overview_heading)
+        overview_description = QLabel(
+            "Current verdicts for clips captured in the selected period."
+        )
+        role(overview_description, "secondary")
+        overview_layout.addWidget(overview_description)
+        periods = QHBoxLayout()
+        periods.setSpacing(0)
+        self.overview_period = "All time"
+        self.overview_period_buttons = {}
+        period_labels = list(PERIOD_DAYS)
+        for index, label in enumerate(period_labels):
+            control = QPushButton(label)
+            control.setCheckable(True)
+            control.setChecked(label == self.overview_period)
+            control.setProperty("periodSegment", True)
+            control.setProperty(
+                "periodPosition",
+                "first" if index == 0 else "last" if index == len(period_labels) - 1 else "middle",
+            )
+            control.clicked.connect(
+                lambda checked=False, label=label: self.set_overview_period(label)
+            )
+            periods.addWidget(control)
+            self.overview_period_buttons[label] = control
+        periods.addStretch()
+        overview_layout.addLayout(periods)
+        self.overview_rows = QVBoxLayout()
+        self.overview_rows.setSpacing(12)
+        overview_layout.addLayout(self.overview_rows)
+        self.overview_empty = QLabel("No dated clips captured in this period.")
+        role(self.overview_empty, "muted")
+        self.overview_empty.hide()
+        overview_layout.addWidget(self.overview_empty)
+        self.overview_undated = QLabel()
+        role(self.overview_undated, "muted")
+        self.overview_undated.setWordWrap(True)
+        self.overview_undated.hide()
+        overview_layout.addWidget(self.overview_undated)
+        session_content_layout.addWidget(
+            overview_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
         session_group = QWidget()
         session_group.setMaximumWidth(440)
         role(session_group, "group")
@@ -778,8 +840,12 @@ class Window(QMainWindow):
         existing_actions.addWidget(button("End session", self.end_session))
         existing_actions.addStretch()
         session_setup.addLayout(existing_actions)
-        session.addWidget(session_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        session.addStretch()
+        session_content_layout.addWidget(
+            session_group, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        session_content_layout.addStretch()
+        session_scroll.setWidget(session_content)
+        session.addWidget(session_scroll)
         editing = self.pages["Editing"][1]
         self.player = Player(self.settings)
         self.player.volume_changed.connect(self.set_playback_volume)
@@ -1017,6 +1083,8 @@ class Window(QMainWindow):
             player.seek.update()
             player.fast_indicator.update()
         self.rating.update()
+        for bar in self.findChildren(VerdictBar):
+            bar.update()
         self.update()
 
     def system_theme_changed(self, _scheme):
@@ -1508,6 +1576,7 @@ class Window(QMainWindow):
         self.folder_summary.setText(
             f"{len(folders)} {folder_word} · {linked_clip_count} {clip_word}"
         )
+        self.refresh_library_overview(list(clips.values()))
         self.refresh_session_status(clips)
         self.config_status.setPlainText(
             "\n".join(self.registry.errors)
@@ -1547,6 +1616,62 @@ class Window(QMainWindow):
             self.session_status.setText(
                 "No active session. Filter and select clips in the library."
             )
+
+    def set_overview_period(self, period):
+        self.overview_period = period
+        for label, control in self.overview_period_buttons.items():
+            control.setChecked(label == period)
+        self.refresh_library_overview()
+
+    def refresh_library_overview(self, clips=None):
+        clips = clips if clips is not None else self.catalogue.clips()
+        total, rows, undated = library_overview(clips, self.media_info, self.overview_period)
+        while self.overview_rows.count():
+            item = self.overview_rows.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        self.add_overview_row("All games", total, emphasized=True)
+        for game, counts in rows:
+            self.add_overview_row(game, counts)
+        self.overview_empty.setVisible(not sum(total.values()))
+        finite = PERIOD_DAYS[self.overview_period] is not None
+        self.overview_undated.setVisible(finite and bool(undated))
+        self.overview_undated.setText(
+            f"{undated} clips have no usable capture date and are not included."
+        )
+
+    def add_overview_row(self, name, counts, *, emphasized=False):
+        keep = counts["keep"]
+        discard = counts["discard"]
+        pending = counts["pending"]
+        total = keep + discard + pending
+        processed = keep + discard
+        percentage = processed / total if total else 0
+        row = QWidget()
+        row.setObjectName("overviewSummary" if emphasized else "overviewGame")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(0, 4 if emphasized else 0, 0, 4 if emphasized else 0)
+        layout.setSpacing(4)
+        heading = QHBoxLayout()
+        label = QLabel(name)
+        label.setFont(
+            font("base" if emphasized else "md", "semibold" if emphasized else "medium")
+        )
+        heading.addWidget(label)
+        heading.addStretch()
+        progress = QLabel(f"{total} clips · {processed} processed ({percentage:.0%})")
+        role(progress, "secondary")
+        heading.addWidget(progress)
+        layout.addLayout(heading)
+        bar = VerdictBar()
+        bar.set_counts(keep, discard, pending)
+        layout.addWidget(bar)
+        details = QLabel(f"{keep} Keep · {discard} Discard · {pending} Pending")
+        role(details, "muted")
+        layout.addWidget(details)
+        self.overview_rows.addWidget(row)
 
     def render_card(self, item, clip):
         available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
@@ -1604,17 +1729,8 @@ class Window(QMainWindow):
         )
 
     def browse_sort_key(self, clip):
-        from datetime import datetime, timezone
-
-        captured = self.media_info.get(clip["source_path"], {}).get("created")
-        if not captured:
-            try:
-                captured = datetime.fromtimestamp(
-                    Path(clip["source_path"]).stat().st_ctime, timezone.utc
-                ).isoformat()
-            except OSError:
-                captured = ""
-        return captured, clip["source_path"]
+        captured = capture_datetime(clip, self.media_info)
+        return captured.isoformat() if captured else "", clip["source_path"]
 
     def update_time_sort_control(self):
         newest = self.browse_newest if self.current_panel == "Browse" else self.library_newest

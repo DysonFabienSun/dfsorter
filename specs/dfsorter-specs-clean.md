@@ -513,6 +513,10 @@ Pause scanning retains all catalogue data and existing sessions, skips startup/m
 
 ## 12. Session Panel
 
+Above Session setup, show a library overview of the current Keep, Discard and Pending states for all retained catalogue clips. Include an aggregate All games row plus represented games and Uncategorized, ordered by pending count descending with Uncategorized last. Each row shows total and processed counts, processed percentage, exact verdict counts, and a proportional Keep/Discard/Pending bar using the shared semantic colors. The overview is informational and does not change Session library filters.
+
+Provide rolling capture-date filters for 7 days, 30 days, 3 months, 6 months, 1 year and All time, defaulting to All time without persistence. Use cached media creation time, then filesystem creation time for an available source. All time includes undated clips; finite ranges exclude them and disclose their count. Count unavailable, explicitly deleted, unlinked and paused-folder catalogue records. Hide zero-count game rows and show an empty-period message when needed.
+
 Ordinary Editing-panel triage is performed within one persisted Session. The explicit single-clip Editing mode in §13.9 is the only exception and never creates, replaces, advances, or ends a Session.
 
 DFSorter maintains at most one Session at a time. Creating a replacement while one already exists must explicitly end/replace the existing Session. Ending a Session deletes only Session state and never changes clip metadata.

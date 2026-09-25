@@ -71,6 +71,51 @@ def test_status_bar_exists_before_deferred_startup_work(window):
     assert window.status_bar.currentMessage() == ""
 
 
+def test_session_library_overview_defaults_and_does_not_change_filters(
+    window, application, tmp_path
+):
+    root = tmp_path / "overview"
+    root.mkdir()
+    folder = window.catalogue.add_folder(root)
+    paths = [root / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"video")
+    window.catalogue.ingest(
+        folder,
+        [
+            {"path": str(paths[0]), "game": "VALORANT"},
+            {"path": str(paths[1]), "game": "VALORANT"},
+            {"path": str(paths[2]), "game": None},
+        ],
+    )
+    clips = window.catalogue.clips()
+    window.catalogue.patch(clips[0]["clip_id"], {"triage": "keep"})
+    window.catalogue.patch(clips[1]["clip_id"], {"triage": "discard"})
+    window.panel("Session")
+    application.processEvents()
+
+    assert window.overview_period == "All time"
+    assert window.overview_period_buttons["All time"].isChecked()
+    period_buttons = list(window.overview_period_buttons.values())
+    assert all(
+        right.geometry().left() == left.geometry().right() + 1
+        for left, right in zip(period_buttons, period_buttons[1:])
+    )
+    assert [button.property("periodPosition") for button in period_buttons] == [
+        "first",
+        "middle",
+        "middle",
+        "middle",
+        "middle",
+        "last",
+    ]
+    summary = window.findChild(QWidget, "overviewSummary")
+    assert "3 clips · 2 processed (67%)" in [label.text() for label in summary.findChildren(QLabel)]
+    selected = window.clip_filter.selected_values()
+    window.set_overview_period("7 days")
+    assert window.clip_filter.selected_values() == selected
+
+
 def test_video_surface_fits_landscape_and_portrait_sources(application):
     from PySide6.QtWidgets import QWidget
 

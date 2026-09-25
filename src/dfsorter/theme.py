@@ -204,6 +204,11 @@ def stylesheet():
         QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
         QLabel[role="sectionHeading"], QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
+        QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
+        QPushButton[periodSegment="true"] { border-radius: 0px; margin: 0px; border-left: none; }
+        QPushButton[periodSegment="true"][periodPosition="first"] { border-left: 1px solid %(border_subtle)s; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+        QPushButton[periodSegment="true"][periodPosition="last"] { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+        QPushButton[periodSegment="true"]:checked { border: 1px solid %(accent_default)s; }
         QLabel#workingTitle { font-size: %(font_lg)spx; font-weight: 600; }
         QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {
             background: %(surface_control)s; border: 1px solid %(border_default)s;
