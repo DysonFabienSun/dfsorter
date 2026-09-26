@@ -187,7 +187,7 @@ class BrowsePage(QWidget):
             ) if self.clip else ""
         )
 
-    def load(self, clip):
+    def load(self, clip, *, prepared=False):
         if clip and self.clip and clip["clip_id"] == self.clip["clip_id"]:
             return
         self.clip = deepcopy(clip)
@@ -196,7 +196,8 @@ class BrowsePage(QWidget):
         self.initial_range = bool(clip)
         self.custom_title.clear()
         self.render_title()
-        self.player.load(clip)
+        if not prepared:
+            self.player.load(clip)
         self.edit_button.setEnabled(bool(clip))
         self.refresh_range(default=True)
 

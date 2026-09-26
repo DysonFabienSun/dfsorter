@@ -3095,6 +3095,89 @@ def test_browse_entry_selects_newest(window, tmp_path, application):
     assert window.browse_id == newest
 
 
+def test_inactive_players_reuse_prepared_clips(window, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path)
+    window.preload_timer.stop()
+    loads = {"Browse": [], "Editing": []}
+
+    for panel, player in (("Browse", window.browse.player), ("Editing", window.player)):
+        def fake_load(clip, *, panel=panel, player=player):
+            loads[panel].append(clip["clip_id"] if clip else None)
+            player.loaded_clip = clip
+            player.awaiting_frame = False
+
+        monkeypatch.setattr(player, "load", fake_load)
+
+    window.prepare_inactive_clips()
+    assert loads == {"Browse": [ids[0]], "Editing": [ids[0]]}
+    window.panel("Browse")
+    assert loads["Browse"] == [ids[0]]
+    window.panel("Editing")
+    assert loads["Editing"] == [ids[0]]
+
+
+def test_preload_tracks_changed_browse_and_session_targets(window, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path)
+    window.preload_timer.stop()
+    loads = {"Browse": [], "Editing": []}
+    for panel, player in (("Browse", window.browse.player), ("Editing", window.player)):
+        def fake_load(clip, *, panel=panel, player=player):
+            loads[panel].append(clip["clip_id"] if clip else None)
+            player.loaded_clip = clip
+            player.awaiting_frame = False
+
+        monkeypatch.setattr(player, "load", fake_load)
+
+    window.prepare_inactive_clips()
+    second = tmp_path / "captures" / "second.mp4"
+    second.write_bytes(b"test")
+    folder_id = window.catalogue.folders()[0]["folder_id"]
+    window.catalogue.ingest(folder_id, [{"path": str(second), "game": "VALORANT"}])
+    second_id = next(
+        clip["clip_id"] for clip in window.catalogue.clips()
+        if clip["source_path"] == str(second)
+    )
+    window.media_info[str(second)] = {"created": "2099-01-01T00:00:00Z"}
+    window.catalogue.create_session([second_id], replace=True)
+    window.prepare_inactive_clips()
+    assert loads == {"Browse": [ids[0], second_id], "Editing": [ids[0], second_id]}
+    window.panel("Browse")
+    assert window.browse_id == second_id
+    assert loads["Browse"] == [ids[0], second_id]
+    window.panel("Home")
+    second.unlink()
+    window.prepare_inactive_clips()
+    assert loads["Browse"][-1] == ids[0]
+    assert loads["Editing"][-1] == second_id
+    window.panel("Browse")
+    assert window.browse_id == ids[0]
+
+
+def test_prepared_video_frame_survives_tab_entry(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    browse = window.browse.player
+    editing = window.player
+    assert wait_for(
+        application,
+        lambda: all(
+            player.media.mediaStatus() == QMediaPlayer.MediaStatus.LoadedMedia
+            and not player.awaiting_frame
+            for player in (browse, editing)
+        ),
+    )
+    generations = (browse.media.generation, editing.media.generation)
+    window.panel("Browse")
+    application.processEvents()
+    assert browse.media.generation == generations[0]
+    assert not window.transition_pending
+    window.panel("Editing")
+    application.processEvents()
+    assert editing.media.generation == generations[1]
+    assert not window.transition_pending
+
+
 def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, application):
     captures = tmp_path / "filter-captures"
     captures.mkdir()

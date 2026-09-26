@@ -296,6 +296,7 @@ class Window(QMainWindow):
         self.close_requested = False
         self.refreshing = False
         self.positioned_clip_pages = set()
+        self.prepared_clips = {}
         self.setWindowTitle("DFSorter")
         self.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
         self.resize(1400, 918)
@@ -663,9 +664,14 @@ class Window(QMainWindow):
         QApplication.instance().focusChanged.connect(self.command_focus_changed)
         self.player.media.playbackStateChanged.connect(self.command_playback_changed)
         self.player.loading_finished.connect(self.update_command_state)
+        self.preload_timer = QTimer(self)
+        self.preload_timer.setSingleShot(True)
+        self.preload_timer.setInterval(150)
+        self.preload_timer.timeout.connect(self.prepare_inactive_clips)
         self.refresh_references()
         self.panel("Home")
         self.reset_layout()
+        self.schedule_preload()
         if self.registry.errors:
             self.statusBar().showMessage("Configuration errors — see Config panel")
         QTimer.singleShot(0, self.rescan)
@@ -1475,14 +1481,16 @@ class Window(QMainWindow):
         QTimer.singleShot(0, lambda panel=name: self.position_clip_page_once(panel))
         if name == "Editing":
             if self.atomic_edit:
-                self.load_clip(self.atomic_edit.clip_id)
+                self.load_clip(self.atomic_edit.clip_id, prepared=self.take_prepared_clip("Editing", self.atomic_edit.draft[0]))
             else:
                 session = self.catalogue.state("session")
-                self.load_clip(session["ids"][session["index"]])
+                clip_id = session["ids"][session["index"]]
+                self.load_clip(clip_id, prepared=self.take_prepared_clip("Editing", self.catalogue.clip(clip_id)))
             self.review_mode()
         elif name == "Export":
             self.export_selection()
         self.queue_page_reveal()
+        self.schedule_preload()
 
     def refresh_references(self):
         self.update_history_controls()
@@ -1614,6 +1622,7 @@ class Window(QMainWindow):
         self.refresh_library_overview(list(clips.values()))
         self.refresh_session_status(clips)
         self.refreshing = False
+        self.schedule_preload()
 
     def refresh_session_status(self, clips=None):
         if clips is None:
@@ -1763,6 +1772,88 @@ class Window(QMainWindow):
         captured = capture_datetime(clip, self.media_info)
         return captured.isoformat() if captured else "", clip["source_path"]
 
+    def filtered_clips(self, clips, panel):
+        if panel == "Browse":
+            hidden = self.catalogue.hidden_deleted_ids()
+            clips = [clip for clip in clips if clip["clip_id"] not in hidden]
+            clips = query_clips(clips, self.browse_search.text(), self.registry)
+        else:
+            clips = query_clips(clips, self.search.text(), self.registry)
+            if panel == "Session":
+                excluded = self.catalogue.session_excluded_ids()
+                clips = [clip for clip in clips if clip["clip_id"] not in excluded]
+        if not self.settings.get("show_unavailable_clips", False):
+            clips = [clip for clip in clips if Path(clip["source_path"]).is_file()]
+        triage = self.clip_filter.selected_values()
+        clips = [clip for clip in clips if clip["triage"] in triage]
+        games = self.game_filter.selected_values()
+        clips = [clip for clip in clips if (clip["game"] or "") in games]
+        if not self.project_filter.all_selected():
+            project_ids = set()
+            for project_id in self.project_filter.selected_values():
+                project_ids.update(self.catalogue.member_ids(project_id))
+            clips = [clip for clip in clips if clip["clip_id"] in project_ids]
+        clips.sort(
+            key=self.browse_sort_key,
+            reverse=self.browse_newest if panel == "Browse" else self.library_newest,
+        )
+        return clips
+
+    def expected_browse_clip(self):
+        clips = self.filtered_clips(self.catalogue.clips(), "Browse")
+        if not clips:
+            return None
+        candidate = self.browse_id if self.current_panel == "Browse" else self.browse_selected_id
+        return next((clip for clip in clips if clip["clip_id"] == candidate), clips[0])
+
+    def expected_editing_clip(self):
+        if self.atomic_edit:
+            return self.atomic_edit.draft[0]
+        session = self.catalogue.state("session")
+        if not session:
+            return None
+        return self.catalogue.clip(session["ids"][session["index"]])
+
+    def clip_load_key(self, clip):
+        if clip is None:
+            return None
+        source = Path(clip["source_path"])
+        try:
+            stamp = source.stat()
+            identity = (stamp.st_size, stamp.st_mtime_ns)
+        except OSError:
+            identity = None
+        return (
+            clip["clip_id"], clip["source_path"], identity,
+            clip["in_ms"], clip["out_ms"],
+            self.settings.get("start_near_end_enabled", True),
+            self.settings.get("start_near_end_seconds", 40),
+        )
+
+    def schedule_preload(self):
+        if not self.close_requested and hasattr(self, "preload_timer"):
+            self.preload_timer.start()
+
+    def prepare_inactive_clips(self):
+        if self.close_requested:
+            return
+        for panel, player, clip in (
+            ("Browse", self.browse.player, self.expected_browse_clip()),
+            ("Editing", self.player, self.expected_editing_clip()),
+        ):
+            if self.current_panel == panel:
+                continue
+            key = self.clip_load_key(clip)
+            if panel in self.prepared_clips and self.prepared_clips[panel] == key:
+                continue
+            self.prepared_clips[panel] = key
+            if clip is not None or player.loaded_clip is not None:
+                player.load(clip)
+
+    def take_prepared_clip(self, panel, clip):
+        key = self.prepared_clips.pop(panel, None)
+        return key is not None and key == self.clip_load_key(clip)
+
     def update_time_sort_control(self):
         newest = self.browse_newest if self.current_panel == "Browse" else self.library_newest
         current, other = ("Newest", "oldest") if newest else ("Oldest", "newest")
@@ -1878,35 +1969,8 @@ class Window(QMainWindow):
             elif self.current_panel == "Export":
                 ids = self.catalogue.member_ids(self.export_project.currentData())
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
-            elif self.current_panel == "Browse":
-                hidden = self.catalogue.hidden_deleted_ids()
-                clips = [clip for clip in clips if clip["clip_id"] not in hidden]
-                clips = query_clips(clips, self.browse_search.text(), self.registry)
             else:
-                clips = query_clips(clips, self.search.text(), self.registry)
-                if self.current_panel == "Session":
-                    excluded = self.catalogue.session_excluded_ids()
-                    clips = [clip for clip in clips if clip["clip_id"] not in excluded]
-            if self.current_panel not in {"Editing", "Export"}:
-                if not self.settings.get("show_unavailable_clips", False):
-                    clips = [clip for clip in clips if Path(clip["source_path"]).is_file()]
-                triage = self.clip_filter.selected_values()
-                clips = [clip for clip in clips if clip["triage"] in triage]
-                games = self.game_filter.selected_values()
-                clips = [clip for clip in clips if (clip["game"] or "") in games]
-                if not self.project_filter.all_selected():
-                    project_ids = set()
-                    for project_id in self.project_filter.selected_values():
-                        project_ids.update(self.catalogue.member_ids(project_id))
-                    clips = [clip for clip in clips if clip["clip_id"] in project_ids]
-                clips.sort(
-                    key=self.browse_sort_key,
-                    reverse=(
-                        self.browse_newest
-                        if self.current_panel == "Browse"
-                        else self.library_newest
-                    ),
-                )
+                clips = self.filtered_clips(clips, self.current_panel)
             page_state = (
                 self.library_page_states.get(self.current_panel)
                 if self.library_page_switch
@@ -1925,7 +1989,7 @@ class Window(QMainWindow):
                 current = None
                 selected = set()
             elif self.current_panel == "Browse":
-                current = page_state["current"] if page_state else self.browse_id
+                current = self.browse_id
                 if current not in {clip["clip_id"] for clip in clips}:
                     current = clips[0]["clip_id"] if clips else None
                 selected = {current}
@@ -1973,13 +2037,15 @@ class Window(QMainWindow):
             self.library_page_switch = False
             if self.current_panel == "Browse":
                 self.browse_id = current
-                self.browse.load(self.catalogue.clip(current) if current else None)
+                clip = self.catalogue.clip(current) if current else None
+                self.browse.load(clip, prepared=self.take_prepared_clip("Browse", clip))
                 self.update_browse_navigation()
             self.library_error.clear()
             self.library_error.hide()
         except ValueError as error:
             self.library_error.setText(str(error))
             self.library_error.show()
+        self.schedule_preload()
 
     def select_clip(self, item, previous=None):
         if not item:
@@ -2025,7 +2091,7 @@ class Window(QMainWindow):
         self.begin_page_transition("clip")
         self.load_clip(clip_id)
 
-    def load_clip(self, clip_id):
+    def load_clip(self, clip_id, *, prepared=False):
         if not self.ensure_range_complete():
             return
         self.command_submitted_error = False
@@ -2040,7 +2106,8 @@ class Window(QMainWindow):
         self.command_error.clear()
         self.command_error.hide()
         self.render_clip()
-        self.player.load(self.effective_clip())
+        if not prepared:
+            self.player.load(self.effective_clip())
         self.review_mode()
 
     def refresh_title_presentation(self):
@@ -3624,6 +3691,7 @@ class Window(QMainWindow):
         temporary = self.settings_path.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(self.settings, allow_unicode=True), encoding="utf-8")
         temporary.replace(self.settings_path)
+        self.schedule_preload()
 
     def set_playback_volume(self, value):
         value = volume_step(value)
@@ -3843,6 +3911,7 @@ class Window(QMainWindow):
             event.ignore()
             return
         self.atomic_edit = None
+        self.preload_timer.stop()
         self.player.media.shutdown()
         self.export_player.media.shutdown()
         self.browse.player.media.shutdown()
