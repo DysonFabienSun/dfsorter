@@ -2225,6 +2225,19 @@ def test_page_reveal_clips_native_surface_during_warmup(window, application):
     assert not window.transition_pending
 
 
+def test_non_video_page_switch_skips_transition_cover(window, application):
+    window.panel("Session")
+    assert not window.transition_pending
+    assert window.transition_cover.isHidden()
+    window.panel("Browse")
+    window.panel("Session")
+    assert not window.transition_pending
+    assert window.transition_cover.isHidden()
+    window.panel("Home")
+    assert not window.transition_pending
+    assert window.transition_cover.isHidden()
+
+
 @pytest.mark.parametrize("player_name", ["player", "export_player", "browse_player"])
 @pytest.mark.parametrize("size_at_ready", [False, True])
 def test_preview_reveal_waits_for_display_size(
@@ -3169,10 +3182,13 @@ def test_prepared_video_frame_survives_tab_entry(window, application, tmp_path):
     )
     generations = (browse.media.generation, editing.media.generation)
     window.panel("Browse")
+    assert window.transition_cover.isHidden()
     application.processEvents()
     assert browse.media.generation == generations[0]
     assert not window.transition_pending
+    assert not window.page_needs_cover("Editing")
     window.panel("Editing")
+    assert window.transition_cover.isHidden()
     application.processEvents()
     assert editing.media.generation == generations[1]
     assert not window.transition_pending

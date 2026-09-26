@@ -1181,7 +1181,11 @@ class Window(QMainWindow):
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     def player_loading(self, player):
-        if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
+        if (
+            player.loaded_clip is not None
+            and self.current_panel in {"Browse", "Editing", "Export"}
+            and player is self.active_player()
+        ):
             self.begin_page_transition("clip")
 
     def player_render_ready(self, player):
@@ -1254,6 +1258,36 @@ class Window(QMainWindow):
             player.video.show()
         self.transition_cover.hide()
         self.command_cover.hide()
+
+    def cancel_page_transition(self):
+        if not self.transition_pending:
+            return
+        self.transition_generation += 1
+        self.transition_pending = False
+        self.loading_indicator_timer.stop()
+        self.transition_cover.hide()
+        self.command_cover.hide()
+        for player in (self.player, self.export_player, self.browse.player):
+            player.video.clearMask()
+            player.video.show()
+
+    def page_needs_cover(self, name):
+        if name not in {"Browse", "Editing", "Export"}:
+            return False
+        if name == self.current_panel or name == "Export":
+            return True
+        if name == "Browse":
+            clip = self.expected_browse_clip()
+            player = self.browse.player
+        else:
+            clip = self.expected_editing_clip()
+            player = self.player
+        if clip is None:
+            return False
+        return not (
+            self.prepared_clips.get(name) == self.clip_load_key(clip)
+            and not player.awaiting_frame
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1423,7 +1457,10 @@ class Window(QMainWindow):
         if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
-        self.begin_page_transition()
+        if self.page_needs_cover(name):
+            self.begin_page_transition()
+        else:
+            self.cancel_page_transition()
         self.cancel_space()
         self.player.media.pause()
         self.export_player.media.pause()
