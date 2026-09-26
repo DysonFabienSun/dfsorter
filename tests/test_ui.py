@@ -3229,6 +3229,102 @@ def test_prepared_video_first_show_uses_final_size(window, application, tmp_path
             player.video.removeEventFilter(observer)
 
 
+def test_prepared_video_warms_behind_frame_before_reveal(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    players = {"Browse": window.browse.player, "Editing": window.player}
+    assert wait_for(application, lambda: all(not player.awaiting_frame for player in players.values()))
+
+    for panel in ("Browse", "Editing"):
+        player = players[panel]
+        generation = player.media.generation
+        window.panel(panel)
+        application.processEvents()
+        assert player.media.generation == generation
+        assert window.transition_cover.isHidden()
+        assert player.video_container.prepared_frame.isVisible()
+        assert not player.video_container.prepared_frame.pixmap().isNull()
+        assert not player.video.mask().isEmpty()
+        assert wait_for(application, lambda: player.video.mask().isEmpty())
+        assert not player.video_container.prepared_frame.isVisible()
+        assert player.warmed_video_geometry == (
+            player.video.size(), player.video.devicePixelRatioF()
+        )
+
+
+def test_prepared_video_reveal_is_cancelled_on_page_change(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    player = window.browse.player
+    assert wait_for(application, lambda: not player.awaiting_frame)
+
+    window.panel("Browse")
+    application.processEvents()
+    assert player.video_container.prepared_frame.isVisible()
+    window.panel("Browse")
+    assert player.video_container.prepared_frame.isVisible()
+    assert not player.video.mask().isEmpty()
+    window.panel("Session")
+    assert not player.video_container.prepared_frame.isVisible()
+    QTest.qWait(150)
+    assert window.current_panel == "Session"
+    assert not player.video.isVisible()
+
+
+def test_prepared_video_reveal_is_cancelled_on_clip_change(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    player = window.browse.player
+    assert wait_for(application, lambda: not player.awaiting_frame)
+
+    window.panel("Browse")
+    application.processEvents()
+    previous_generation = player.media.generation
+    reveal_generation = window.prepared_reveal_generation
+    attempt = window.prepared_reveal_attempt
+    geometry = (player.video.size(), player.video.devicePixelRatioF())
+    player.load(player.loaded_clip)
+    assert player.media.generation != previous_generation
+    assert window.transition_pending
+    assert player.video_container.prepared_frame.isHidden()
+    window.finish_ready_video(
+        "Browse", player, previous_generation, reveal_generation, attempt, geometry
+    )
+    assert window.transition_pending
+    assert wait_for(application, lambda: not player.awaiting_frame)
+
+
+def test_prepared_video_rewarms_after_layout_resize(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    player = window.browse.player
+    assert wait_for(application, lambda: not player.awaiting_frame)
+
+    window.panel("Browse")
+    application.processEvents()
+    first_size = player.video.size()
+    window.resize(window.width() + 150, window.height() + 80)
+    application.processEvents()
+    assert player.video.size() != first_size
+    assert player.video_container.prepared_frame.isVisible()
+    assert wait_for(application, lambda: player.video.mask().isEmpty())
+    assert player.warmed_video_geometry == (
+        player.video.size(), player.video.devicePixelRatioF()
+    )
+
+
+def test_empty_browse_entry_does_not_warm_video(window, application):
+    window.panel("Browse")
+    application.processEvents()
+    assert window.transition_cover.isHidden()
+    assert window.browse.player.video_container.prepared_frame.isHidden()
+    assert window.browse.player.video.mask().isEmpty()
+
+
 def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, application):
     captures = tmp_path / "filter-captures"
     captures.mkdir()

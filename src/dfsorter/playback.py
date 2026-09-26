@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCursor, QPainter, QPalette
+from PySide6.QtGui import QColor, QCursor, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -56,6 +56,22 @@ class AspectVideoContainer(QWidget):
         self.surface = surface
         self.aspect_ratio = None
         surface.setParent(self)
+        self.prepared_frame = QLabel(self)
+        self.prepared_frame.setScaledContents(True)
+        self.prepared_frame.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.prepared_frame.hide()
+
+    def show_prepared_frame(self, image):
+        if image.isNull():
+            return
+        self.prepared_frame.setPixmap(QPixmap.fromImage(image))
+        self.prepared_frame.setGeometry(self.surface.geometry())
+        self.prepared_frame.show()
+        self.prepared_frame.raise_()
+
+    def clear_prepared_frame(self):
+        self.prepared_frame.hide()
+        self.prepared_frame.clear()
 
     def set_video_size(self, width, height):
         self.aspect_ratio = width / height if width > 0 and height > 0 else None
@@ -69,6 +85,7 @@ class AspectVideoContainer(QWidget):
         bounds = self.rect()
         if not self.aspect_ratio or bounds.width() <= 0 or bounds.height() <= 0:
             self.surface.setGeometry(bounds)
+            self.prepared_frame.setGeometry(bounds)
             return
         if bounds.width() / bounds.height() > self.aspect_ratio:
             height = bounds.height()
@@ -82,6 +99,7 @@ class AspectVideoContainer(QWidget):
             width,
             height,
         )
+        self.prepared_frame.setGeometry(self.surface.geometry())
 
 
 class RangeSlider(QSlider):
@@ -340,6 +358,7 @@ class Player(QWidget):
         self.preview_reveal_timer.timeout.connect(self.complete_preview)
         self.preview_reveal_generation = None
         self.native_surface_warmed = False
+        self.warmed_video_geometry = None
         self.loaded_clip = None
         self.retry_load = False
         self.chrome_top = FullscreenChromePanel(self.video_container, "top")
@@ -544,6 +563,7 @@ class Player(QWidget):
             self.media.play()
 
     def load(self, clip):
+        self.video_container.clear_prepared_frame()
         self.loaded_clip = clip
         self.retry_load = False
         self.initial_seek_done = False
@@ -623,7 +643,11 @@ class Player(QWidget):
         ):
             return
         self.awaiting_frame = False
-        self.native_surface_warmed = self.native_surface_warmed or self.video.isVisible()
+        if self.video.isVisible():
+            self.native_surface_warmed = True
+            self.warmed_video_geometry = (
+                self.video.size(), self.video.devicePixelRatioF()
+            )
         self.play.setEnabled(True)
         self.seek.setEnabled(True)
         self.load_timeout.stop()

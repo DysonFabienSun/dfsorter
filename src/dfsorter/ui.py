@@ -624,6 +624,8 @@ class Window(QMainWindow):
         command_layout.addWidget(self.command_error)
         center_layout.addWidget(self.command_area)
         self.transition_generation = 0
+        self.prepared_reveal_generation = 0
+        self.prepared_reveal_attempt = 0
         self.transition_pending = False
         self.transition_scope = "page"
         self.transition_cover = QWidget(central)
@@ -1216,6 +1218,7 @@ class Window(QMainWindow):
         self.command_cover.setGeometry(self.command_area.rect())
 
     def begin_page_transition(self, scope="page"):
+        self.cancel_prepared_video_reveal()
         if not self.transition_pending or scope == "page":
             self.transition_scope = scope
         self.transition_generation += 1
@@ -1289,16 +1292,63 @@ class Window(QMainWindow):
             and not player.awaiting_frame
         )
 
-    def show_ready_video(self, panel, player, media_generation):
-        if (
-            self.current_panel != panel
-            or self.transition_pending
-            or player.media.generation != media_generation
+    def cancel_prepared_video_reveal(self):
+        self.prepared_reveal_generation += 1
+        for player in (self.player, self.export_player, self.browse.player):
+            if not player.video_container.prepared_frame.isHidden():
+                player.video.hide()
+                player.video_container.clear_prepared_frame()
+                player.video.clearMask()
+
+    def prepared_video_is_current(self, panel, player, media_generation, reveal_generation):
+        return (
+            self.current_panel == panel
+            and not self.transition_pending
+            and player.media.generation == media_generation
+            and self.prepared_reveal_generation == reveal_generation
+        )
+
+    def show_ready_video(self, panel, player, media_generation, reveal_generation):
+        if not self.prepared_video_is_current(
+            panel, player, media_generation, reveal_generation
         ):
             return
         self.centralWidget().layout().activate()
         player.video_container.layout_surface()
+        player.video.setMask(QRegion(0, 0, 1, 1))
         player.video.show()
+        player.video_container.prepared_frame.raise_()
+        geometry = (player.video.size(), player.video.devicePixelRatioF())
+        screen = player.video.screen()
+        refresh_rate = screen.refreshRate() if screen else 60
+        frame_delay = max(1, round(2000 / refresh_rate)) if refresh_rate > 0 else 33
+        delay = max(100, frame_delay) if player.warmed_video_geometry != geometry else frame_delay
+        self.prepared_reveal_attempt += 1
+        attempt = self.prepared_reveal_attempt
+        QTimer.singleShot(
+            delay,
+            lambda: self.finish_ready_video(
+                panel, player, media_generation, reveal_generation, attempt, geometry
+            ),
+        )
+
+    def finish_ready_video(
+        self, panel, player, media_generation, reveal_generation, attempt, geometry
+    ):
+        if (
+            attempt != self.prepared_reveal_attempt
+            or not self.prepared_video_is_current(
+                panel, player, media_generation, reveal_generation
+            )
+        ):
+            return
+        if (player.video.size(), player.video.devicePixelRatioF()) != geometry:
+            self.show_ready_video(panel, player, media_generation, reveal_generation)
+            return
+        player.video.clearMask()
+        player.video_container.clear_prepared_frame()
+        player.native_surface_warmed = True
+        player.warmed_video_geometry = geometry
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1452,6 +1502,13 @@ class Window(QMainWindow):
         self.library.verticalScrollBar().setValue(vertical)
 
     def panel(self, name):
+        if (
+            name == self.current_panel
+            and name in {"Browse", "Editing"}
+            and not self.transition_pending
+            and not self.active_player().video.mask().isEmpty()
+        ):
+            return
         if self.current_panel == "Config" and name != "Config":
             was_dirty = self.config_editor.dirty
             if not self.config_editor.confirm_discard():
@@ -1468,6 +1525,7 @@ class Window(QMainWindow):
         if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
+        self.cancel_prepared_video_reveal()
         needs_cover = self.page_needs_cover(name)
         if needs_cover:
             self.begin_page_transition()
@@ -1475,10 +1533,15 @@ class Window(QMainWindow):
             self.cancel_page_transition()
         ready_player = None
         if not needs_cover and name != self.current_panel:
-            if name == "Browse":
+            if name == "Browse" and self.expected_browse_clip() is not None:
                 ready_player = self.browse.player
-            elif name == "Editing":
+            elif name == "Editing" and self.expected_editing_clip() is not None:
                 ready_player = self.player
+            if (
+                ready_player is not None
+                and ready_player.media.mediaStatus() != QMediaPlayer.MediaStatus.LoadedMedia
+            ):
+                ready_player = None
         if ready_player is not None:
             policy = ready_player.video.sizePolicy()
             policy.setRetainSizeWhenHidden(True)
@@ -1550,11 +1613,17 @@ class Window(QMainWindow):
         elif name == "Export":
             self.export_selection()
         if ready_player is not None and not self.transition_pending:
+            ready_player.video_container.layout_surface()
+            ready_player.video_container.show_prepared_frame(
+                ready_player.media.frame_image()
+            )
             # The splitter can resize the new page on the next event pass.
             QTimer.singleShot(
                 0,
-                lambda panel=name, player=ready_player, media_generation=ready_player.media.generation:
-                    self.show_ready_video(panel, player, media_generation),
+                lambda panel=name, player=ready_player,
+                media_generation=ready_player.media.generation,
+                reveal_generation=self.prepared_reveal_generation:
+                    self.show_ready_video(panel, player, media_generation, reveal_generation),
             )
         self.queue_page_reveal()
         self.schedule_preload()
