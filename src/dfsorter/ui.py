@@ -235,6 +235,12 @@ def page():
     return widget, layout
 
 
+class CurrentPageStack(QStackedWidget):
+    def minimumSizeHint(self):
+        page = self.currentWidget()
+        return page.minimumSizeHint() if page else super().minimumSizeHint()
+
+
 class Window(QMainWindow):
     def __init__(self, root=ROOT):
         super().__init__()
@@ -493,7 +499,7 @@ class Window(QMainWindow):
         center_layout = QVBoxLayout(self.center_column)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(0)
-        self.center = QStackedWidget()
+        self.center = CurrentPageStack()
         center_layout.addWidget(self.center, 1)
         self.splitter.addWidget(self.center_column)
         self.pages = {}
@@ -746,7 +752,7 @@ class Window(QMainWindow):
         session_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         overview_group = QWidget()
         overview_group.setObjectName("sessionOverview")
-        role(overview_group, "group")
+        role(overview_group, "outlinedGroup")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setContentsMargins(16, 16, 16, 16)
         overview_layout.setSpacing(8)
@@ -798,31 +804,35 @@ class Window(QMainWindow):
         session_group = QWidget()
         session_group.setObjectName("sessionSetup")
         session_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        role(session_group, "group")
+        role(session_group, "outlinedGroup")
         session_setup = QVBoxLayout(session_group)
         session_setup.setContentsMargins(16, 16, 16, 16)
         session_setup.setSpacing(8)
-        session_heading = QLabel("Session setup")
-        role(session_heading, "sectionHeading")
-        session_setup.addWidget(session_heading)
-        setup_columns = QHBoxLayout()
-        setup_columns.setSpacing(24)
-        active_session = QVBoxLayout()
+        self.session_setup_heading = QLabel()
+        role(self.session_setup_heading, "sectionHeading")
+        session_setup.addWidget(self.session_setup_heading)
+        self.session_setup_states = QStackedWidget()
+        active_session_page = QWidget()
+        active_session = QVBoxLayout(active_session_page)
+        active_session.setContentsMargins(0, 0, 0, 0)
         active_session.setSpacing(8)
         self.session_status = QLabel()
         self.session_status.setWordWrap(True)
-        self.session_status.setMinimumHeight(self.session_status.fontMetrics().lineSpacing() * 4)
         role(self.session_status, "secondary")
         active_session.addWidget(self.session_status)
         existing_actions = QHBoxLayout()
         existing_actions.setSpacing(8)
-        existing_actions.addWidget(button("Resume session", lambda: self.panel("Editing")))
         existing_actions.addWidget(button("End session", self.end_session))
         existing_actions.addStretch()
         active_session.addLayout(existing_actions)
-        setup_columns.addLayout(active_session, 1)
-        create_session = QVBoxLayout()
+        self.session_setup_states.addWidget(active_session_page)
+        create_session_page = QWidget()
+        create_session = QVBoxLayout(create_session_page)
+        create_session.setContentsMargins(0, 0, 0, 0)
         create_session.setSpacing(8)
+        inactive_status = QLabel("Choose pending clips from the library to create a session.")
+        role(inactive_status, "secondary")
+        create_session.addWidget(inactive_status)
         scope_label = QLabel("Scope")
         role(scope_label, "muted")
         create_session.addWidget(scope_label)
@@ -853,8 +863,8 @@ class Window(QMainWindow):
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
-        setup_columns.addLayout(create_session)
-        session_setup.addLayout(setup_columns)
+        self.session_setup_states.addWidget(create_session_page)
+        session_setup.addWidget(self.session_setup_states)
         session.addWidget(session_group)
         editing = self.pages["Editing"][1]
         self.player = Player(self.settings)
@@ -1610,6 +1620,8 @@ class Window(QMainWindow):
             clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         session = self.catalogue.state("session")
         self.nav["Editing"].setEnabled(bool(session))
+        self.session_setup_heading.setText("Active session" if session else "No active session")
+        self.session_setup_states.setCurrentIndex(0 if session else 1)
         self.session_counts.setVisible(
             bool(session) and self.current_panel == "Editing" and not self.atomic_edit
         )
@@ -1634,9 +1646,7 @@ class Window(QMainWindow):
         else:
             self.session_position.clear()
             self.session_counts.clear()
-            self.session_status.setText(
-                "No active session. Filter and select clips in the library."
-            )
+            self.session_status.clear()
 
     def set_overview_period(self, period):
         self.overview_period = period
@@ -2547,19 +2557,31 @@ class Window(QMainWindow):
             control.setChecked(name == mode)
 
     def toggle_projects(self):
+        if self.current_panel == "Session":
+            return
         self.pane_overrides[self.isMaximized()] = not self.right.isVisible()
         self.update_projects_visibility()
 
     def panes_resized(self, position, index):
         if self.right.isVisible() and self.splitter.sizes()[2] == 0:
+            if self.current_panel == "Session":
+                self.update_projects_visibility()
+                return
             self.pane_overrides[self.isMaximized()] = False
             self.update_projects_visibility()
 
     def update_projects_visibility(self):
         allowed = self.current_panel not in {"Browse", "Export", "Config"}
-        visible = allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
+        session_forces_open = self.current_panel == "Session"
+        visible = session_forces_open or (
+            allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
+        )
+        self.splitter.setCollapsible(2, not session_forces_open)
+        was_visible = self.right.isVisible()
+        left_width = self.splitter.sizes()[0]
         self.right.setVisible(visible)
         self.projects_toggle.setVisible(allowed and not visible)
+        self.projects_close.setVisible(not session_forces_open)
         self.position_projects_toggle()
         for action in self.projects.actions():
             action.setEnabled(
@@ -2570,6 +2592,11 @@ class Window(QMainWindow):
             control.setEnabled(not self.atomic_edit)
         if visible and self.splitter.sizes()[2] == 0:
             self.splitter.setSizes([420, max(400, self.width() - 770), 350])
+        if session_forces_open and not was_visible:
+            sizes = self.splitter.sizes()
+            self.splitter.setSizes(
+                [left_width, max(0, sum(sizes) - left_width - sizes[2]), sizes[2]]
+            )
 
     def changeEvent(self, event):
         super().changeEvent(event)

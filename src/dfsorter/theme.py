@@ -213,6 +213,7 @@ def stylesheet():
         QWidget#clipLibraryPane { border-radius: 7px; }
         QWidget[role="transparent"] { background: transparent; }
         QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 5px; }
+        QWidget[role="outlinedGroup"] { background: %(surface_workspace)s; border: 1px solid %(border_default)s; border-radius: 5px; }
         QWidget[role="divider"] { background: %(border_subtle)s; }
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }

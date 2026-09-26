@@ -277,13 +277,16 @@ turn every statistic into a card. The explanatory sentence remains tertiary and 
 
 ### Session
 
-Keep Session setup as a compact, fixed-height panel below the overview. Its left side contains
-the session status, Resume session and End session; its right side contains Scope, Selected /
-First N / All, the count field and Create Session. Keep the current behavior and terminology.
-The setup panel fills the center workspace without changing the clip-library or Projects panes.
+Keep Session setup as a compact, fixed-height panel below the overview with two states. An
+active Session shows its position and verdict progress with End session. With no active Session,
+show a clear inactive state followed by Scope, Selected / First N / All, the count field and
+Create Session. The setup panel fills the center workspace without changing the clip-library
+pane. Editing navigation opens the active Session at its saved position.
 
-Place the library overview above Session setup as a responsive quiet-surface group filling the
-center workspace. When the Projects pane opens, the overview narrows with the center pane.
+Place the library overview above Session setup. Give both sections a shared 1 px outline and
+workspace-matched fill. The Projects pane stays open on Session, so the overview uses the
+remaining center width. Opening Session preserves the clip-library pane's current width;
+the center pane gives up the width needed by Projects.
 Scroll the overview vertically when its rows exceed the available height while keeping Session
 setup visible at the bottom. Use visible compact segmented period controls, 16 px proportional
 verdict bars, and exact text counts beneath each bar. Keep uses success green, Discard danger red and Pending

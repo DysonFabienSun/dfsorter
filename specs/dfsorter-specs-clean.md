@@ -354,7 +354,7 @@ The panel-navigation row and settings cog are present on every panel except duri
 The application uses a Premiere-inspired three-pane layout where relevant.
 
 - The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. When closed, a visible **Projects** folder tab beneath Settings opens it and then disappears; an × action beside the pane heading closes it. Manual visibility overrides are remembered separately for normal/maximized states for the current run. Browse, Export and Config always hide it. Reset Layout restores defaults.
+- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. When closed, a visible **Projects** folder tab beneath Settings opens it and then disappears; an × action beside the pane heading closes it. Manual visibility overrides are remembered separately for normal/maximized states for the current run. Session always shows the pane and does not allow it to close or collapse; leaving Session restores the current window state's visibility preference. Browse, Export and Config always hide it. Reset Layout restores defaults.
 - Both panes are manually resizable using splitters.
 - Resizing/maximizing the window primarily gives additional width to the center pane.
 - User-adjusted pane widths are not persisted across application restarts.

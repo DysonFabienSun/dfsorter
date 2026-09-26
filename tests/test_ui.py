@@ -118,7 +118,9 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
     assert window.clip_filter.selected_values() == selected
 
 
-def test_session_overview_scrolls_above_pinned_setup(window, application):
+def test_session_overview_scrolls_above_pinned_setup(
+    window, application, tmp_path, monkeypatch
+):
     window.panel("Session")
     window.resize(1400, 600)
     for index in range(40):
@@ -128,27 +130,45 @@ def test_session_overview_scrolls_above_pinned_setup(window, application):
     scroll = window.findChild(QScrollArea, "sessionOverviewScroll")
     overview = window.findChild(QWidget, "sessionOverview")
     setup = window.findChild(QWidget, "sessionSetup")
+    assert overview.property("role") == "outlinedGroup"
+    assert setup.property("role") == "outlinedGroup"
     controls = {control.text(): control for control in setup.findChildren(QPushButton)}
     assert scroll.verticalScrollBar().maximum() > 0
     assert abs(overview.width() - scroll.viewport().width()) <= 2
     assert setup.width() == scroll.width()
     assert setup.geometry().top() > scroll.geometry().bottom()
-    assert controls["Resume session"].x() < controls["Create Session"].x()
-    assert controls["End session"].x() < controls["Create Session"].x()
+    assert window.session_setup_heading.text() == "No active session"
+    assert controls["Create Session"].isVisible()
+    assert not controls["End session"].isVisible()
+    assert "Resume session" not in controls
 
     setup_height = setup.height()
-    overview_width = overview.width()
+    assert window.right.isVisible()
+    assert not window.projects_toggle.isVisible()
+    assert not window.projects_close.isVisible()
     window.projects_toggle.click()
     application.processEvents()
-    assert overview.width() < overview_width
+    assert window.right.isVisible()
+    assert abs(overview.width() - scroll.viewport().width()) <= 2
     assert setup.height() == setup_height
     assert scroll.verticalScrollBar().maximum() > 0
 
-    window.session_status.setText(
-        "Position 1 / 50\nkeep: 10 (20%)\ndiscard: 5 (10%)\npending: 35 (70%)"
-    )
+    add_clips(window, tmp_path)
+    window.refresh_references()
     application.processEvents()
     assert setup.height() == setup_height
+    assert window.session_setup_heading.text() == "Active session"
+    assert "Position 1 / 1" in window.session_status.text()
+    assert controls["End session"].isVisible()
+    assert not controls["Create Session"].isVisible()
+
+    monkeypatch.setattr(window, "confirm", lambda *_args: True)
+    controls["End session"].click()
+    application.processEvents()
+    assert window.catalogue.state("session") is None
+    assert window.session_setup_heading.text() == "No active session"
+    assert controls["Create Session"].isVisible()
+    assert not controls["End session"].isVisible()
 
     window.refresh_library_overview([])
     assert wait_for(application, lambda: scroll.verticalScrollBar().maximum() == 0, timeout=1)
@@ -2873,6 +2893,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
 
 def test_projects_drawer_tab_and_pane_close(window):
     assert not window.right.isVisible()
+    home_library_width = window.left.width()
     assert window.projects_toggle.isVisible()
     assert window.projects_toggle.objectName() == "projectsDrawerTab"
     assert window.projects_heading.text() == "Projects"
@@ -2892,6 +2913,34 @@ def test_projects_drawer_tab_and_pane_close(window):
     window.panel("Browse")
     assert not window.right.isVisible()
     assert not window.projects_toggle.isVisible()
+
+    window.panel("Session")
+    assert window.right.isVisible()
+    assert abs(window.left.width() - home_library_width) <= 1
+    assert not window.projects_toggle.isVisible()
+    assert not window.projects_close.isVisible()
+    assert not window.splitter.isCollapsible(2)
+    window.projects_close.click()
+    assert window.right.isVisible()
+    window.splitter.setSizes([420, 1000, 0])
+    assert window.right.width() > 0
+
+    window.panel("Home")
+    assert not window.right.isVisible()
+    assert abs(window.left.width() - home_library_width) <= 1
+    assert window.projects_toggle.isVisible()
+    window.splitter.setSizes([500, 870, 0])
+    resized_library_width = window.left.width()
+    window.panel("Session")
+    assert abs(window.left.width() - resized_library_width) <= 1
+    window.panel("Home")
+    assert abs(window.left.width() - resized_library_width) <= 1
+    window.projects_toggle.click()
+    assert window.right.isVisible()
+    window.panel("Session")
+    window.panel("Home")
+    assert window.right.isVisible()
+    assert window.projects_close.isVisible()
 
 
 def test_settings_remain_available_in_browse(window):
