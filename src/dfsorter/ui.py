@@ -1289,6 +1289,17 @@ class Window(QMainWindow):
             and not player.awaiting_frame
         )
 
+    def show_ready_video(self, panel, player, media_generation):
+        if (
+            self.current_panel != panel
+            or self.transition_pending
+            or player.media.generation != media_generation
+        ):
+            return
+        self.centralWidget().layout().activate()
+        player.video_container.layout_surface()
+        player.video.show()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
@@ -1457,10 +1468,22 @@ class Window(QMainWindow):
         if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
-        if self.page_needs_cover(name):
+        needs_cover = self.page_needs_cover(name)
+        if needs_cover:
             self.begin_page_transition()
         else:
             self.cancel_page_transition()
+        ready_player = None
+        if not needs_cover and name != self.current_panel:
+            if name == "Browse":
+                ready_player = self.browse.player
+            elif name == "Editing":
+                ready_player = self.player
+        if ready_player is not None:
+            policy = ready_player.video.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            ready_player.video.setSizePolicy(policy)
+            ready_player.video.hide()
         self.cancel_space()
         self.player.media.pause()
         self.export_player.media.pause()
@@ -1526,6 +1549,13 @@ class Window(QMainWindow):
             self.review_mode()
         elif name == "Export":
             self.export_selection()
+        if ready_player is not None and not self.transition_pending:
+            # The splitter can resize the new page on the next event pass.
+            QTimer.singleShot(
+                0,
+                lambda panel=name, player=ready_player, media_generation=ready_player.media.generation:
+                    self.show_ready_video(panel, player, media_generation),
+            )
         self.queue_page_reveal()
         self.schedule_preload()
 

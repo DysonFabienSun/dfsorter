@@ -9,7 +9,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import PySide6
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSize, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
 from PySide6.QtGui import QCursor, QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
@@ -3192,6 +3192,41 @@ def test_prepared_video_frame_survives_tab_entry(window, application, tmp_path):
     application.processEvents()
     assert editing.media.generation == generations[1]
     assert not window.transition_pending
+
+
+def test_prepared_video_first_show_uses_final_size(window, application, tmp_path):
+    add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    players = {"Browse": window.browse.player, "Editing": window.player}
+    assert wait_for(application, lambda: all(not player.awaiting_frame for player in players.values()))
+
+    class ShowGeometry(QObject):
+        def __init__(self):
+            super().__init__()
+            self.sizes = []
+
+        def eventFilter(self, watched, event):
+            if event.type() == QEvent.Type.Show:
+                self.sizes.append(watched.size())
+            return False
+
+    for panel in ("Browse", "Editing", "Session", "Browse"):
+        if panel == "Session":
+            window.panel(panel)
+            continue
+        player = players[panel]
+        assert wait_for(application, lambda: not window.page_needs_cover(panel))
+        observer = ShowGeometry()
+        player.video.installEventFilter(observer)
+        try:
+            window.panel(panel)
+            application.processEvents()
+            assert observer.sizes, panel
+            QTest.qWait(50)
+            assert observer.sizes[0] == player.video.size()
+        finally:
+            player.video.removeEventFilter(observer)
 
 
 def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, application):
