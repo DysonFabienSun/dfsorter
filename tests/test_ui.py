@@ -88,8 +88,9 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
     root.mkdir()
     folder = window.catalogue.add_folder(root)
     paths = [root / f"clip-{index}.mp4" for index in range(3)]
-    for path in paths:
-        path.write_bytes(b"video")
+    for path, size in zip(paths, (16, 8, 4)):
+        with path.open("wb") as source:
+            source.truncate(size * 1024 * 1024)
     window.catalogue.ingest(
         folder,
         [
@@ -120,6 +121,7 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
         "last",
     ]
     summary = window.findChild(QWidget, "overviewSummary")
+    assert any("0.03 GB" in label.text() for label in summary.findChildren(QLabel))
     assert "3 clips · 2 processed (67%)" in [label.text() for label in summary.findChildren(QLabel)]
     selected = window.clip_filter.selected_values()
     window.set_overview_period("7 days")
@@ -931,6 +933,7 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
     second = tmp_path / "NVIDIA"
     first.mkdir()
     second.mkdir()
+    (first / "other.bin").write_bytes(b"non-video content")
     first_id = window.catalogue.add_folder(first)
     second_id = window.catalogue.add_folder(second)
     window.catalogue.ingest(
@@ -950,7 +953,7 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         window.media_info[clip["source_path"]] = {"duration": float(index * 10)}
     window.refresh_references()
     window.panel("Home")
-    application.processEvents()
+    assert wait_for(application, lambda: window.folder_sizes.get(str(first)) is not None)
 
     assert isinstance(window.folders.itemDelegate(), CaptureFolderDelegate)
     assert window.folder_summary.text() == "2 folders · 4 clips"
@@ -965,7 +968,8 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         "path": str(first),
         "status": "Enabled",
         "enabled": True,
-        "summary": "3 clips · Avg 20.0s",
+        "summary": "3 clips · 0.00 GB",
+        "summary_new": "",
         "details": "VALORANT: 2 (2 new)   Escape from Tarkov: 1 (1 new)",
         "game_details": [
             {"text": "VALORANT: 2", "new": 2},
@@ -985,19 +989,28 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
     window.grab().save(str(artifact / "hierarchy-dark.png"))
 
 
-def test_home_folder_new_counts_use_opening_catalogue_baseline(window, tmp_path):
+def test_home_folder_new_counts_use_opening_catalogue_baseline(window, application, tmp_path):
     folder = tmp_path / "captures"
     folder.mkdir()
     folder_id = window.catalogue.add_folder(folder)
     existing = folder / "existing.mp4"
+    with existing.open("wb") as source:
+        source.truncate(16 * 1024 * 1024)
     window.catalogue.ingest(folder_id, [{"path": str(existing), "game": "VALORANT"}])
     window.opening_clip_ids.add(window.catalogue.clips()[0]["clip_id"])
     added = folder / "added.mp4"
+    with added.open("wb") as source:
+        source.truncate(8 * 1024 * 1024)
+    with (folder / "notes.txt").open("wb") as source:
+        source.truncate(16 * 1024 * 1024)
     window.catalogue.ingest(folder_id, [{"path": str(added), "game": "VALORANT"}])
 
     window.refresh_references()
+    assert wait_for(application, lambda: window.folder_sizes.get(str(folder)) is not None)
 
     data = window.folders.item(0).data(FOLDER_ROLE)
+    assert data["summary"].endswith("0.04 GB")
+    assert data["summary_new"] == " (+0.01 GB new)"
     assert data["details"] == "VALORANT: 2 (1 new)"
     assert data["game_details"] == [{"text": "VALORANT: 2", "new": 1}]
 

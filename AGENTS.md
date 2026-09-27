@@ -12,10 +12,10 @@
 - Once relevant checks pass, do not repeat them unless subsequent code changes affect their results. Scope lint and other checks to changed files where supported.
 - Documentation-only or instruction-only edits require diff review, not runtime tests.
 
-## Portable ZIP Currency
+## Portable ZIP Builds
 
-- After every repository update, rebuild `build/DFSorter-Windows-x64.zip` with `pwsh -File packaging/build-release.ps1` before committing or reporting the work complete, so the local portable ZIP stays current.
-- Rebuilding the ZIP is required for documentation and instruction changes too; it does not replace the focused testing rules above. The ZIP is a local build artifact ignored by Git, while public downloads are created by the release workflow.
+- Rebuild `build/DFSorter-Windows-x64.zip` with `pwsh -File packaging/build-release.ps1` only when the user asks for a new tagged version release.
+- Do not rebuild the ZIP for ordinary code, documentation, or instruction changes. The ZIP is a local build artifact ignored by Git; public downloads are created by the release workflow.
 
 ## Application-Wide Style and Font Consistency
 

@@ -272,8 +272,9 @@ Secondary heading, active-project accent, expanding list and compact icon toolba
 
 Preserve Capture Folders behavior and all existing information. Each watched folder is a
 compact typographic group rather than raw diagnostic-looking text. The folder path is primary;
-scanning state and total clips are secondary; detected-game counts and duration statistics are
-tertiary. Align labels and values consistently and use spacing before introducing containers.
+scanning state, total clips, and folder size are secondary; detected-game counts are tertiary.
+Show newly discovered clip size in the same cyan accent as new clip counts. Align labels and
+values consistently and use spacing before introducing containers.
 A quiet surface group is acceptable when multiple folders need stronger separation, but do not
 turn every statistic into a card. The explanatory sentence remains tertiary and wraps.
 
@@ -291,7 +292,7 @@ remaining center width. Opening Session preserves the clip-library pane's curren
 the center pane gives up the width needed by Projects.
 Scroll the overview vertically when its rows exceed the available height while keeping Session
 setup visible at the bottom. Use visible compact segmented period controls, 16 px proportional
-verdict bars, and exact text counts beneath each bar. Keep uses success green, Discard danger red and Pending
+verdict bars, exact text counts, and represented source size beneath each bar. Keep uses success green, Discard danger red and Pending
 muted gray; color is never the only state indicator. The aggregate row is visually stronger
 than game rows without turning individual statistics into cards.
 

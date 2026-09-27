@@ -17,7 +17,7 @@ def test_overview_aggregates_and_orders_pending_work(tmp_path):
         clip(tmp_path / "d.mp4", "Escape from Tarkov"),
         clip(tmp_path / "e.mp4", None, "discard"),
     ]
-    total, rows, undated = library_overview(clips, {}, current_time=NOW)
+    total, rows, undated, sizes = library_overview(clips, {}, current_time=NOW)
 
     assert total == {"keep": 1, "pending": 3, "discard": 1}
     assert [name for name, _counts in rows] == [
@@ -26,6 +26,7 @@ def test_overview_aggregates_and_orders_pending_work(tmp_path):
         "Uncategorized",
     ]
     assert undated == 5
+    assert sum(sizes.values()) == 0
 
 
 def test_overview_filters_rolling_dates_and_discloses_undated(tmp_path):
@@ -39,11 +40,19 @@ def test_overview_filters_rolling_dates_and_discloses_undated(tmp_path):
         old["source_path"]: {"created": "2026-09-18T11:59:59Z"},
     }
 
-    total, rows, missing = library_overview([recent, boundary, old, undated], media, "7 days", NOW)
+    recent_path = tmp_path / "recent.mp4"
+    recent_path.write_bytes(b"12345")
+    boundary_path = tmp_path / "boundary.mp4"
+    boundary_path.write_bytes(b"123")
+    (tmp_path / "old.mp4").write_bytes(b"old source excluded by period")
+    total, rows, missing, sizes = library_overview(
+        [recent, boundary, old, undated], media, "7 days", NOW
+    )
 
     assert total == {"keep": 1, "pending": 1}
     assert rows[0][1] == total
     assert missing == 1
+    assert sizes == {"VALORANT": 8}
 
 
 def test_capture_date_prefers_media_and_falls_back_to_file(tmp_path):

@@ -1,6 +1,7 @@
 import html
 import logging
 import os
+import stat
 import sys
 import threading
 import time
@@ -126,6 +127,49 @@ class Worker(QThread):
         except Exception as error:
             logging.exception("Background operation failed")
             self.failed.emit(str(error))
+
+
+def storage_gb(size):
+    return f"{size / (1024**3):.2f} GB"
+
+
+def folder_storage(paths, cancelled):
+    sizes = {}
+    for path in paths:
+        total = 0
+        failed = False
+
+        def walk_error(error):
+            nonlocal failed
+            failed = True
+
+        try:
+            if not Path(path).is_dir():
+                sizes[path] = None
+                continue
+            for directory, subdirectories, filenames in os.walk(
+                path, followlinks=False, onerror=walk_error
+            ):
+                if cancelled():
+                    return sizes
+                subdirectories[:] = [
+                    name for name in subdirectories
+                    if not (Path(directory) / name).is_symlink()
+                ]
+                for filename in filenames:
+                    if cancelled():
+                        return sizes
+                    try:
+                        info = (Path(directory) / filename).stat(follow_symlinks=False)
+                        if stat.S_ISREG(info.st_mode):
+                            total += info.st_size
+                    except OSError:
+                        failed = True
+                        continue
+            sizes[path] = None if failed else total
+        except OSError:
+            sizes[path] = None
+    return sizes
 
 
 class CheckMenu(QMenu):
@@ -290,6 +334,11 @@ class Window(QMainWindow):
         self.space_timer.setInterval(200)
         self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
         self.media_info = self.catalogue.media_cache()
+        self.folder_sizes = {}
+        self.folder_size_paths = ()
+        self.folder_size_updated_at = 0.0
+        self.folder_size_worker = None
+        self.folder_size_pending = False
         self.clip_folder_names = self.catalogue.clip_folder_names()
         self.pending_in = None
         self.pending_out = None
@@ -1706,6 +1755,7 @@ class Window(QMainWindow):
         self.folders.clear()
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         folders = self.catalogue.folders()
+        self.request_folder_sizes(folders)
         linked_clip_count = 0
         for folder in folders:
             ids = [
@@ -1720,16 +1770,21 @@ class Window(QMainWindow):
                 for clip_id in ids
                 if clip_id not in self.opening_clip_ids
             )
-            durations = [
-                self.media_info.get(clips[clip_id]["source_path"], {}).get("duration")
-                for clip_id in ids
-            ]
-            durations = [duration for duration in durations if duration is not None]
-            average = (
-                f"{sum(durations) / len(durations):.1f}s"
-                if durations
-                else "unavailable until scanned"
+            folder_bytes = self.folder_sizes.get(folder["path"])
+            size_text = (
+                storage_gb(folder_bytes)
+                if folder_bytes is not None
+                else "Size unavailable" if folder["path"] in self.folder_sizes else "Calculating size…"
             )
+            new_bytes = 0
+            for clip_id in ids:
+                if clip_id in self.opening_clip_ids:
+                    continue
+                try:
+                    new_bytes += Path(clips[clip_id]["source_path"]).stat().st_size
+                except OSError:
+                    pass
+            new_size_text = f" (+{storage_gb(new_bytes)} new)" if new_bytes else ""
             linked_clip_count += len(ids)
             text = f"{folder['path']}\n"
             game_details = [
@@ -1744,7 +1799,7 @@ class Window(QMainWindow):
                 + (f" ({detail['new']} new)" if detail["new"] else "")
                 for detail in game_details
             )
-            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · Avg {average}\n"
+            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · {size_text}{new_size_text}\n"
             text += games or "No detected games"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
@@ -1754,7 +1809,8 @@ class Window(QMainWindow):
                     "path": folder["path"],
                     "status": "Enabled" if folder["enabled"] else "Paused",
                     "enabled": bool(folder["enabled"]),
-                    "summary": f"{len(ids)} clips · Avg {average}",
+                    "summary": f"{len(ids)} clips · {size_text}",
+                    "summary_new": new_size_text,
                     "details": games or "No detected games",
                     "game_details": game_details,
                 },
@@ -1794,6 +1850,40 @@ class Window(QMainWindow):
         self.refresh_session_status(clips)
         self.refreshing = False
         self.schedule_preload()
+
+    def request_folder_sizes(self, folders=None, *, force=False):
+        folders = folders if folders is not None else self.catalogue.folders()
+        paths = tuple(folder["path"] for folder in folders)
+        if self.folder_size_worker is not None:
+            self.folder_size_pending |= force or paths != self.folder_size_paths
+            return
+        if not paths or self.close_requested:
+            return
+        if not force and paths == self.folder_size_paths and time.monotonic() - self.folder_size_updated_at < 30:
+            return
+        self.folder_size_paths = paths
+        self.folder_size_worker = Worker(
+            lambda cancelled, progress: folder_storage(paths, cancelled)
+        )
+        results = []
+        self.folder_size_worker.succeeded.connect(results.append)
+
+        def finished():
+            self.folder_size_worker.deleteLater()
+            self.folder_size_worker = None
+            if self.close_requested:
+                QTimer.singleShot(0, self.close)
+                return
+            if results:
+                self.folder_sizes = results[0]
+                self.folder_size_updated_at = time.monotonic()
+                self.refresh_references()
+            if self.folder_size_pending:
+                self.folder_size_pending = False
+                self.request_folder_sizes(force=True)
+
+        self.folder_size_worker.finished.connect(finished)
+        self.folder_size_worker.start()
 
     def refresh_session_status(self, clips=None):
         if clips is None:
@@ -1836,16 +1926,16 @@ class Window(QMainWindow):
 
     def refresh_library_overview(self, clips=None):
         clips = clips if clips is not None else self.catalogue.clips()
-        total, rows, undated = library_overview(clips, self.media_info, self.overview_period)
+        total, rows, undated, sizes = library_overview(clips, self.media_info, self.overview_period)
         while self.overview_rows.count():
             item = self.overview_rows.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.setParent(None)
                 widget.deleteLater()
-        self.add_overview_row("All games", total, emphasized=True)
+        self.add_overview_row("All games", total, sum(sizes.values()), emphasized=True)
         for game, counts in rows:
-            self.add_overview_row(game, counts)
+            self.add_overview_row(game, counts, sizes[game])
         self.overview_empty.setVisible(not sum(total.values()))
         finite = PERIOD_DAYS[self.overview_period] is not None
         self.overview_undated.setVisible(finite and bool(undated))
@@ -1853,7 +1943,7 @@ class Window(QMainWindow):
             f"{undated} clips have no usable capture date and are not included."
         )
 
-    def add_overview_row(self, name, counts, *, emphasized=False):
+    def add_overview_row(self, name, counts, size, *, emphasized=False):
         keep = counts["keep"]
         discard = counts["discard"]
         pending = counts["pending"]
@@ -1879,7 +1969,9 @@ class Window(QMainWindow):
         bar = VerdictBar()
         bar.set_counts(keep, discard, pending)
         layout.addWidget(bar)
-        details = QLabel(f"{keep} Keep · {discard} Discard · {pending} Pending")
+        details = QLabel(
+            f"{keep} Keep · {discard} Discard · {pending} Pending · {storage_gb(size)}"
+        )
         role(details, "muted")
         layout.addWidget(details)
         self.overview_rows.addWidget(row)
@@ -3642,6 +3734,7 @@ class Window(QMainWindow):
             self.catalogue.hidden_deleted_ids()
             self.remember_media(found)
             self.refresh_references()
+            self.request_folder_sizes(force=True)
             self.refresh_library()
             metrics["ui_refresh"] = time.perf_counter() - started
             logging.info("Scan including UI refresh: %s", metrics)
@@ -4129,6 +4222,13 @@ class Window(QMainWindow):
             self.scan_retry_timer.stop()
             self.worker.cancelled.set()
             self.statusBar().showMessage("Closing after the current operation stops…")
+            event.ignore()
+            return
+        if self.folder_size_worker:
+            self.close_requested = True
+            self.scan_timer.stop()
+            self.scan_retry_timer.stop()
+            self.folder_size_worker.cancelled.set()
             event.ignore()
             return
         self.atomic_edit = None

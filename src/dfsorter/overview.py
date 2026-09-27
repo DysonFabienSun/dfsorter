@@ -57,6 +57,7 @@ def library_overview(clips, media_info, period="All time", current_time=None):
     days = PERIOD_DAYS[period]
     cutoff = current_time - timedelta(days=days) if days is not None else None
     counts = {}
+    sizes = Counter()
     undated = 0
     for clip in clips:
         captured = capture_datetime(clip, media_info)
@@ -69,6 +70,10 @@ def library_overview(clips, media_info, period="All time", current_time=None):
         game = clip["game"] or "Uncategorized"
         state = clip["triage"] or "pending"
         counts.setdefault(game, Counter())[state] += 1
+        try:
+            sizes[game] += Path(clip["source_path"]).stat().st_size
+        except OSError:
+            pass
 
     total = Counter()
     for game_counts in counts.values():
@@ -81,4 +86,4 @@ def library_overview(clips, media_info, period="All time", current_time=None):
             item[0].casefold(),
         ),
     )
-    return total, rows, undated
+    return total, rows, undated, sizes

@@ -15,7 +15,7 @@ from .theme import role
 
 
 def size_text(size):
-    return f"{size / (1024**3):.2f} GiB ({size:,} bytes)"
+    return f"{size / (1024**3):.2f} GB ({size:,} bytes)"
 
 
 class DeletionDialog(QDialog):

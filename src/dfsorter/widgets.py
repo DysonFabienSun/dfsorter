@@ -463,13 +463,27 @@ class CaptureFolderDelegate(QStyledItemDelegate):
         summary_top = top + path_metrics.height() + 2
         painter.setFont(summary_font)
         painter.setPen(QColor(COLORS["text_secondary"]))
+        summary_new = data.get("summary_new", "")
+        summary_new_width = min(
+            summary_metrics.horizontalAdvance(summary_new), right - left
+        )
+        summary_width = right - left - summary_new_width
         painter.drawText(
-            QRect(left, summary_top, right - left, summary_metrics.height()),
+            QRect(left, summary_top, summary_width, summary_metrics.height()),
             Qt.AlignmentFlag.AlignVCenter,
             summary_metrics.elidedText(
-                data.get("summary", ""), Qt.TextElideMode.ElideRight, right - left
+                data.get("summary", ""), Qt.TextElideMode.ElideRight, summary_width
             ),
         )
+        if summary_new:
+            painter.setPen(QColor(COLORS["accent_default"]))
+            painter.drawText(
+                QRect(left + summary_width, summary_top, summary_new_width, summary_metrics.height()),
+                Qt.AlignmentFlag.AlignVCenter,
+                summary_metrics.elidedText(
+                    summary_new, Qt.TextElideMode.ElideRight, summary_new_width
+                ),
+            )
         detail_top = summary_top + summary_metrics.height() + 2
         painter.setFont(detail_font)
         game_details = data.get("game_details")
@@ -498,7 +512,7 @@ class CaptureFolderDelegate(QStyledItemDelegate):
                 )
                 detail_left += detail_metrics.horizontalAdvance(prefix)
                 if new_text:
-                    painter.setPen(QColor(COLORS["status_success"]))
+                    painter.setPen(QColor(COLORS["accent_default"]))
                     painter.drawText(
                         QRect(detail_left, detail_top, right - detail_left, detail_metrics.height()),
                         Qt.AlignmentFlag.AlignVCenter,

@@ -414,7 +414,7 @@ Ratings are deliberately **not** searchable or filterable in the initial design.
 
 Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
 
-Show a folder list with readable scanning state, clip/game counts, average duration, and three controls: **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
+Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
 
 Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
@@ -493,7 +493,7 @@ Home shows:
 - enabled/disabled state;
 - clip counts;
 - clip counts by recognized game;
-- average clip duration where available;
+- total capture-folder size and newly discovered clip size in GB;
 - manual Rescan;
 - Add Folder;
 - Remove folder… under More;
@@ -519,7 +519,7 @@ Pause scanning retains all catalogue data and existing sessions, skips startup/m
 
 ## 12. Session Panel
 
-Above Session setup, show a library overview of the current Keep, Discard and Pending states for all retained catalogue clips. Include an aggregate All games row plus represented games and Uncategorized, ordered by pending count descending with Uncategorized last. Each row shows total and processed counts, processed percentage, exact verdict counts, and a proportional Keep/Discard/Pending bar using the shared semantic colors. The overview is informational and does not change Session library filters.
+Above Session setup, show a library overview of the current Keep, Discard and Pending states for all retained catalogue clips. Include an aggregate All games row plus represented games and Uncategorized, ordered by pending count descending with Uncategorized last. Each row shows total and processed counts, processed percentage, exact verdict counts, the logical size in GB of available source files represented by that row and selected period, and a proportional Keep/Discard/Pending bar using the shared semantic colors. The overview is informational and does not change Session library filters.
 
 Provide rolling capture-date filters for 7 days, 30 days, 3 months, 6 months, 1 year and All time, defaulting to All time without persistence. Use cached media creation time, then filesystem creation time for an available source. All time includes undated clips; finite ranges exclude them and disclose their count. Count unavailable, explicitly deleted, unlinked and paused-folder catalogue records. Hide zero-count game rows and show an empty-period message when needed.
 
