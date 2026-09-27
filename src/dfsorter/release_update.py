@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from .app_paths import ROOT
 
 REPO = "DysonFabienSun/dfsorter"
-ASSET = "DFSorter-Windows-x64.zip"
+ASSET_SUFFIX = "-Windows-x64.zip"
 MANAGED = {
     "DFSorter.exe",
     "DFSorterUpdater.exe",
@@ -49,8 +49,10 @@ def latest_release():
     )
     with urllib.request.urlopen(request, timeout=20) as response:
         release = json.load(response)
-    version_tuple(release["tag_name"])
-    asset = next((item for item in release["assets"] if item["name"] == ASSET), None)
+    tag = release["tag_name"]
+    version_tuple(tag)
+    asset_name = f"DFSorter-{tag}{ASSET_SUFFIX}"
+    asset = next((item for item in release["assets"] if item["name"] == asset_name), None)
     if not asset or not asset.get("digest", "").startswith("sha256:"):
         raise ValueError("Release ZIP or SHA-256 digest missing")
     return {

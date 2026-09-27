@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -8,6 +9,43 @@ import zipfile
 import pytest
 
 from dfsorter import app_paths, release_update
+
+
+def test_latest_release_selects_asset_matching_tag(monkeypatch):
+    release = {
+        "tag_name": "v0.2.2",
+        "assets": [
+            {"name": "DFSorter-Windows-x64.zip", "digest": "sha256:" + "0" * 64},
+            {
+                "name": "DFSorter-v0.2.2-Windows-x64.zip",
+                "browser_download_url": "https://example.com/versioned.zip",
+                "digest": "sha256:" + "a" * 64,
+            },
+        ],
+    }
+    monkeypatch.setattr(
+        release_update.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: io.BytesIO(json.dumps(release).encode()),
+    )
+
+    assert release_update.latest_release() == {
+        "version": "0.2.2",
+        "url": "https://example.com/versioned.zip",
+        "sha256": "a" * 64,
+    }
+
+
+def test_latest_release_rejects_unrecognized_version(monkeypatch):
+    release = {"tag_name": "v0.2.2-beta.1", "assets": []}
+    monkeypatch.setattr(
+        release_update.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: io.BytesIO(json.dumps(release).encode()),
+    )
+
+    with pytest.raises(ValueError, match="Invalid release version"):
+        release_update.latest_release()
 
 
 def test_packaged_game_defaults_preserve_local_edits(tmp_path, monkeypatch):

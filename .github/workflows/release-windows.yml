@@ -51,8 +51,11 @@ jobs:
       - name: Build portable ZIP
         shell: pwsh
         run: ./packaging/build-release.ps1 -NoProxy
+      - name: Name ZIP for release
+        shell: pwsh
+        run: Rename-Item -LiteralPath ./build/DFSorter-Windows-x64.zip -NewName "DFSorter-$env:GITHUB_REF_NAME-Windows-x64.zip"
       - name: Create draft GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create '${{ github.ref_name }}' ./build/DFSorter-Windows-x64.zip --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag --draft
+        run: gh release create '${{ github.ref_name }}' "./build/DFSorter-$env:GITHUB_REF_NAME-Windows-x64.zip" --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag --draft
