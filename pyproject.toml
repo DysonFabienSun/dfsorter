@@ -23,6 +23,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.11",
 ]
+build = [
+    "pyinstaller>=6.16,<7",
+]
 
 [tool.ruff]
 line-length = 100

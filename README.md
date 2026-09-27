@@ -1,102 +1,17 @@
 # DFSorter
 
-A Windows desktop catalogue for reviewing gameplay clips without modifying original media.
+DFSorter is a portable Windows app for reviewing gameplay recordings. It catalogues clips, helps organize them into projects, and can share selected ranges or copy project clips for export. Original recordings stay in their existing folders.
 
-## Run
+## Install
 
-Install [uv](https://docs.astral.sh/uv/) and run from this checkout:
+1. Download `DFSorter-Windows-x64.zip` from [Releases](https://github.com/DysonFabienSun/dfsorter/releases).
+2. In **Extract All**, choose a writable destination such as `C:\Users\<name>`. The ZIP creates a `DFSorter` folder there. Keep that folder together; do not move `DFSorter.exe` out of it.
+3. Double-click `DFSorter.exe`, then add capture folders in the app.
 
-```powershell
-uv sync --python 3.13
-pwsh -File .\setup-playback.ps1
-uv run dfsorter
-```
+No Git, Python, `uv`, FFmpeg, or 7-Zip installation is required. An unsigned release may show a Windows SmartScreen prompt on first launch.
 
-After setup, double-click `launch.bat`. The launcher uses its own directory regardless of where it is invoked. Playback uses libmpv for H.264/AV1 and mixes every audio track live into stereo, preserving left/right separation and microphone timing. No preview files are generated. `setup-playback.ps1` requires 7-Zip and the PowerShell profile's proxy helpers; it downloads pinned Windows x64 build `20260903-git-69e63f425a`, verifies its SHA-256, and installs runtime/license files under `runtime/mpv/`. Playback performs no downloads. Missing runtime produces an explicit player error. `ffprobe` on PATH enables media inspection; scanning still works without it. Share requires both `ffmpeg` and `ffprobe` on PATH.
+## Update
 
-On this machine, dependency downloads use the PowerShell profile's proxy helpers: enable `proxy_on` / `proxyon` before `uv sync` and disable `proxy_off` / `proxyoff` in `finally` afterward.
+Choose **Settings → Check for updates…** in DFSorter. If a newer release is available, confirm the update. DFSorter closes, updates its files, and reopens. Update backups are kept in `backups\updates\` inside the extracted folder.
 
-To open without a console window, run `pwsh -File .\create-shortcut.ps1` after setup, then double-click `DFSorter.lnk`. The shortcut runs this checkout's `.venv\Scripts\pythonw.exe` directly; it does not install or update dependencies. Recreate the shortcut if you move the checkout. `launch.bat` remains available for console output and troubleshooting. Application logs are stored in `data/dfsorter.log`.
-
-## Review workflow
-
-1. **Home:** add an external capture folder, choose automatic classification or a forced game, inspect the preview, and confirm. Enabled folders are automatically rescanned on startup; manual Refresh/rescan remains available.
-2. **Session:** search/filter/sort the library and freeze selected clips, the first N, or all results into a session. Editing resumes its saved position after restart.
-3. **Editing:** starts in review mode. Press `/` or Enter to enter metadata such as `1v4 3k jett vandal R4 -- clutch of the century -- clean start`. In input mode, Enter submits the command and remains in input mode without changing triage. In review or input mode with an empty command bar, Shift+Enter keeps and advances when the configured game's required fields are present, or advances an explicitly discarded clip without changing its verdict. Shift+Enter never submits and refuses advancement while the command bar contains any text, including whitespace. Submit that text with Enter first. Escape preserves unfinished text; drafts survive clip/panel navigation for this run. Backspace rejects only in review mode. Advancement skips Keep/Discard clips to the next undefined clip in Session order, without wrapping. If none remains ahead, stay on the current clip; report Session complete only when all Session clips have a verdict.
-4. **Projects:** activate a project to receive clips when they transition to Keep. Membership survives later triage changes. Add/remove selected clips explicitly when needed.
-5. **Export:** select a project, resolve every listed blocker, choose filename fields and an output folder, then copy. Share independently offers a whole clip or saved range, defaulting to the range, and produces H.264 MP4 with all audio mixed to stereo AAC.
-
-In review mode, tap Space to play/pause or hold for 200 ms to play at 3× until release. Arrows seek ±5 seconds, Shift+arrows ±1 second, I/O set markers. Rate using commands such as `r4` followed by Enter, or clickable stars. Every text field, even when empty, consumes normal typing. Press `?` for the cheatsheet. In remains pending until a valid Out is set; Share continues offering the previous saved range. Source videos are never trimmed or rewritten.
-
-Description saves when leaving its editor or navigating, and has an explicit Save button. Rating and triage are independent. Ctrl+Z/Ctrl+Y undo/redo catalogue edits for the current run. Changing game requires confirmation and clears game-specific metadata; Undo restores it.
-
-Opening a clip starts paused at its saved In point when its complete In/Out range fits the video. Otherwise it starts 40 seconds before the end, clamped to zero; General settings control this offset or disable it.
-
-## Browse viewer
-
-Browse sits after Home and needs no session. It shows all library clips, newest first, with independent search and game filtering. Header sort icon toggles newest/oldest; previous/next and Up/Down follow that order. Metadata and project actions are unavailable.
-
-Set temporary I/O with `I`/`O`, supply a required custom title and output folder, then Share the whole clip or valid range using controls below the player. Markers and title reset when leaving the clip or page. Stored metadata, saved markers, and session position remain unchanged. Share mixes audio into stereo AAC; Project Export copies originals with all separate tracks intact.
-
-## Configuration and search
-
-Use **Config** to create and edit game definitions in `configs/games/*.yaml`. Select a game on the left; Identity, Fields, and Title & review provide structured controls. Save validates and reloads the definition. Invalid YAML opens in a repair view, and externally changed files require reloading before saving. YAML files can still be edited externally, then reloaded from Config. Enum aliases resolve to canonical capitalization. Free-form prefixes support quoted values, for example `wpn:"M4A1 SOPMOD"`. Multiword enum names may be quoted or entered directly. Mainline and description retain the exact text between separators, including spaces. Removing YAML fields hides their stored values; restoring the stable field key restores access.
-
-Queries include `game:val agent:jett`, `triage:keep kill:>=4`, and `tag:LOW_FPS`. Quote multiword query values: `game:"Escape from Tarkov"`. Plain words search filename, mainline, and description. Rating queries are deliberately rejected. Use the triage dropdown to include discarded clips, which are otherwise hidden.
-
-New game definitions receive a reserved scalar `kill` field by default. Ordinary fields are `enum` or `freeform`, optionally `multiple: true`. VALORANT requires agent and weapon for export; Battlefield 6 and Escape from Tarkov have no default required fields. Kept clips with no configured game block export.
-
-## Storage and safety
-
-- `data/dfsorter.db`: SQLite catalogue, projects, capture folders, and session.
-- `data/settings.yaml`: default sharing/export destinations.
-- `data/dfsorter.log`: rotating operational error log.
-- `cache/verification/`: screenshots produced by GUI tests.
-
-These paths are application-local and ignored by Git. Capture paths remain external references. To back up, close DFSorter and copy `data/` and `configs/`. Restore with the application closed; never replace an open database. Moving the application directory preserves its state; moving footage requires **Home → More → Relink folder…**.
-
-Missing media remains catalogued. **Pause scanning** retains the folder and its clips, skips scans, and excludes those clips from new sessions. **Remove folder…** shows a confirmation and backs up the database before removing catalogue records and relationships; source files stay untouched. Legacy unlinked entries are visible on Home for reviewed cleanup. **Relink folder…** previews how many files exist at the new location, changes paths atomically, and rejects identity collisions. The cog’s **Capture folders…** opens Home; **Settings…** retains General and Projects.
-
-Stored paths preserve capitalization, including capture folders, clips and media-cache paths.
-On upgrade, existing paths recover filesystem casing where available; casing of missing
-components cannot be recovered. Windows path identity remains case-insensitive.
-Disabled capture folders are excluded from new Session selection; enabling them restores
-eligibility. Existing frozen Sessions and project memberships remain unchanged.
-
-Project Export preserves original bytes and extensions. Share retains the video stream for whole H.264 clips; all ranges and non-H.264 sources re-encode, preferring NVIDIA P5/CQ19 with x264 medium/CRF18 fallback. Audio tracks are mixed into one stereo AAC track; silent sources remain silent. Range precision follows source video frames and audio samples. Both operations sanitize output names, reject capture-folder destinations, and never overwrite existing files. Cancellation removes operation-owned incomplete files. Outputs remain unmanaged. XMP support is deferred: no sidecars are generated, and existing sidecars remain untouched. Saved In/Out ranges remain available for review and range Share.
-
-Projects defaults collapsed in normal windows and expanded when maximized; use the upper-right toggle. Right-click a project for all actions including Delete. Use `tag:FAVORITE`, `tag:"needs review"`, or `tag:""` to set or clear the tag. Empty tags are hidden; use **Settings cog → Edit tag…**. Icons are vendored under `resources/icons` with their upstream license; Node is not required at runtime.
-
-## Verification
-
-```powershell
-uv run pytest -q -p no:faulthandler
-uv run ruff check src tests
-uv run ruff format --check src tests
-```
-
-GUI tests open temporary windows and use disposable catalogues, never the working catalogue. They generate H.264/AV1 media, check decoded frames/audio/seek behavior, and capture normal/maximized windows. Windows can emit a handled COM exception through Python's faulthandler while creating a Qt window; the command above avoids that misleading diagnostic.
-
-Home manages capture folders; Config edits game YAML definitions. Automatic folder polling, an installer, general video editing, and XMP support are outside this delivery. Source inspection, copying, and sharing run in background workers. Scan cancellation terminates and reaps active probes; each probe has a 20-second timeout. Library search currently evaluates catalogue rows in memory.
-
-Scans persist duration, capture date and inspection failures in SQLite. Unchanged paths,
-sizes and nanosecond modification times reuse results across restarts with zero probes.
-Changed/new files use at most two concurrent probes; file failures retry after 24 hours
-or a change. Missing ffprobe is not cached as a file failure. **Home → More → Rebuild media information…** bypasses the cache for enabled folders, including replacements
-that preserve size and mtime. The first scan after upgrading populates the cache.
-Immediate modal progress stays open through cancellation cleanup. Completed folders
-remain committed; the interrupted folder is not ingested. Source files stay untouched.
-Scan phase timings, counts and UI refresh time are recorded in `data/dfsorter.log`.
-
-Measured on 319 existing capture videos (2026-09-17), using a disposable project-local
-catalogue: sequential baseline 20.73 s, first cached implementation scan 9.61 s,
-unchanged rescan 0.42 s, reopened-catalogue scan 0.32 s. Both repeat scans launched
-zero probes; isolated UI refresh took 0.083 s separately. Filesystem caching and machine
-load affect these single-run measurements. Reproduce with
-`uv run python tests/benchmark_scanning.py "PATH_TO_CAPTURE_FOLDER"`; the baseline
-comes from Git HEAD's media implementation, so retain the pre-change revision when
-comparing after committing. Source files and the working catalogue are not modified.
-
-Playback uses Qt native video rendering with hardware decoding where supported and software fallback. D3D11 decoding of H.264 and AV1 was confirmed on this machine with Qt diagnostics. To inspect decoder selection, set `QT_LOGGING_RULES=qt.multimedia.ffmpeg.hwaccel=true;qt.multimedia.playbackengine.codec=true` before launching. Native video surfaces may be absent from QWidget screenshots; decoded-frame artifacts are captured separately by tests. Subjective smoothness and audio balance still need acceptance with real captures.
-
-In/Out markers can be set in either order. Editing one endpoint reuses the other saved endpoint when valid. An unfinished or invalid range blocks leaving the clip until you complete it or use **Clear range**; the last saved range remains intact until a valid pair is ready. Icon tooltips appear after 200 ms.
+The catalogue, settings, and editable game definitions remain in that folder under `data\` and `configs\games\`. Updates preserve edited definitions; revised defaults appear in `configs\default-updates\`. Capture recordings stay in their original locations. To move or back up DFSorter, close it first and copy the whole extracted folder.

@@ -13,6 +13,11 @@
 - Once relevant checks pass, do not repeat them unless subsequent code changes affect their results. Scope lint and other checks to changed files where supported.
 - Documentation-only or instruction-only edits require diff review, not runtime tests.
 
+## Portable ZIP Currency
+
+- After every repository update, rebuild `build/DFSorter-Windows-x64.zip` with `pwsh -File packaging/build-release.ps1` before committing or reporting the work complete, so the local portable ZIP stays current.
+- Rebuilding the ZIP is required for documentation and instruction changes too; it does not replace the focused testing rules above. The ZIP is a local build artifact ignored by Git, while public downloads are created by the release workflow.
+
 ## Application-Wide Style and Font Consistency
 
 - Treat visual consistency across all pages, panes, dialogs, and control states as a requirement for every UI change. Equivalent content and controls must use the same typography and styling unless the user explicitly requests a difference or the canonical specification defines one.

@@ -1,8 +1,9 @@
-from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PySide6.QtWidgets import QProxyStyle, QStyle
+
+from .app_paths import ROOT
 
 THEMES = {
     "light": {
@@ -185,10 +186,10 @@ def stylesheet():
         **SIZES,
         **{f"font_{key}": value for key, value in FONT_SIZES.items()},
         "combo_chevron": (
-            Path(__file__).resolve().parents[2] / "resources/icons/chevron-down.svg"
+            ROOT / "resources/icons/chevron-down.svg"
         ).as_posix(),
         "spin_up_chevron": (
-            Path(__file__).resolve().parents[2] / "resources/icons/chevron-up.svg"
+            ROOT / "resources/icons/chevron-up.svg"
         ).as_posix(),
     }
     return (

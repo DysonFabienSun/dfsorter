@@ -3,15 +3,16 @@
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer
 
+from .app_paths import ROOT
+
 
 def load_mpv():
-    runtime = Path(__file__).resolve().parents[2] / "runtime/mpv"
+    runtime = ROOT / "runtime/mpv"
     if os.name == "nt":
         if not (runtime / "libmpv-2.dll").is_file():
             raise OSError("Playback runtime missing. Run setup-playback.ps1.")

@@ -1,10 +1,11 @@
 import json
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from .app_paths import tool
 
 
 def run_process(arguments, cancelled=lambda: False, *, progress_file=None, progress=None):
@@ -61,7 +62,7 @@ def run_process(arguments, cancelled=lambda: False, *, progress_file=None, progr
 
 
 def probe(path, cancelled=lambda: False):
-    executable = shutil.which("ffprobe")
+    executable = tool("ffprobe")
     if not executable:
         raise ValueError("Share requires ffprobe on PATH")
     return json.loads(
@@ -73,7 +74,7 @@ def probe(path, cancelled=lambda: False):
 
 
 def encode_share(clip, destination, stem, selected_range, cancelled, progress, *, detailed_progress=None):
-    executable = shutil.which("ffmpeg")
+    executable = tool("ffmpeg")
     if not executable:
         raise ValueError("Share requires ffmpeg on PATH")
     source = Path(clip["source_path"])

@@ -1,14 +1,15 @@
 import json
 import os
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
+from .app_paths import tool
+
 
 def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=20) -> dict:
     info = {"duration": None, "created": None, "error": None}
-    executable = executable or shutil.which("ffprobe")
+    executable = executable or tool("ffprobe")
     if not executable:
         info["error"] = "ffprobe unavailable; duration and media capture time unavailable"
         return info

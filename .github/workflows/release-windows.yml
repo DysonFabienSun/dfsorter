@@ -1,0 +1,38 @@
+name: Windows portable release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Ensure 7-Zip is available for pinned libmpv archive
+        shell: pwsh
+        run: |
+          if (-not (Get-Command 7z -ErrorAction SilentlyContinue) -and
+              -not (Test-Path 'C:/Program Files/7-Zip/7z.exe')) {
+            choco install 7zip --no-progress -y
+          }
+      - name: Verify version tag
+        shell: pwsh
+        run: |
+          $version = (Select-String pyproject.toml '^version = "([0-9]+\.[0-9]+\.[0-9]+)"$').Matches[0].Groups[1].Value
+          if ('v' + $version -ne '${{ github.ref_name }}') { throw 'Tag and project version differ.' }
+      - name: Build portable ZIP
+        shell: pwsh
+        run: ./packaging/build-release.ps1 -NoProxy
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create '${{ github.ref_name }}' ./build/DFSorter-Windows-x64.zip --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag

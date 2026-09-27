@@ -1,10 +1,10 @@
 import logging
-import shutil
 import sqlite3
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
+from .app_paths import tool
 from .catalogue import normalized
 from .media import discover_paths, inspect_media
 
@@ -18,7 +18,7 @@ class ScanCoordinator:
         self.cancelled = cancelled
         self.progress = progress
         self.force = force
-        self.executable = shutil.which("ffprobe")
+        self.executable = tool("ffprobe")
         self.cache = catalogue.media_cache()
         self.metrics = dict(
             traversal=0.0, probing=0.0, database=0.0, hits=0, probes=0, warnings=0, updates=0

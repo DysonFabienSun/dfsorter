@@ -262,3 +262,10 @@ Browse consistency fix: shared Editing title typography, divider above Share for
 - [x] Shared Browse/Editing/Export playback controls use a compact, vertically centered volume slider. Timeline progress and volume level have distinct semantic teal families in Light and Dark instead of borrowing neutral gray or scrollbar colors.
 - [x] Focused UI checks for theme switching/persistence, Settings, shell alignment, history icons, page layouts, Browse, Home and Editing pass. Follow-up checks cover the semantic surface roles, flattened clip rows and existing verdict state. Changed files pass Ruff. Regenerated Light and Dark captures, including Browse and Settings, at 100%, 125% and 150% under `cache/verification/facelift`; inspected representative Home, Session, Browse, Editing, Export, Config and dialog states. The known Windows `0x8001010d` shutdown diagnostic appeared without affecting the passing test result.
 - [ ] User acceptance of the implemented Light and Dark themes and final capture-library inspection.
+
+# Portable Windows distribution
+
+- [x] One-folder Windows ZIP bundles the app, Python and Qt runtime, libmpv, FFmpeg/ffprobe, icons, game defaults, and license files. Fresh extraction launched and created its own catalogue and four game definitions.
+- [x] Settings menu offers a manual update check. Download and package files are verified before a separate helper replaces the app after exit; data and edited configs remain in the portable folder.
+- [x] Focused update and UI tests passed. A disposable extracted copy updated end to end to a test version, retained state, created a backup, and reopened.
+- [ ] First public GitHub Release and acceptance on a second Windows machine.

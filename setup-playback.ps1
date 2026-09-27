@@ -1,6 +1,8 @@
+param([switch]$NoProxy)
 $ErrorActionPreference = 'Stop'
-. $PROFILE
-proxyon
+if (-not $NoProxy -and (Test-Path -LiteralPath $PROFILE)) { . $PROFILE }
+$proxyEnabled = -not $NoProxy -and [bool](Get-Command proxyon -ErrorAction SilentlyContinue)
+if ($proxyEnabled) { proxyon }
 try {
     $runtime = Join-Path $PSScriptRoot 'runtime/mpv'
     $archive = Join-Path $PSScriptRoot 'cache/mpv-dev-20260903.7z'
@@ -23,5 +25,5 @@ try {
         Invoke-WebRequest "https://raw.githubusercontent.com/mpv-player/mpv/69e63f425a/$name" -OutFile (Join-Path $runtime $name)
     }
 } finally {
-    proxyoff
+    if ($proxyEnabled) { proxyoff }
 }

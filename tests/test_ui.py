@@ -77,6 +77,10 @@ def test_status_bar_exists_before_deferred_startup_work(window):
     assert window.status_bar.currentMessage() == ""
 
 
+def test_update_check_is_in_settings_menu(window):
+    assert "Check for updates…" in [action.text() for action in window.settings_menu.actions()]
+
+
 def test_session_library_overview_defaults_and_does_not_change_filters(
     window, application, tmp_path
 ):

@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (
 )
 
 from .activities import Activities
+from .app_paths import ROOT, prepare_game_configs
 from .browse import BrowsePage
 from .catalogue import Catalogue
 from .config import Registry, has_review_metadata, source_fallback, title
@@ -79,6 +80,7 @@ from .playback import Player, playback_volume, volume_step
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
+from .update_ui import UpdateController
 from .widgets import (
     CLIP_ROLE,
     FOLDER_ROLE,
@@ -94,8 +96,6 @@ from .widgets import (
     tag_prefix,
     tool,
 )
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
@@ -1033,6 +1033,7 @@ class Window(QMainWindow):
         self.browse_write_actions = []
         actions = [
             ("Settings…", self.open_settings, None),
+            ("Check for updates…", self.check_for_updates, None),
             ("Capture folders…", lambda: self.panel("Home"), None),
             None,
             ("Reset clip metadata…", self.reset_metadata, None),
@@ -1088,6 +1089,11 @@ class Window(QMainWindow):
         dialog.exec()
         self.settings_dialog = None
         dialog.deleteLater()
+
+    def check_for_updates(self):
+        if not hasattr(self, "update_controller"):
+            self.update_controller = UpdateController(self)
+        self.update_controller.check()
 
     def update_theme_button(self):
         scheme = resolved_scheme(QApplication.instance(), self.settings.get("theme", "light"))
@@ -4152,6 +4158,7 @@ def main():
     import PySide6
 
     (ROOT / "data").mkdir(exist_ok=True)
+    prepare_game_configs()
     logging.basicConfig(
         level=logging.INFO,
         handlers=[

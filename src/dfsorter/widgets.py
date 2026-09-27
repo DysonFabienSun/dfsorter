@@ -1,6 +1,5 @@
 import html
 from functools import lru_cache
-from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
@@ -18,9 +17,10 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QStyle, QStyledItemDelegate, QToolButton, QWidget
 
+from .app_paths import ROOT
 from .theme import COLORS, SIZES, font
 
-ICONS = Path(__file__).resolve().parents[2] / "resources/icons"
+ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
 
