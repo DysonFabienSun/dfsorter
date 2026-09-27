@@ -202,12 +202,13 @@ def tool(name, label, callback):
 
 class ClipDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
+        browse = (index.data(CLIP_ROLE) or {}).get("browse_details") is not None
         height = (
-            QFontMetrics(font("md", base=option.font)).height()
-            + QFontMetrics(font("xs", base=option.font)).height()
+            QFontMetrics(font("card_title", "bold", base=option.font)).height()
+            + QFontMetrics(font("sm", base=option.font)).height()
             + 14
         )
-        return QSize(100, max(SIZES["card"], height) + SIZES["card_gap"])
+        return QSize(100, max(SIZES["browse_card"] if browse else SIZES["card"], height) + SIZES["card_gap"])
 
     def paint(self, painter, option, index):
         painter.save()
@@ -241,17 +242,34 @@ class ClipDelegate(QStyledItemDelegate):
                 card.height() - 8,
                 QColor(COLORS["accent_default"]),
             )
-        title_font = font("md", base=option.font)
-        detail_font = font("xs", base=option.font)
-        title_metrics = QFontMetrics(title_font)
+        title_font = font("base", base=option.font)
+        detail_font = font("sm", base=option.font)
+        title_metrics = QFontMetrics(font("card_title", "bold", base=option.font))
         detail_metrics = QFontMetrics(detail_font)
-        top = (
-            card.top() + (card.height() - title_metrics.height() - detail_metrics.height() - 2) // 2
-        )
+        browse = data.get("browse_details") is not None
+        compact_time = data.get("compact_time")
+        content_left = card.left() + SIZES["card_padding"]
+        if browse:
+            thumbnail = QRect(content_left, card.top() + (card.height() - SIZES["thumbnail_height"]) // 2,
+                              SIZES["thumbnail_width"], SIZES["thumbnail_height"])
+            painter.fillRect(thumbnail, QColor(COLORS["surface_pressed"]))
+            picture = data.get("thumbnail")
+            if picture is not None and not picture.isNull():
+                painter.drawImage(thumbnail, picture)
+            content_left = thumbnail.right() + 11
+        content_right = card.right() - SIZES["card_padding"]
+        time_rect = None
+        if compact_time is not None:
+            content_left += 18
+            time_width = min(
+                detail_metrics.horizontalAdvance(compact_time), max(0, card.width() // 4)
+            )
+            time_rect = QRect(content_right - time_width, card.top(), time_width, card.height())
+            content_right = time_rect.left() - 8
         area = QRect(
-            card.left() + SIZES["card_padding"],
-            top,
-            max(0, card.width() - 2 * SIZES["card_padding"]),
+            content_left,
+            card.top(),
+            max(0, content_right - content_left),
             title_metrics.height(),
         )
         painter.setFont(title_font)
@@ -272,7 +290,7 @@ class ClipDelegate(QStyledItemDelegate):
             formats.append(span)
             fragment_iterator += 1
         text = data.get("title", str(index.data()))
-        elided = QFontMetrics(font("md", "bold", base=option.font)).elidedText(
+        elided = title_metrics.elidedText(
             text, Qt.TextElideMode.ElideRight, area.width()
         )
         text_layout = QTextLayout(elided, title_font)
@@ -281,19 +299,34 @@ class ClipDelegate(QStyledItemDelegate):
         line = text_layout.createLine()
         line.setLineWidth(area.width())
         text_layout.endLayout()
+        line_height = max(title_metrics.height(), round(line.height()))
+        block_height = line_height + 2 + detail_metrics.height()
+        optical_y = -3 if compact_time is not None else 0
+        area.moveTop(card.top() + (card.height() - block_height) // 2 + optical_y)
+        area.setHeight(line_height)
         painter.save()
         painter.setClipRect(area)
         text_layout.draw(painter, QPointF(area.left(), area.top()))
         painter.restore()
+        detail_left = area.left() + (0 if compact_time is not None else 12)
         detail = QRect(
-            area.left() + 12, area.bottom() + 3, max(0, area.width() - 12), detail_metrics.height()
+            detail_left, area.bottom() + 3, max(0, content_right - detail_left), detail_metrics.height()
         )
+        if time_rect is not None:
+            time_rect.translate(0, optical_y)
+            painter.setFont(detail_font)
+            painter.setPen(QColor(COLORS["text_secondary"]))
+            painter.drawText(
+                time_rect,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                compact_time,
+            )
         painter.setFont(detail_font)
         verdict = data.get("triage")
-        warning = " · Unavailable" if data.get("unavailable") else ""
+        warning = "  Unavailable" if data.get("unavailable") else ""
         rating = data.get("rating")
         rating_text = f"R{rating}" if rating is not None else ""
-        rating_font = font("xs", "bold", base=option.font)
+        rating_font = font("sm", "bold", base=option.font)
         rating_metrics = QFontMetrics(rating_font)
         separator = " · " if rating is not None else ""
         folder_separator = " · "
@@ -302,6 +335,7 @@ class ClipDelegate(QStyledItemDelegate):
             detail_metrics.horizontalAdvance(separator)
             + rating_metrics.horizontalAdvance(rating_text)
             + detail_metrics.horizontalAdvance(folder_separator + warning)
+            + (13 if warning else 0)
         )
         flexible_width = max(0, detail.width() - fixed_width)
         folder = detail_metrics.elidedText(
@@ -323,7 +357,7 @@ class ClipDelegate(QStyledItemDelegate):
             text = detail_metrics.elidedText(
                 data["browse_details"],
                 Qt.TextElideMode.ElideRight,
-                max(0, detail.width() - detail_metrics.horizontalAdvance(warning)),
+                max(0, detail.width() - detail_metrics.horizontalAdvance(warning) - (13 if warning else 0)),
             )
         painter.setClipRect(card)
         painter.setPen(QColor(COLORS["text_secondary"]))
@@ -366,8 +400,11 @@ class ClipDelegate(QStyledItemDelegate):
             )
         if warning:
             painter.setPen(QColor(COLORS["status_warning"]))
+            warning_x = detail.left() + warning_offset + 3
+            warning_icon = icon("triangle-alert", COLORS["status_warning"], size=12)
+            warning_icon.paint(painter, QRect(warning_x, detail.center().y() - 6, 12, 12))
             painter.drawText(
-                detail.adjusted(warning_offset, 0, 0, 0),
+                detail.adjusted(warning_offset + 13, 0, 0, 0),
                 Qt.AlignmentFlag.AlignVCenter,
                 warning,
             )
@@ -381,12 +418,19 @@ class ClipDelegate(QStyledItemDelegate):
             )
         )
         painter.setPen(Qt.PenStyle.NoPen)
-        baseline = (
-            detail.top() + (detail.height() - detail_metrics.height()) / 2 + detail_metrics.ascent()
-        )
-        ink = detail_metrics.tightBoundingRect(text)
-        center_y = baseline + ink.y() + ink.height() / 2 - 1
-        painter.drawEllipse(QPointF(area.left() + 3, center_y), 3, 3)
+        if compact_time is not None:
+            center = QPointF(
+                card.left() + SIZES["card_padding"] + 4, card.center().y() + optical_y
+            )
+        else:
+            baseline = (
+                detail.top() + (detail.height() - detail_metrics.height()) / 2
+                + detail_metrics.ascent()
+            )
+            ink = detail_metrics.tightBoundingRect(text)
+            center_y = baseline + ink.y() + ink.height() / 2 - 1
+            center = QPointF(area.left() + 3, center_y)
+        painter.drawEllipse(center, 4, 4)
         painter.restore()
 
 
@@ -540,7 +584,7 @@ class Rating(QWidget):
         self.preview = None
         self.command_preview = None
         self.step = SIZES["rating"] + SIZES["rating_gap"]
-        self.setFixedSize(self.step * 5, SIZES["normal"])
+        self.setFixedSize(self.step * 5, SIZES["toolbar"])
         self.setMouseTracking(True)
         self.setAccessibleName("Rating, one to five stars; right-click to clear")
         self.setToolTip("Click a star to rate · Right-click to clear · R then 1–5")

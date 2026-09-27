@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from dfsorter.app_paths import tool
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.ui import ROOT, Window, style_application
 
@@ -30,11 +32,18 @@ def main():
         shutil.copytree(ROOT / "configs", root / "configs")
         captures = root / "captures"
         captures.mkdir()
+        fixture_video = root / "fixture.mp4"
+        subprocess.run(
+            [tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+             "-i", "testsrc2=size=320x180:rate=25:duration=1.4", "-c:v", "mpeg4",
+             "-y", str(fixture_video)],
+            check=True,
+        )
         folder = Window(root)
         source_id = folder.catalogue.add_folder(captures)
         for position in range(12):
             source = captures / f"clip-{position}.mp4"
-            source.write_bytes(b"visual fixture")
+            shutil.copyfile(fixture_video, source)
             folder.catalogue.ingest(source_id, [{"path": str(source), "game": "VALORANT"}])
         clips = folder.catalogue.clips()
         folder.catalogue.create_session([clip["clip_id"] for clip in clips])
@@ -72,6 +81,27 @@ def main():
                     folder.queue_page_reveal()
                 QTest.qWait(100)
                 folder.grab().save(str(target / f"{panel.lower()}.png"))
+                if panel in {"Home", "Browse", "Session"}:
+                    folder.showMaximized()
+                    QTest.qWait(120)
+                    folder.grab().save(str(target / f"{panel.lower()}-maximized.png"))
+                    folder.showNormal()
+                    folder.resize(1400, 900)
+                    QTest.qWait(100)
+            folder.panel("Session")
+            folder.grab().save(str(target / "projects-empty.png"))
+            folder.panel("Browse")
+            folder.unavailable_toggle.click()
+            folder.clip_filter.set_selected_values({None, "keep", "discard"})
+            QTest.qWait(100)
+            for index in range(folder.library.count()):
+                item = folder.library.item(index)
+                if "[unavailable]" in item.text():
+                    folder.library.scrollToItem(item)
+                    break
+            QTest.qWait(250)
+            folder.grab().save(str(target / "browse-unavailable.png"))
+            folder.unavailable_toggle.click()
             folder.panel("Editing")
             folder.command.setFocus()
             QTest.qWait(100)

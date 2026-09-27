@@ -56,7 +56,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `accent.pressed` | `#055E68` | Pressed strong accent controls |
 | `accent.soft` | `#E2F2F4` | Quiet accent surface |
 | `accent.softHover` | `#D4EAED` | Hover on a soft accent surface |
-| `accent.selection` | `#D9EFF1` | Selected items and text selection |
+| `accent.selection` | `#C9E9ED` | Selected items and text selection |
 | `focus` | `#087F8C` | Keyboard focus ring |
 | `status.success` | `#247A4B` | Keep and success foreground |
 | `status.successSoft` | `#E6F4EC` | Keep and success surface |
@@ -106,7 +106,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `accent.pressed` | `#32A4B1` | Pressed strong accent controls |
 | `accent.soft` | `#173D43` | Quiet accent surface |
 | `accent.softHover` | `#1B4850` | Hover on a soft accent surface |
-| `accent.selection` | `#20515A` | Selected items and text selection |
+| `accent.selection` | `#245E68` | Selected items and text selection |
 | `focus` | `#4CC1CE` | Keyboard focus ring |
 | `status.success` | `#62C98D` | Keep and success foreground |
 | `status.successSoft` | `#1C3A2A` | Keep and success surface |
@@ -165,18 +165,18 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 
 | Tokens | Values |
 | --- | --- |
-| Font sizes xs / sm / md / base / lg / xl / xxl | 11 / 12 / 13 / 14 / 16 / 20 / 26 |
+| Font sizes xs / sm / md / base / card title / lg / xl / xxl | 11 / 12 / 13 / 14 / 14 / 16 / 20 / 26 |
 | Weights regular / medium / semibold / bold | 400 / 500 / 600 / 700 |
 | Spacing 1–6 | 4 / 8 / 12 / 16 / 24 / 32 |
 | Radius none / sm / md / lg | 0 / 3 / 5 / 7 |
 | Control radius | 4 |
-| Control compact / normal / large | 24 / 28 / 32 |
+| Control compact / normal / large | 24 / 32 / 36 |
 | Toolbar / navigation height | 28 / 34 |
 | Icons xs / sm / md / lg / xl | 12 / 14 / 16 / 20 / 24 |
 
-Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 11 px. Editing working titles use 13 px regular metadata in `text.secondary`, 13 px regular game codes and separators in `text.muted`, and 16 px bold mainline in `text.primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold. Compact pane headings use 14 px semibold primary text. The Session clips header has a transparent background, shows the numeric session position as secondary text beside its title, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
+Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 12 px. Editing working titles use 13 px regular metadata in `text.secondary`, 13 px regular game codes and separators in `text.muted`, and 16 px bold mainline in `text.primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 20 px semibold with a centered 20 px leading icon on Home and Session. Compact pane headings use 14 px semibold primary text; Projects has a centered 16 px leading icon. The Session clips header has a transparent background, shows the numeric session position as secondary text beside its title, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
-Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 28 px ordinary controls and 24 px compact controls. Button/input radius is 4 px; larger grouped panels may use 5–7 px. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
+Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; larger grouped panels may use 5–7 px. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
 
 ### Surface and border hierarchy
 
@@ -234,7 +234,7 @@ Activities sits between Redo and Theme as an icon-only 26 px navigation utility 
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Align heading and footer text exactly to card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on this same guide. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Align the Editing header and footer text to its card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges begin on that same guide; Home and Session cards shift their title text right to make room for the standalone verdict dot. Shared heading, footer and control margins are 8 px from the sidebar surface; the left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
@@ -248,19 +248,19 @@ already establish the group.
 
 
 Use one shared delegate in all left-pane library, Session and Export views. A clip row has a
-48 px body, 1 px inter-row gap and 7 px horizontal padding. At rest it is transparent against
+56 px body, 1 px inter-row gap and 7 px horizontal padding. At rest it is transparent against
 `surface.sidebar` with only a short, subtle bottom separator inset to the text edge. It must
 read as a dense file/media browser row, not a stack of rounded cards. Hover receives a soft
 neutral fill. Selection may use a 3 px radius because its pale accent surface is transient.
 Grow only as required by font metrics.
 
-Line one uses 12 px regular muted game codes, 12 px regular structured metadata in `text.secondary`, and 13 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks remain 13 px. Line two is a 6 px triage dot, optically offset 1 px above the text-ink center, followed by canonical game name (or Unassigned), optional rating and capture-folder name at 11 px. Do not repeat Keep, Discard or Pending as text. Keep the two lines together with a 2 px gap, vertically centered in the card, rather than anchored to opposite edges. Reserve metadata width for the folder and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
+Line one uses 13 px regular muted game codes, 13 px regular structured metadata in `text.secondary`, and 14 px bold primary mainline, with a muted ` | ` separator when both portions exist. Filename fallbacks use 14 px. Line two shows canonical game name (or Unassigned), optional rating and capture-folder name at 12 px. Do not repeat Keep, Discard or Pending as text. Keep the two lines together with a 2 px gap and center their actual rendered height in the row. Home and Session raise the block, dot and time together by 3 logical px for optical centering. They put the 8 px verdict dot on its own at the left of this block, with roughly 9 px between the dot edge and text, and a compact relative capture time right-aligned in the row; no overflow control follows the time. Other metadata cards keep the dot beside line two. Reserve metadata width for the folder and an amber Unavailable label before eliding the game name. Long titles elide; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
 
 Hover uses `surface.hover`; selection uses `accent.selection` plus a 2 px `accent.default` left indicator. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
 
 When additional cards exist beyond a visible list edge, overlay a non-interactive 16 px vertical gradient at that edge, fading from `surface.sidebar` to transparent toward the content. The fade sits above card content without consuming layout space and disappears completely at the corresponding start or end of the list. Do not add chevrons or borders. On the first opening of each applicable navigation page, position a selected card that is not first with only the bottom third of the immediately preceding card visible above it. Preserve the viewport on later selection and navigation changes.
 
-Browse uses relative capture time and capture-folder name on line two instead of game/triage text; retain shared card geometry, status dot and Unavailable treatment. Content and selection behavior remain governed by main specs §§9.5, 10.1 and 12.2.
+Browse uses a 64 px row with an 84 × 48 px letterboxed thumbnail before the two text lines. It shows relative capture time and capture-folder name on line two instead of game/triage text and retains the shared verdict dot. Unavailable adds a separate amber warning icon beside its label. Neutral thumbnails appear while loading or when extraction fails. Content and selection behavior remain governed by main specs §§9.5, 10.1 and 12.2.
 
 ### Projects
 
@@ -458,7 +458,7 @@ Let Qt process layout before comparing positions. Compare edges in same coordina
 - Exercise normal, hover, pressed, checked, selected, keyboard-focus and disabled states; retain text/shape cues beyond color. Check rating hover/clear and multi-selection where supported.
 - Check `>>>` activation/cancellation, range warnings and command feedback without unwanted vertical jumps. Verify adjacent clip cards and narrow panes.
 - Check short, long and mixed Chinese/English text; wrapping in detail panes, elision/full tooltips in cards, and visibility of bottom actions.
-- Compare normal/maximized windows and 100%, 125%, 150% scaling for affected components. Inspect representative menus/dialogs when shared styling changes.
+- Compare normal/maximized windows at 100% scaling for affected components. Check 125% only when a change specifically affects display scaling; do not run 150% verification. Inspect representative menus/dialogs when shared styling changes.
 - Capture the same representative populated, empty, focused, disabled and selected states in Light and Dark. Check System mode against both operating-system appearances and verify live system changes. Theme switching must not leave stale icons, rich-text colors, custom-painted controls, menus or already-open dialogs.
 - Audit contrast for ordinary text, secondary text, focus boundaries, selected items, destructive states and unavailable warnings. Do not approve a palette solely from isolated swatches; evaluate colors on their actual adjacent surfaces.
 - Run smallest relevant existing checks for UI edits, using isolated catalogues/generated media where needed. Broaden only for concrete impact. Documentation-only changes need diff/link review, not runtime tests.

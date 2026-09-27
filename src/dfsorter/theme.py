@@ -33,7 +33,7 @@ THEMES = {
         "accent_pressed": "#055E68",
         "accent_soft": "#E2F2F4",
         "accent_soft_hover": "#D4EAED",
-        "accent_selection": "#D9EFF1",
+        "accent_selection": "#C9E9ED",
         "focus": "#087F8C",
         "status_success": "#247A4B",
         "status_success_soft": "#E6F4EC",
@@ -93,7 +93,7 @@ THEMES = {
         "accent_pressed": "#32A4B1",
         "accent_soft": "#173D43",
         "accent_soft_hover": "#1B4850",
-        "accent_selection": "#20515A",
+        "accent_selection": "#245E68",
         "focus": "#4CC1CE",
         "status_success": "#62C98D",
         "status_success_soft": "#1C3A2A",
@@ -132,17 +132,20 @@ THEMES = {
 COLORS = dict(THEMES["light"])
 ACTIVE_SCHEME = "light"
 
-FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "lg": 16, "xl": 20, "xxl": 26}
+FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "lg": 16, "xl": 20, "xxl": 26}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
 RADII = {"none": 0, "sm": 3, "md": 5, "lg": 7, "control": 4}
 SIZES = {
     "compact": 24,
-    "normal": 28,
-    "large": 32,
+    "normal": 32,
+    "large": 36,
     "toolbar": 28,
     "nav": 34,
-    "card": 48,
+    "card": 56,
+    "browse_card": 64,
+    "thumbnail_width": 84,
+    "thumbnail_height": 48,
     "card_gap": 1,
     "card_padding": 7,
     "panel_padding": 12,
@@ -220,7 +223,8 @@ def stylesheet():
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
         QLabel[role="helper"] { color: %(text_muted)s; font-size: %(font_xs)spx; }
         QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
-        QLabel[role="sectionHeading"], QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="sectionHeading"] { font-size: %(font_xl)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
         QPushButton[periodSegment="true"] { border-radius: 0px; margin: 0px; border-left: none; }
@@ -258,7 +262,8 @@ def stylesheet():
         QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(status_warning)s; }
         QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(status_danger)s; }
         QLineEdit#command[validationState="saved"] { border-bottom: 2px solid %(status_success)s; }
-        QPushButton, QToolButton { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 4px; padding: 5px 9px; min-height: 18px; }
+        QPushButton, QToolButton { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 4px; padding: 5px 9px; min-height: 20px; }
+        QPushButton[role="primary"], QPushButton[role="prominentNeutral"] { min-height: 24px; }
         QPushButton:hover, QToolButton:hover { background: %(surface_hover)s; }
         QPushButton:pressed, QToolButton:pressed { background: %(surface_pressed)s; }
         QPushButton:checked, QToolButton:checked { background: %(accent_soft)s; border-color: %(accent_default)s; }
@@ -410,8 +415,8 @@ def apply_theme(application, mode="light"):
 
 
 def title_styles(card=False, on_video=False):
-    small = FONT_SIZES["sm" if card else "md"]
-    large = FONT_SIZES["md" if card else "lg"]
+    small = FONT_SIZES["md"]
+    large = FONT_SIZES["card_title" if card else "lg"]
     muted = COLORS["player_chrome_muted" if on_video else "text_muted"]
     secondary = COLORS["player_chrome_secondary" if on_video else "text_secondary"]
     primary = COLORS["player_chrome_text"] if on_video else COLORS["text_primary"]

@@ -600,6 +600,7 @@ def test_browse_relative_time_refreshes_without_rebuilding_library(window, tmp_p
     item = window.library.currentItem()
     assert item.data(CLIP_ROLE)["browse_details"].startswith("2 days ago")
     assert "Captured:" in item.toolTip()
+    window.request_visible_thumbnails()
 
     window.media_info[clip["source_path"]] = {"created": (now - timedelta(minutes=2)).isoformat()}
     window.browse_time_timer.timeout.emit()
@@ -607,6 +608,34 @@ def test_browse_relative_time_refreshes_without_rebuilding_library(window, tmp_p
     assert item.data(CLIP_ROLE)["browse_details"].startswith("2 minutes ago")
     window.panel("Home")
     assert not window.browse_time_timer.isActive()
+
+
+def test_home_and_session_cards_show_compact_time_without_rebuilding(
+    window, tmp_path, monkeypatch
+):
+    clip_id = add_clips(window, tmp_path)[0]
+    clip = window.catalogue.clip(clip_id)
+    now = datetime.now(timezone.utc)
+    label = {"value": "2 minutes ago"}
+    monkeypatch.setattr(
+        "dfsorter.overview.relative_capture_time",
+        lambda captured, current_time=None: label["value"],
+    )
+    window.media_info[clip["source_path"]] = {"created": (now - timedelta(minutes=2)).isoformat()}
+    window.panel("Home")
+    item = window.library.item(0)
+    assert window.library_time_timer.isActive()
+    assert item.data(CLIP_ROLE)["compact_time"] == "2m ago"
+    assert "Captured:" in item.toolTip()
+    label["value"] = "4 minutes ago"
+    window.library_time_timer.timeout.emit()
+    assert window.library.item(0) is item
+    assert item.data(CLIP_ROLE)["compact_time"] == "4m ago"
+    window.panel("Session")
+    assert window.library.item(0).data(CLIP_ROLE)["compact_time"] == "4m ago"
+    window.panel("Browse")
+    assert not window.library_time_timer.isActive()
+    assert window.library.item(0).data(CLIP_ROLE)["compact_time"] is None
 
 
 def test_browse_temporary_range_and_share(window, application, tmp_path, monkeypatch):
@@ -3068,6 +3097,8 @@ def test_projects_drawer_tab_and_pane_close(window):
     assert not window.right.isVisible()
     assert abs(window.left.width() - home_library_width) <= 1
     assert window.projects_toggle.isVisible()
+
+
     window.splitter.setSizes([500, 870, 0])
     resized_library_width = window.left.width()
     window.panel("Session")
@@ -3080,6 +3111,29 @@ def test_projects_drawer_tab_and_pane_close(window):
     window.panel("Home")
     assert window.right.isVisible()
     assert window.projects_close.isVisible()
+
+
+def test_facelift_heading_icons_share_title_centerline(window, application):
+    for panel, names in (
+        ("Home", ("Capture folders",)),
+        ("Session", ("Library overview", "No active session", "Projects")),
+    ):
+        window.panel(panel)
+        application.processEvents()
+        for name in names:
+            label = next(
+                child for child in window.findChildren(QLabel)
+                if child.text() == name and child.isVisible()
+            )
+            glyph = next(
+                child for child in window.findChildren(QLabel)
+                if child.parent() is label.parent() and child.property("headingIcon")
+            )
+            assert abs(
+                glyph.mapToGlobal(glyph.rect().center()).y()
+                - label.mapToGlobal(label.rect().center()).y()
+            ) <= 1
+            assert glyph.property("headingIconSize") == (16 if name == "Projects" else 20)
 
 
 def test_settings_remain_available_in_browse(window):

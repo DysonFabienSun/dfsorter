@@ -68,7 +68,7 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 - [x] Isolated visual review across six pages, narrow/normal/maximized layouts and dialogs at 100%, 125% and 150% scaling.
 - [ ] User acceptance of density, readability and clip-card grouping with the capture library.
 
-Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/format and `git diff --check` passed. Native Windows Qt fixture startup emitted a `0x8001010d` diagnostic, but the suite completed with exit code 0. Visual fixtures can be regenerated with `uv run --no-sync python tests/visual_design.py` and `QT_SCALE_FACTOR=1`, `1.25`, or `1.5`; outputs are in `cache/verification/design`. These fixtures deliberately include invalid/missing media to exercise unavailable states; the regression suite separately tests real H.264/AV1 playback.
+Design verification: `uv run --no-sync pytest -q` passed 39 tests; Ruff lint/format and `git diff --check` passed. Native Windows Qt fixture startup emitted a `0x8001010d` diagnostic, but the suite completed with exit code 0. Visual fixtures can be regenerated with `uv run --no-sync python tests/visual_design.py` and `QT_SCALE_FACTOR=1` (or `1.25` when display scaling specifically matters); outputs are in `cache/verification/design`. These fixtures deliberately include invalid/missing media to exercise unavailable states; the regression suite separately tests real H.264/AV1 playback.
 
 ## Verification and deliberate limits
 
@@ -262,6 +262,16 @@ Browse consistency fix: shared Editing title typography, divider above Share for
 - [x] Shared Browse/Editing/Export playback controls use a compact, vertically centered volume slider. Timeline progress and volume level have distinct semantic teal families in Light and Dark instead of borrowing neutral gray or scrollbar colors.
 - [x] Focused UI checks for theme switching/persistence, Settings, shell alignment, history icons, page layouts, Browse, Home and Editing pass. Follow-up checks cover the semantic surface roles, flattened clip rows and existing verdict state. Changed files pass Ruff. Regenerated Light and Dark captures, including Browse and Settings, at 100%, 125% and 150% under `cache/verification/facelift`; inspected representative Home, Session, Browse, Editing, Export, Config and dialog states. The known Windows `0x8001010d` shutdown diagnostic appeared without affecting the passing test result.
 - [ ] User acceptance of the implemented Light and Dark themes and final capture-library inspection.
+
+# Browse thumbnails and three-pane refinement
+
+- [x] Shared metadata rows are 56 px with 8 px verdict dots; Browse rows are 64 px with 84 × 48 px stills. Ordinary actions use a 32 px target and prominent actions 36 px, while icon toolbars stay compact.
+- [x] Home, Session and Projects headings use shared Lucide icons. Empty Projects shows a Create project action without changing pane visibility or existing project controls.
+- [x] Browse requests nearby stills on demand through at most two FFmpeg jobs. Thumbnails are letterboxed at 168 × 96 px, cached under ignored `cache/thumbnails`, and invalidated by source path, size or modification time. Missing and failed sources keep a neutral placeholder.
+- [x] Focused UI and thumbnail checks pass. Light and Dark captures at normal and maximized sizes are under `cache/verification/facelift/`. Current visual verification uses 100% scaling; 150% is no longer part of the verification workflow.
+- [x] Heading icons are centered against their text, with a smaller icon for the compact Projects heading. Shared library cards use 13 px title metadata, 14 px bold mainlines and filename fallbacks, and 12 px second-line metadata. Thumbnail FFmpeg jobs suppress Windows command windows.
+- [x] Home and Session cards center their rendered two-line text block, place the verdict dot close beside it, and show compact relative capture time at the right. The time updates without rebuilding the list; no overflow menu was added.
+- [x] Follow-up visual review at 100% found the Home and Session card content optically low. Text, verdict dot and time now share a 3 px upward offset. Future visual checks use 100% and only use 125% when display scaling is directly affected; 150% is excluded.
 
 # Portable Windows distribution
 

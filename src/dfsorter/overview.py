@@ -51,6 +51,22 @@ def relative_capture_time(captured, current_time=None):
     return f"{count} {unit}{'' if count == 1 else 's'} ago"
 
 
+def compact_capture_time(captured, current_time=None):
+    """Short relative label for the right edge of Home and Session cards."""
+    label = relative_capture_time(captured, current_time)
+    if label == "Date unavailable":
+        return "—"
+    if label == "Just now":
+        return "now"
+    if label == "Yesterday":
+        return "1d ago"
+    count, unit, _ago = label.split()
+    suffix = {"minute": "m", "hour": "h", "day": "d", "month": "mo", "year": "y"}[
+        unit.rstrip("s")
+    ]
+    return f"{count}{suffix} ago"
+
+
 def library_overview(clips, media_info, period="All time", current_time=None):
     current_time = current_time or datetime.now(timezone.utc)
     current_time = current_time.astimezone(timezone.utc)

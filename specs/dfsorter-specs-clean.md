@@ -391,6 +391,8 @@ Library views support multi-selection outside Editing; Editing uses single selec
 
 Every metadata-style left-pane clip list shows `Game · R# · Capture folder` on the second line when rated and `Game · Capture folder` when unrated, with a bold theme-aware `R1`–`R5` label. Use the capture folder's final path component, or `Unlinked` for retained clips without a registered folder. Keep, Discard and Pending are represented only by the colored status dot at the left of the line. This applies to Home, Session, Editing and Export. Browse retains capture time and folder on that line. The explicit rating text remains present independently of color.
 
+Home and Session place a compact relative capture-time label at the right of each clip row and center the verdict dot beside the two-line text block. The time updates while either pane remains open, without rebuilding or moving the list. These rows have no trailing overflow action.
+
 The search bar does **not** expose raw SQL.
 
 Examples of structured queries include:
@@ -421,6 +423,8 @@ Legacy clips whose folders were previously unregistered appear as an **Unlinked 
 ---
 
 ### 10.1 Browse Panel
+
+Browse alone shows a cached still thumbnail before each card's title. Decode near one second, use an earlier point for subsecond clips, and fall back to the first frame if needed. Generate a 168 × 96 letterboxed still for an 84 × 48 display. Request only visible cards and about one screen around them, with at most two extraction jobs at once. Cache disposable results under `cache/thumbnails` using clip ID and source path, size and modification time; bound memory use. Missing or undecodable sources show a neutral placeholder. Source changes allow failed extraction to be retried. Stale background results must not alter a newly filtered or selected list, and extraction must not block browsing or rescanning.
 
 Only Browse provides player fullscreen. Its transport-row Fullscreen button, F or F11 toggles fullscreen; Esc exits. Plain F does not trigger while editing text. In fullscreen, [ and ] select the previous and next visible clips without wrapping, and Up and Down raise and lower volume by 5%; outside fullscreen, Browse Up and Down navigate clips. Hide navigation, library, status bar, below-video titles and Share form. Show the current working title in a compact, near-white top overlay. Anchor the timeline and the existing playback/range controls in a dark bottom overlay, with transport, mute and time clustered left and I/O, Edit clip, Share and Fullscreen clustered right. Fullscreen Share exits fullscreen and focuses the existing Share form. Both overlays appear on entry, mouse motion, pause and control interaction, fade away after a short idle period during playback, and stay visible while paused. Preserve the loaded clip, playback position/state and temporary range. Restore prior window geometry, normal/maximized state and pane sizes on exit; leaving Browse exits fullscreen. Editing and Export have no fullscreen action.
 

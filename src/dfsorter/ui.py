@@ -71,7 +71,13 @@ from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import prepare_export_manifest, run_export_manifest, share_clip, validate
-from .overview import PERIOD_DAYS, capture_datetime, library_overview, relative_capture_time
+from .overview import (
+    PERIOD_DAYS,
+    capture_datetime,
+    compact_capture_time,
+    library_overview,
+    relative_capture_time,
+)
 from .parsing import (
     parse_command_details,
     preview_command_details,
@@ -81,6 +87,7 @@ from .playback import Player, playback_volume, volume_step
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
+from .thumbnails import ThumbnailCache
 from .update_ui import UpdateController
 from .widgets import (
     CLIP_ROLE,
@@ -281,6 +288,26 @@ def page():
     return widget, layout
 
 
+def heading(text, icon_name, heading_role="sectionHeading"):
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    icon_size = SIZES["icon_md"] if heading_role == "paneHeading" else SIZES["icon_lg"]
+    box_size = icon_size + 4
+    glyph = QLabel()
+    glyph.setProperty("headingIcon", icon_name)
+    glyph.setProperty("headingIconSize", icon_size)
+    glyph.setFixedSize(box_size, box_size)
+    glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    glyph.setPixmap(icon(icon_name, size=icon_size).pixmap(icon_size, icon_size))
+    label = QLabel(text)
+    role(label, heading_role)
+    label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+    row.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
+    row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+    row.addStretch()
+    return row, label
+
+
 class CurrentPageStack(QStackedWidget):
     def minimumSizeHint(self):
         page = self.currentWidget()
@@ -340,6 +367,11 @@ class Window(QMainWindow):
         self.folder_size_worker = None
         self.folder_size_pending = False
         self.clip_folder_names = self.catalogue.clip_folder_names()
+        self.thumbnails = ThumbnailCache(self.root, self)
+        self.thumbnails.ready.connect(self.thumbnail_ready)
+        self.thumbnail_timer = QTimer(self)
+        self.thumbnail_timer.setSingleShot(True)
+        self.thumbnail_timer.timeout.connect(self.request_visible_thumbnails)
         self.pending_in = None
         self.pending_out = None
         self.range_block_message = ""
@@ -547,6 +579,8 @@ class Window(QMainWindow):
         scrollbar = self.library.verticalScrollBar()
         scrollbar.rangeChanged.connect(self.update_library_scroll_fades)
         scrollbar.valueChanged.connect(self.update_library_scroll_fades)
+        scrollbar.valueChanged.connect(self.schedule_thumbnails)
+        scrollbar.rangeChanged.connect(self.schedule_thumbnails)
         self.library.currentItemChanged.connect(self.select_clip)
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.library.customContextMenuRequested.connect(self.show_clip_context_menu)
@@ -577,9 +611,8 @@ class Window(QMainWindow):
         role(self.right, "sidebar")
         projects_header = QHBoxLayout()
         projects_header.setContentsMargins(0, 0, 0, 0)
-        self.projects_heading = QLabel("Projects")
-        role(self.projects_heading, "paneHeading")
-        projects_header.addWidget(self.projects_heading)
+        projects_title_row, self.projects_heading = heading("Projects", "folder-open", "paneHeading")
+        projects_header.addLayout(projects_title_row)
         projects_header.addStretch()
         self.projects_close = tool("x", "Close Projects", self.toggle_projects)
         self.projects_close.setObjectName("projectsPaneClose")
@@ -591,6 +624,26 @@ class Window(QMainWindow):
         right_layout.addWidget(self.active_label)
         self.projects = QListWidget()
         right_layout.addWidget(self.projects)
+        self.projects_empty = QWidget()
+        empty_layout = QVBoxLayout(self.projects_empty)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_icon = QLabel()
+        empty_icon.setProperty("headingIcon", "folder")
+        empty_icon.setProperty("headingIconSize", 32)
+        empty_icon.setFixedSize(48, 48)
+        empty_icon.setPixmap(icon("folder", size=32).pixmap(32, 32))
+        empty_layout.addWidget(empty_icon, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_title = QLabel("No projects yet")
+        role(empty_title, "paneHeading")
+        empty_layout.addWidget(empty_title, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_description = QLabel("Create a project to organize clips and exports.")
+        empty_description.setWordWrap(True)
+        role(empty_description, "secondary")
+        empty_layout.addWidget(empty_description, 0, Qt.AlignmentFlag.AlignHCenter)
+        create_project = button("Create project…", self.new_project)
+        set_icon(create_project, "plus")
+        empty_layout.addWidget(create_project, 0, Qt.AlignmentFlag.AlignHCenter)
+        right_layout.addWidget(self.projects_empty, 1)
         project_tools = QHBoxLayout()
         self.project_global_controls = []
         self.projects.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
@@ -732,6 +785,9 @@ class Window(QMainWindow):
         self.browse_time_timer = QTimer(self)
         self.browse_time_timer.setInterval(60_000)
         self.browse_time_timer.timeout.connect(self.refresh_browse_times)
+        self.library_time_timer = QTimer(self)
+        self.library_time_timer.setInterval(60_000)
+        self.library_time_timer.timeout.connect(self.refresh_library_times)
         QApplication.instance().installEventFilter(self)
         QApplication.instance().focusChanged.connect(self.command_focus_changed)
         self.player.media.playbackStateChanged.connect(self.command_playback_changed)
@@ -757,9 +813,8 @@ class Window(QMainWindow):
         self.browse = BrowsePage(self)
         self.pages["Browse"][1].addWidget(self.browse)
         home = self.pages["Home"][1]
-        home_title = QLabel("Capture folders")
-        role(home_title, "heading")
-        home.addWidget(home_title)
+        home_title_row, _home_title = heading("Capture folders", "folder-open")
+        home.addLayout(home_title_row)
         explanation = QLabel(
             "Add folders containing recordings. Rescans discover new clips; source media is never modified."
         )
@@ -836,9 +891,8 @@ class Window(QMainWindow):
         overview_layout.setContentsMargins(16, 16, 16, 16)
         overview_layout.setSpacing(8)
         overview_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
-        overview_heading = QLabel("Library overview")
-        role(overview_heading, "sectionHeading")
-        overview_layout.addWidget(overview_heading)
+        overview_title_row, _overview_heading = heading("Library overview", "chart-no-axes-column")
+        overview_layout.addLayout(overview_title_row)
         overview_description = QLabel(
             "Current verdicts for clips captured in the selected period."
         )
@@ -887,9 +941,8 @@ class Window(QMainWindow):
         session_setup = QVBoxLayout(session_group)
         session_setup.setContentsMargins(16, 16, 16, 16)
         session_setup.setSpacing(8)
-        self.session_setup_heading = QLabel()
-        role(self.session_setup_heading, "sectionHeading")
-        session_setup.addWidget(self.session_setup_heading)
+        session_title_row, self.session_setup_heading = heading("", "circle-play")
+        session_setup.addLayout(session_title_row)
         self.session_setup_states = QStackedWidget()
         active_session_page = QWidget()
         active_session = QVBoxLayout(active_session_page)
@@ -1165,6 +1218,11 @@ class Window(QMainWindow):
             self.save_settings()
         apply_theme(QApplication.instance(), mode)
         refresh_icons(self)
+        for glyph in self.findChildren(QLabel):
+            name = glyph.property("headingIcon")
+            if name:
+                size = glyph.property("headingIconSize") or 20
+                glyph.setPixmap(icon(name, size=size).pixmap(size, size))
         self.range_warning_icon.setPixmap(
             icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
         )
@@ -1633,6 +1691,7 @@ class Window(QMainWindow):
         self.browse.player.media.pause()
         if self.current_panel == "Browse" and name != "Browse":
             self.browse.leave()
+            self.thumbnails.retain(set())
         changing_panel = name != self.current_panel
         if changing_panel:
             self.remember_library_page(self.current_panel)
@@ -1648,6 +1707,10 @@ class Window(QMainWindow):
             self.browse_time_timer.start()
         else:
             self.browse_time_timer.stop()
+        if name in {"Home", "Session"}:
+            self.library_time_timer.start()
+        else:
+            self.library_time_timer.stop()
         self.reject_enter_armed = False
         if name != "Editing":
             self.rating.command_preview = None
@@ -1720,6 +1783,8 @@ class Window(QMainWindow):
         self.add_project_next.setEnabled(bool(active))
         project_selection = self.selected_id(self.projects)
         self.projects.clear()
+        self.projects.setVisible(bool(projects))
+        self.projects_empty.setVisible(not projects)
         for project in projects:
             item = QListWidgetItem(project["name"])
             if project["project_id"] == active:
@@ -1977,6 +2042,7 @@ class Window(QMainWindow):
         self.overview_rows.addWidget(row)
 
     def render_card(self, item, clip):
+        previous = item.data(CLIP_ROLE) or {}
         available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
         card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
@@ -1985,11 +2051,16 @@ class Window(QMainWindow):
             mainline_separator=" | ",
         )
         browse_details = None
+        compact_time = None
+        captured = None
         if self.current_panel == "Browse":
             captured = capture_datetime(clip, self.media_info)
             capture_label = relative_capture_time(captured)
             folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
             browse_details = f"{capture_label} · {folder_name}"
+        elif self.current_panel in {"Home", "Session"}:
+            captured = capture_datetime(clip, self.media_info)
+            compact_time = compact_capture_time(captured)
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
         folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
         details = browse_details or (
@@ -1997,7 +2068,7 @@ class Window(QMainWindow):
         )
         item.setText(f"{card_title}\n{details}{available}")
         tooltip = item.text()
-        if self.current_panel == "Browse" and captured is not None:
+        if self.current_panel in {"Browse", "Home", "Session"} and captured is not None:
             tooltip += "\nCaptured: " + captured.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         item.setToolTip(tooltip + "\n" + clip["source_path"])
         item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
@@ -2017,16 +2088,79 @@ class Window(QMainWindow):
                     == "3rd",
                 ),
                 "browse_details": browse_details,
+                "compact_time": compact_time,
                 "game": clip["game"],
                 "rating": clip["rating"],
                 "folder": folder_name,
                 "triage": clip["triage"],
                 "unavailable": bool(available),
+                "thumbnail": previous.get("thumbnail") if self.current_panel == "Browse" else None,
+                "thumbnail_key": previous.get("thumbnail_key") if self.current_panel == "Browse" else None,
             },
         )
 
+    def schedule_thumbnails(self, *_args):
+        if self.current_panel == "Browse" and hasattr(self, "thumbnail_timer"):
+            self.thumbnail_timer.start(30)
+
+    def request_visible_thumbnails(self):
+        if self.current_panel != "Browse" or not self.library.count():
+            self.thumbnails.retain(set())
+            return
+        viewport = self.library.viewport()
+        top = self.library.indexAt(QPoint(4, 0)).row()
+        bottom = self.library.indexAt(QPoint(4, max(0, viewport.height() - 1))).row()
+        top = max(0, top)
+        bottom = self.library.count() - 1 if bottom < 0 else bottom
+        screen = max(1, bottom - top + 1)
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        needed = set()
+        for row in range(max(0, top - screen), min(self.library.count(), bottom + screen + 1)):
+            item = self.library.item(row)
+            clip = clips.get(item.data(Qt.ItemDataRole.UserRole))
+            if clip is None:
+                continue
+            media = self.media_info.get(clip["source_path"])
+            duration = media["duration"] if media is not None and "duration" in media.keys() else None
+            request_clip = {**clip, "duration": duration}
+            key, image = self.thumbnails.request(request_clip)
+            if key is not None:
+                needed.add(key)
+            data = item.data(CLIP_ROLE) or {}
+            if data.get("thumbnail_key") != key or data.get("thumbnail") is not image:
+                data["thumbnail_key"] = key
+                data["thumbnail"] = image
+                item.setData(CLIP_ROLE, data)
+        self.thumbnails.retain(needed)
+
+    def thumbnail_ready(self, clip_id, key, image):
+        if self.current_panel != "Browse" or image is None:
+            return
+        clip = self.catalogue.clip(clip_id)
+        if clip is None or self.thumbnails.signature(clip) != key:
+            return
+        for row in range(self.library.count()):
+            item = self.library.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) != clip_id:
+                continue
+            data = item.data(CLIP_ROLE) or {}
+            if data.get("thumbnail_key") == key:
+                data["thumbnail"] = image
+                item.setData(CLIP_ROLE, data)
+            break
+
     def refresh_browse_times(self):
         if self.current_panel != "Browse":
+            return
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            clip = clips.get(item.data(Qt.ItemDataRole.UserRole))
+            if clip is not None:
+                self.render_card(item, clip)
+
+    def refresh_library_times(self):
+        if self.current_panel not in {"Home", "Session"}:
             return
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         for index in range(self.library.count()):
@@ -2300,6 +2434,7 @@ class Window(QMainWindow):
                         break
             self.library.horizontalScrollBar().setValue(horizontal_scroll)
             self.library.verticalScrollBar().setValue(scroll)
+            self.schedule_thumbnails()
             self.library.blockSignals(False)
             self.library_page_switch = False
             if self.current_panel == "Browse":
@@ -2307,6 +2442,7 @@ class Window(QMainWindow):
                 clip = self.catalogue.clip(current) if current else None
                 self.browse.load(clip, prepared=self.take_prepared_clip("Browse", clip))
                 self.update_browse_navigation()
+                self.schedule_thumbnails()
             self.library_error.clear()
             self.library_error.hide()
         except ValueError as error:
@@ -4232,7 +4368,10 @@ class Window(QMainWindow):
             event.ignore()
             return
         self.atomic_edit = None
+        self.thumbnails.close()
         self.preload_timer.stop()
+        self.browse_time_timer.stop()
+        self.library_time_timer.stop()
         self.player.media.shutdown()
         self.export_player.media.shutdown()
         self.browse.player.media.shutdown()

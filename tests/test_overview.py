@@ -1,6 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
-from dfsorter.overview import capture_datetime, library_overview, relative_capture_time
+from dfsorter.overview import (
+    capture_datetime,
+    compact_capture_time,
+    library_overview,
+    relative_capture_time,
+)
 
 NOW = datetime(2026, 9, 25, 12, tzinfo=timezone.utc)
 
@@ -82,6 +87,10 @@ def test_relative_capture_time_uses_local_calendar_and_coarse_units():
     for captured, expected in cases:
         assert relative_capture_time(captured, now) == expected
     assert relative_capture_time(None, now) == "Date unavailable"
+    assert compact_capture_time(None, now) == "—"
+    assert compact_capture_time(now - timedelta(minutes=2), now) == "2m ago"
+    assert compact_capture_time(now - timedelta(hours=2), now) == "2h ago"
+    assert compact_capture_time(now - timedelta(days=1), now) == "1d ago"
 
     just_after_midnight = now.replace(hour=0, minute=5)
     assert relative_capture_time(
