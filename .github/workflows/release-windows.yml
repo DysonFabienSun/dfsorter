@@ -26,13 +26,24 @@ jobs:
       - name: Verify version tag
         shell: pwsh
         run: |
-          $version = (Select-String pyproject.toml '^version = "([0-9]+\.[0-9]+\.[0-9]+)"$').Matches[0].Groups[1].Value
-          if ('v' + $version -ne '${{ github.ref_name }}') { throw 'Tag and project version differ.' }
-      - name: Build portable ZIP
-        shell: pwsh
-        run: ./packaging/build-release.ps1 -NoProxy
-      - name: Publish GitHub Release
+          $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          if ('v' + $version -ne '${{ github.ref_name }}') {
+            throw "Tag ${{ github.ref_name }} does not match project version v$version."
+          }
+      - name: Abort if release already exists
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create '${{ github.ref_name }}' ./build/DFSorter-Windows-x64.zip --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag
+        run: |
+          gh release view '${{ github.ref_name }}' *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release ${{ github.ref_name }} already exists. Aborting."
+          }
+      - name: Build portable ZIP
+        shell: pwsh
+        run: ./packaging/build-release.ps1 -NoProxy
+      - name: Create draft GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create '${{ github.ref_name }}' ./build/DFSorter-Windows-x64.zip --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag --draft
