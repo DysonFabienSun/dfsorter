@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from dfsorter.overview import capture_datetime, library_overview
+from dfsorter.overview import capture_datetime, library_overview, relative_capture_time
 
 NOW = datetime(2026, 9, 25, 12, tzinfo=timezone.utc)
 
@@ -56,3 +56,25 @@ def test_capture_date_prefers_media_and_falls_back_to_file(tmp_path):
     assert cached == datetime(2020, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
     assert fallback is not None
     assert fallback.tzinfo == timezone.utc
+
+
+def test_relative_capture_time_uses_local_calendar_and_coarse_units():
+    local_zone = datetime.now().astimezone().tzinfo
+    now = datetime(2026, 9, 25, 12, 0, tzinfo=local_zone)
+    cases = [
+        (now - timedelta(seconds=30), "Just now"),
+        (now - timedelta(minutes=1), "1 minute ago"),
+        (now - timedelta(hours=2), "2 hours ago"),
+        (now - timedelta(days=1), "Yesterday"),
+        (now - timedelta(days=2), "2 days ago"),
+        (now - timedelta(days=60), "2 months ago"),
+        (now - timedelta(days=730), "2 years ago"),
+    ]
+    for captured, expected in cases:
+        assert relative_capture_time(captured, now) == expected
+    assert relative_capture_time(None, now) == "Date unavailable"
+
+    just_after_midnight = now.replace(hour=0, minute=5)
+    assert relative_capture_time(
+        just_after_midnight - timedelta(minutes=10), just_after_midnight
+    ) == "Yesterday"

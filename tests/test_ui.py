@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
@@ -25,6 +26,8 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QScrollArea,
+    QStyle,
+    QStyleOptionComboBox,
     QTabWidget,
     QWidget,
 )
@@ -521,7 +524,8 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     for index in range(window.library.count()):
         item = window.library.item(index)
         assert "undefined" not in item.text().lower()
-        assert "2026-09-" in item.data(CLIP_ROLE)["browse_details"]
+        assert "2026-09-" not in item.data(CLIP_ROLE)["browse_details"]
+        assert "Captured: 2026-09-" in item.toolTip()
         assert "browse-captures" in item.data(CLIP_ROLE)["browse_details"]
         assert str(root) not in item.data(CLIP_ROLE)["browse_details"]
     assert window.browse_id == ids[2]
@@ -533,7 +537,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert not window.browse_filters.isHidden()
     assert window.command_area.isHidden() and window.right.isHidden()
     assert not window.undo_button.isEnabled()
-    assert not window.projects_toggle.isEnabled()
+    assert not window.projects_toggle.isVisible()
     window.toggle_browse_sort()
     assert window.library.item(0).data(Qt.ItemDataRole.UserRole) == ids[0]
     assert window.browse_id == ids[2]
@@ -577,6 +581,25 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert window.clip_filter.all_selected()
     assert catalogue_dump(window) == before
     assert window.catalogue.undo_stack == history
+
+
+def test_browse_relative_time_refreshes_without_rebuilding_library(window, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    clip = window.catalogue.clip(clip_id)
+    now = datetime.now(timezone.utc)
+    window.media_info[clip["source_path"]] = {"created": (now - timedelta(days=2)).isoformat()}
+    window.panel("Browse")
+    assert window.browse_time_timer.isActive()
+    item = window.library.currentItem()
+    assert item.data(CLIP_ROLE)["browse_details"].startswith("2 days ago")
+    assert "Captured:" in item.toolTip()
+
+    window.media_info[clip["source_path"]] = {"created": (now - timedelta(minutes=2)).isoformat()}
+    window.browse_time_timer.timeout.emit()
+    assert window.library.currentItem() is item
+    assert item.data(CLIP_ROLE)["browse_details"].startswith("2 minutes ago")
+    window.panel("Home")
+    assert not window.browse_time_timer.isActive()
 
 
 def test_browse_temporary_range_and_share(window, application, tmp_path, monkeypatch):
@@ -3506,6 +3529,16 @@ def test_browse_form_alignment_and_title_style(window, application):
         assert title_right == mode_right
         assert browse.custom_title.width() > browse.destination.width() == 480
         assert browse.working_title.font() == window.working_title.font()
+        browse.mode.setCurrentIndex(1)
+        option = QStyleOptionComboBox()
+        browse.mode.initStyleOption(option)
+        text_rect = browse.mode.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox,
+            option,
+            QStyle.SubControl.SC_ComboBoxEditField,
+            browse.mode,
+        )
+        assert text_rect.width() >= browse.mode.fontMetrics().horizontalAdvance("Selected range")
 
 
 def test_browse_fullscreen_clip_and_volume_keys(window, application, tmp_path):

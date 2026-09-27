@@ -26,6 +26,31 @@ def capture_datetime(clip, media_info):
         return None
 
 
+def relative_capture_time(captured, current_time=None):
+    if captured is None:
+        return "Date unavailable"
+    now = (current_time or datetime.now().astimezone()).astimezone()
+    local = captured.astimezone(now.tzinfo)
+    seconds = max(0, (now - local).total_seconds())
+    days = (now.date() - local.date()).days
+    if days < 1:
+        if seconds < 60:
+            return "Just now"
+        if seconds < 3600:
+            count, unit = int(seconds // 60), "minute"
+        else:
+            count, unit = int(seconds // 3600), "hour"
+    elif days == 1:
+        return "Yesterday"
+    elif days < 30:
+        count, unit = days, "day"
+    elif days < 365:
+        count, unit = days // 30, "month"
+    else:
+        count, unit = days // 365, "year"
+    return f"{count} {unit}{'' if count == 1 else 's'} ago"
+
+
 def library_overview(clips, media_info, period="All time", current_time=None):
     current_time = current_time or datetime.now(timezone.utc)
     current_time = current_time.astimezone(timezone.utc)

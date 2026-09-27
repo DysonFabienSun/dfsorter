@@ -234,6 +234,7 @@ def stylesheet():
         }
         QLineEdit, QComboBox, QSpinBox { min-height: 18px; }
         QComboBox { padding: 4px 28px 4px 8px; }
+        QComboBox#browseShareMode { padding-right: 20px; }
         QComboBox::drop-down {
             subcontrol-origin: padding; subcontrol-position: top right;
             width: 24px; border: none; background: transparent;
@@ -251,6 +252,7 @@ def stylesheet():
         QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(border_strong)s; }
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
         QComboBox:focus { padding: 3px 27px 3px 7px; }
+        QComboBox#browseShareMode:focus { padding-right: 19px; }
         QLineEdit#command[validationState="valid"] { background: %(component_command_valid)s; }
         QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(status_warning)s; }
         QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(status_danger)s; }

@@ -67,7 +67,7 @@ from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .output import export_project, share_clip, validate
-from .overview import PERIOD_DAYS, capture_datetime, library_overview
+from .overview import PERIOD_DAYS, capture_datetime, library_overview, relative_capture_time
 from .parsing import (
     parse_command_details,
     preview_command_details,
@@ -662,6 +662,9 @@ class Window(QMainWindow):
         self.scan_retry_timer.setInterval(1000)
         self.scan_retry_timer.timeout.connect(self.auto_scan)
         self.scan_timer.start()
+        self.browse_time_timer = QTimer(self)
+        self.browse_time_timer.setInterval(60_000)
+        self.browse_time_timer.timeout.connect(self.refresh_browse_times)
         QApplication.instance().installEventFilter(self)
         QApplication.instance().focusChanged.connect(self.command_focus_changed)
         self.player.media.playbackStateChanged.connect(self.command_playback_changed)
@@ -1564,6 +1567,10 @@ class Window(QMainWindow):
         # That automatic focus change must not become a manual Browse selection.
         library_signals_blocked = self.library.blockSignals(True)
         self.current_panel = name
+        if name == "Browse":
+            self.browse_time_timer.start()
+        else:
+            self.browse_time_timer.stop()
         self.reject_enter_armed = False
         if name != "Editing":
             self.rating.command_preview = None
@@ -1859,26 +1866,20 @@ class Window(QMainWindow):
         )
         browse_details = None
         if self.current_panel == "Browse":
-            from datetime import datetime
-
-            captured = self.browse_sort_key(clip)[0]
-            try:
-                captured = (
-                    datetime.fromisoformat(captured.replace("Z", "+00:00"))
-                    .astimezone()
-                    .strftime("%Y-%m-%d %H:%M:%S")
-                )
-            except ValueError:
-                captured = captured or "Date unavailable"
+            captured = capture_datetime(clip, self.media_info)
+            capture_label = relative_capture_time(captured)
             folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
-            browse_details = f"{captured} · {folder_name}"
+            browse_details = f"{capture_label} · {folder_name}"
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
         folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
         details = browse_details or (
             f"{clip['game'] or 'Unassigned'}{rating} · {folder_name}"
         )
         item.setText(f"{card_title}\n{details}{available}")
-        item.setToolTip(item.text() + "\n" + clip["source_path"])
+        tooltip = item.text()
+        if self.current_panel == "Browse" and captured is not None:
+            tooltip += "\nCaptured: " + captured.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        item.setToolTip(tooltip + "\n" + clip["source_path"])
         item.setData(Qt.ItemDataRole.UserRole, clip["clip_id"])
         item.setData(
             CLIP_ROLE,
@@ -1903,6 +1904,16 @@ class Window(QMainWindow):
                 "unavailable": bool(available),
             },
         )
+
+    def refresh_browse_times(self):
+        if self.current_panel != "Browse":
+            return
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        for index in range(self.library.count()):
+            item = self.library.item(index)
+            clip = clips.get(item.data(Qt.ItemDataRole.UserRole))
+            if clip is not None:
+                self.render_card(item, clip)
 
     def browse_sort_key(self, clip):
         captured = capture_datetime(clip, self.media_info)

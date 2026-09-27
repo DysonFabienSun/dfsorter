@@ -99,6 +99,7 @@ class BrowsePage(QWidget):
         choose = tool("folder-open", "Choose output folder…", self.choose_folder)
         form.addWidget(choose, 1, 2)
         self.mode = QComboBox()
+        self.mode.setObjectName("browseShareMode")
         self.mode.addItem("Whole clip", False)
         self.mode.addItem("Selected range", True)
         self.mode.currentIndexChanged.connect(self.update_share)
