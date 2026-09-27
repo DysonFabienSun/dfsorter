@@ -212,34 +212,55 @@ class ClipDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         painter.save()
+        painter.setClipRect(option.rect)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         data = index.data(CLIP_ROLE) or {}
         card = option.rect.adjusted(1, 1, -1, -SIZES["card_gap"] - 1)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
+        library_row = data.get("library_row", False)
+        active_card = option.rect.adjusted(1, -2, -1, 0) if library_row else card
+        next_index = index.siblingAtRow(index.row() + 1)
+        selected_below = (
+            library_row and next_index.isValid()
+            and self.parent().selectionModel().isSelected(next_index)
+        )
+        hovered_below = (
+            library_row and not selected and next_index.isValid()
+            and self.parent().library_hover_row == next_index.row()
+        )
         if selected or hovered:
             painter.setBrush(QColor(COLORS["accent_selection" if selected else "surface_hover"]))
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(card, 3, 3)
+            painter.drawRoundedRect(active_card, 3, 3)
         else:
             painter.setPen(QColor(COLORS["border_subtle"]))
             painter.drawLine(
                 card.left() + SIZES["card_padding"],
-                card.bottom(),
+                option.rect.bottom() if library_row else card.bottom(),
                 card.right() - SIZES["card_padding"],
-                card.bottom(),
+                option.rect.bottom() if library_row else card.bottom(),
             )
+        if selected_below or hovered_below:
+            painter.save()
+            painter.setClipRect(option.rect)
+            painter.setBrush(QColor(COLORS["accent_selection" if selected_below else "surface_hover"]))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(
+                self.parent().visualRect(next_index).adjusted(1, -2, -1, 0), 3, 3
+            )
+            painter.restore()
         if focused:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QColor(COLORS["focus"]))
-            painter.drawRoundedRect(card, 3, 3)
+            painter.drawRoundedRect(active_card if selected or hovered else card, 3, 3)
         if selected:
             painter.fillRect(
-                card.left() + 1,
-                card.top() + 4,
+                active_card.left() + 1,
+                active_card.top() + 4,
                 2,
-                card.height() - 8,
+                active_card.height() - 8,
                 QColor(COLORS["accent_default"]),
             )
         title_font = font("base", base=option.font)

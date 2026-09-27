@@ -11,7 +11,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
-from PySide6.QtGui import QCursor, QMouseEvent, QTextDocument
+from PySide6.QtGui import QColor, QCursor, QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -547,8 +547,8 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert not window.projects_toggle.isVisible()
     window.toggle_browse_sort()
     assert window.library.item(0).data(Qt.ItemDataRole.UserRole) == ids[0]
-    assert window.browse_id == ids[2]
-    window.navigate(-1)
+    assert window.browse_id == ids[0]
+    window.navigate(1)
     assert window.browse_id == ids[1]
     window.browse.custom_title.setText("Disposable")
     window.browse.in_ms = 120
@@ -3234,6 +3234,145 @@ def test_title_casing_settings_refresh(window, application, tmp_path, monkeypatc
     dialog.close()
 
 
+@pytest.mark.parametrize("panel", ["Home", "Browse", "Session"])
+def test_library_controls_select_first_visible_clip(window, tmp_path, panel):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"test")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    for index, clip in enumerate(window.catalogue.clips()):
+        window.media_info[clip["source_path"]] = {
+            "created": f"2026-09-{index + 1:02}T12:00:00Z"
+        }
+    window.panel(panel)
+    assert window.library.count() == 3
+
+    def assert_first_only():
+        first = window.library.item(0)
+        assert window.library.currentItem() is first
+        assert window.library.selectedItems() == [first]
+        if panel == "Browse":
+            assert window.browse_id == first.data(Qt.ItemDataRole.UserRole)
+
+    window.library.setCurrentRow(2)
+    if panel == "Session":
+        window.library.item(1).setSelected(True)
+    window.toggle_time_sort()
+    assert_first_only()
+
+    window.library.setCurrentRow(2)
+    search = window.browse_search if panel == "Browse" else window.search
+    search.setText("clip-1")
+    assert window.library.count() == 1
+    assert_first_only()
+    search.clear()
+    assert window.library.count() == 3
+    assert_first_only()
+
+    window.library.setCurrentRow(2)
+    window.catalogue.patch(
+        window.library.item(0).data(Qt.ItemDataRole.UserRole), {"triage": "keep"}
+    )
+    window.clip_filter.set_selected_values({"keep"})
+    assert window.library.count() == 1
+    assert_first_only()
+
+    window.clip_filter.set_selected_values({None, "keep"})
+    window.library.setCurrentRow(1)
+    preserved = window.library.currentItem().data(Qt.ItemDataRole.UserRole)
+    window.refresh_library()
+    assert window.library.currentItem().data(Qt.ItemDataRole.UserRole) == preserved
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_library_selection_reaches_both_row_boundaries(
+    window, application, tmp_path, theme
+):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"test")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.set_theme(theme)
+    for panel in ("Home", "Browse", "Session"):
+        window.panel(panel)
+        application.processEvents()
+        window.library.setCurrentRow(1)
+        application.processEvents()
+        rect = window.library.visualItemRect(window.library.item(1))
+        image = window.library.viewport().grab().toImage()
+        x = rect.center().x()
+        assert image.pixelColor(x, rect.top() - 2) == QColor(COLORS["accent_selection"])
+        assert image.pixelColor(x, rect.top() - 1) == QColor(COLORS["accent_selection"])
+        assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
+        assert image.pixelColor(x, rect.bottom()) == QColor(COLORS["accent_selection"])
+        window.library.clearSelection()
+        window.library.setCurrentRow(2)
+        window.library.item(2).setSelected(True)
+        application.processEvents()
+        assert window.library.selectedItems() == [window.library.item(2)]
+        image = window.library.viewport().grab().toImage()
+        assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["accent_selection"])
+
+    window.catalogue.create_session(ids)
+    window.panel("Editing")
+    application.processEvents()
+    assert not window.library.item(1).data(CLIP_ROLE)["library_row"]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_library_hover_covers_preceding_separator(window, application, tmp_path, theme):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"test")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    window.set_theme(theme)
+    window.panel("Home")
+    application.processEvents()
+    assert not window.library.selectedItems()
+    viewport = window.library.viewport()
+    assert viewport.hasMouseTracking()
+    rect = window.library.visualItemRect(window.library.item(1))
+    point = rect.center()
+    QCoreApplication.sendEvent(
+        viewport,
+        QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
+            Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    application.processEvents()
+    assert window.library.library_hover_row == 1
+    image = viewport.grab().toImage()
+    x = rect.center().x()
+    for y in (rect.top() - 2, rect.top() - 1, rect.top(), rect.bottom()):
+        assert image.pixelColor(x, y) == QColor(COLORS["surface_hover"])
+
+    point = window.library.visualItemRect(window.library.item(2)).center()
+    QCoreApplication.sendEvent(
+        viewport,
+        QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
+            Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    application.processEvents()
+    assert window.library.library_hover_row == 2
+    image = viewport.grab().toImage()
+    assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["surface_hover"])
+
+
 def test_browse_entry_selects_newest(window, tmp_path, application):
     add_clips(window, tmp_path)
     second = tmp_path / "captures" / "second.mp4"
@@ -3545,6 +3684,8 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
     window.unavailable_toggle.click()
     assert window.settings["show_unavailable_clips"] is True
     assert window.library.count() == 2
+    assert window.library.currentItem() is window.library.item(0)
+    assert window.library.selectedItems() == [window.library.item(0)]
 
     restarted = Window(tmp_path)
     try:
@@ -3627,6 +3768,7 @@ def test_auto_scan_discovers_without_modal_or_selection_reset(window, applicatio
         sources.append({"path": str(path), "game": None})
     window.catalogue.ingest(folder["folder_id"], sources)
     window.panel("Browse")
+    application.processEvents()
     window.library.setCurrentRow(15)
     window.library.scrollToItem(window.library.currentItem())
     anchor = window.library.itemAt(1, 1)

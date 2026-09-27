@@ -478,7 +478,7 @@ class Window(QMainWindow):
         role(self.left, "sidebar")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search or game:VAL agent:Jett kill:>=4")
-        self.search.textChanged.connect(self.refresh_library)
+        self.search.textChanged.connect(self.refresh_library_from_controls)
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(8, 0, 0, 0)
         search_layout.addWidget(self.search)
@@ -503,7 +503,7 @@ class Window(QMainWindow):
             "Projects", "All projects", empty_text="No projects"
         )
         for control in (self.clip_filter, self.game_filter, self.project_filter):
-            control.selectionChanged.connect(self.refresh_library)
+            control.selectionChanged.connect(self.refresh_library_from_controls)
             filter_row.addWidget(control)
         filter_row.addStretch()
         self.unavailable_toggle = tool(
@@ -534,7 +534,7 @@ class Window(QMainWindow):
         role(self.browse_filters, "transparent")
         self.browse_search = QLineEdit()
         self.browse_search.setPlaceholderText("Search clips")
-        self.browse_search.textChanged.connect(self.refresh_library)
+        self.browse_search.textChanged.connect(self.refresh_library_from_controls)
         browse_filters_layout.addWidget(self.browse_search)
         left_layout.insertWidget(1, self.browse_filters)
         self.library_error = QLabel()
@@ -563,11 +563,13 @@ class Window(QMainWindow):
         self.session_header.hide()
         left_layout.addWidget(self.session_header)
         self.library = QListWidget()
+        self.library.library_hover_row = -1
         self.library.setObjectName("clipLibrary")
         self.library.setMouseTracking(True)
         self.library.setUniformItemSizes(True)
         self.library.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.library.setItemDelegate(ClipDelegate(self.library))
+        self.library.viewport().installEventFilter(self)
         self.library.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.library.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.library_top_fade = ClipScrollFade("top", self.library.viewport())
@@ -582,6 +584,8 @@ class Window(QMainWindow):
         scrollbar.valueChanged.connect(self.schedule_thumbnails)
         scrollbar.rangeChanged.connect(self.schedule_thumbnails)
         self.library.currentItemChanged.connect(self.select_clip)
+        self.library.itemSelectionChanged.connect(self.library.viewport().update)
+        self.library.itemEntered.connect(self.update_library_hover_row)
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.library.customContextMenuRequested.connect(self.show_clip_context_menu)
         self.clip_context_menu = QMenu(self.library)
@@ -1528,6 +1532,7 @@ class Window(QMainWindow):
         self.library.setCurrentItem(item)
         item.setSelected(True)
         self.library.blockSignals(False)
+        self.library.viewport().update()
 
     def edit_context_clip(self):
         if self.context_clip_id:
@@ -2089,6 +2094,7 @@ class Window(QMainWindow):
                 ),
                 "browse_details": browse_details,
                 "compact_time": compact_time,
+                "library_row": self.current_panel in {"Home", "Browse", "Session"},
                 "game": clip["game"],
                 "rating": clip["rating"],
                 "folder": folder_name,
@@ -2268,7 +2274,7 @@ class Window(QMainWindow):
         else:
             self.library_newest = not self.library_newest
         self.update_time_sort_control()
-        self.refresh_library()
+        self.refresh_library(reset_selection=True)
 
     def toggle_browse_sort(self):
         self.toggle_time_sort()
@@ -2284,7 +2290,7 @@ class Window(QMainWindow):
         self.unavailable_toggle.setToolTip(label)
         self.unavailable_toggle.setAccessibleName(label)
         self.save_settings()
-        self.refresh_library()
+        self.refresh_library(reset_selection=True)
 
     def update_browse_navigation(self):
         row = self.library.currentRow()
@@ -2348,7 +2354,10 @@ class Window(QMainWindow):
         self.library_top_fade.raise_()
         self.library_bottom_fade.raise_()
 
-    def refresh_library(self):
+    def refresh_library_from_controls(self, *_args):
+        self.refresh_library(reset_selection=True)
+
+    def refresh_library(self, *, reset_selection=False):
         self.update_history_controls()
         if getattr(self, "settings_dialog", None) is not None:
             self.settings_dialog.refresh()
@@ -2386,9 +2395,11 @@ class Window(QMainWindow):
                 }
             )
             current = page_state["current"] if page_state else self.selected_id(self.library)
-            if self.current_panel == "Home" and not page_state:
-                current = None
-                selected = set()
+            if reset_selection and self.current_panel in {"Home", "Browse", "Session"}:
+                current = clips[0]["clip_id"] if clips else None
+                selected = {current} if current else set()
+                if self.current_panel == "Browse":
+                    self.browse_selected_id = current
             elif self.current_panel == "Browse":
                 current = self.browse_id
                 if current not in {clip["clip_id"] for clip in clips}:
@@ -2409,6 +2420,8 @@ class Window(QMainWindow):
                 if page_state
                 else self.library.verticalScrollBar().value()
             )
+            if reset_selection:
+                horizontal_scroll = scroll = 0
             anchor = self.library.itemAt(1, 1)
             anchor_id = anchor.data(Qt.ItemDataRole.UserRole) if anchor else None
             anchor_offset = self.library.visualItemRect(anchor).top() if anchor else 0
@@ -2422,7 +2435,7 @@ class Window(QMainWindow):
                     self.library.setCurrentItem(item)
                 item.setSelected(clip["clip_id"] in selected or clip["clip_id"] == current)
             self.library.doItemsLayout()
-            if not page_state:
+            if not page_state and not reset_selection:
                 for index in range(self.library.count()):
                     item = self.library.item(index)
                     if item.data(Qt.ItemDataRole.UserRole) == anchor_id:
@@ -3111,7 +3124,22 @@ class Window(QMainWindow):
             'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “ -- ” separator\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
+    def update_library_hover_row(self, hovered=None):
+        row = self.library.row(hovered) if hovered is not None else -1
+        if row == self.library.library_hover_row:
+            return
+        previous = self.library.library_hover_row
+        self.library.library_hover_row = row
+        for neighbor in {previous - 1, row - 1}:
+            item = self.library.item(neighbor) if neighbor >= 0 else None
+            if item is not None:
+                self.library.viewport().update(self.library.visualItemRect(item))
+
     def eventFilter(self, watched: QObject, event):
+        if watched == self.library.viewport() and event.type() in {
+            QEvent.Type.Leave, QEvent.Type.HoverLeave,
+        }:
+            self.update_library_hover_row()
         if (
             watched is self.library.viewport()
             and self.current_panel == "Home"
