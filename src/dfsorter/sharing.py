@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 
-def run_process(arguments, cancelled=lambda: False):
+def run_process(arguments, cancelled=lambda: False, *, progress_file=None, progress=None):
     if cancelled():
         raise InterruptedError("Share cancelled")
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
@@ -18,11 +18,32 @@ def run_process(arguments, cancelled=lambda: False):
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         try:
+            seen = 0
+            pending = ""
+            def collect_progress():
+                nonlocal seen, pending
+                if not progress_file or not progress_file.exists():
+                    return
+                with progress_file.open("r", encoding="utf-8", errors="replace") as status:
+                    status.seek(seen)
+                    pending += status.read()
+                    seen = status.tell()
+                lines = pending.split("\n")
+                pending = lines.pop()
+                for line in lines:
+                    if line.startswith("out_time=") and progress:
+                        try:
+                            hours, minutes, seconds = line[9:].split(":")
+                            progress(int(hours) * 3600 + int(minutes) * 60 + float(seconds))
+                        except ValueError:
+                            pass
             while True:
                 if cancelled():
                     raise InterruptedError("Share cancelled")
+                collect_progress()
                 try:
                     process.wait(timeout=0.1)
+                    collect_progress()
                     break
                 except subprocess.TimeoutExpired:
                     continue
@@ -51,7 +72,7 @@ def probe(path, cancelled=lambda: False):
     )
 
 
-def encode_share(clip, destination, stem, selected_range, cancelled, progress):
+def encode_share(clip, destination, stem, selected_range, cancelled, progress, *, detailed_progress=None):
     executable = shutil.which("ffmpeg")
     if not executable:
         raise ValueError("Share requires ffmpeg on PATH")
@@ -73,6 +94,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".dfsorter-share-", dir=destination) as directory:
         temporary = Path(directory) / "share.mp4"
+        progress_file = Path(directory) / "ffmpeg-progress.txt"
         filters = []
         origin = float(info["format"].get("start_time", 0))
         for position, stream in enumerate(audio):
@@ -113,11 +135,10 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
             ]
         for attempt, encoder in enumerate(encoders):
             progress(f"Sharing {source.name}: {encoder[1]} · {end - start:.2f} seconds")
+            if detailed_progress:
+                detailed_progress(0, f"Encoding {source.name}")
             try:
-                run_process(
-                    arguments
-                    + encoder
-                    + [
+                command = arguments + encoder + [
                         "-fps_mode",
                         "passthrough",
                         "-t",
@@ -125,9 +146,19 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
                         "-movflags",
                         "+faststart",
                         str(temporary),
-                    ],
-                    cancelled,
-                )
+                    ]
+                if detailed_progress:
+                    progress_file.unlink(missing_ok=True)
+                    command = command[:-1] + ["-progress", str(progress_file), command[-1]]
+                    run_process(
+                        command, cancelled, progress_file=progress_file,
+                        progress=lambda seconds: detailed_progress(
+                            min(88, int(seconds * 88 / max(0.001, end - start))),
+                            f"Encoding {source.name}",
+                        ),
+                    )
+                else:
+                    run_process(command, cancelled)
                 break
             except InterruptedError:
                 raise
@@ -138,6 +169,8 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
                     "NVIDIA Share encoding unavailable; retrying with x264", exc_info=True
                 )
                 progress("NVIDIA encoding unavailable; retrying with software encoding")
+        if detailed_progress:
+            detailed_progress(90, "Validating output")
         result = probe(temporary, cancelled)
         output_video = [stream for stream in result["streams"] if stream["codec_type"] == "video"]
         output_audio = [stream for stream in result["streams"] if stream["codec_type"] == "audio"]
@@ -155,6 +188,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
         if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
             raise OSError("Source changed during sharing")
         suffix = 0
+        total_bytes = temporary.stat().st_size
         while True:
             target = destination / f"{stem}{f' ({suffix})' if suffix else ''}.mp4"
             if target.exists():
@@ -167,10 +201,17 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress):
                 continue
             try:
                 with output, temporary.open("rb") as input_file:
+                    copied = 0
                     while chunk := input_file.read(1024 * 1024):
                         if cancelled():
                             raise InterruptedError("Share cancelled")
                         output.write(chunk)
+                        copied += len(chunk)
+                        if detailed_progress:
+                            detailed_progress(
+                                min(99, 95 + int(copied * 4 / max(1, total_bytes))),
+                                "Saving shared clip",
+                            )
                 return str(target)
             except BaseException:
                 output.close()

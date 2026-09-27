@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidgetItem,
+    QMessageBox,
     QProgressDialog,
     QPushButton,
     QScrollArea,
@@ -627,11 +628,15 @@ def test_browse_temporary_range_and_share(window, application, tmp_path, monkeyp
         "dfsorter.browse.share_clip", lambda *args, **kwargs: calls.append((args, kwargs))
     )
     work = []
-    monkeypatch.setattr(window, "background", lambda function, done: work.append(function))
+    monkeypatch.setattr(
+        window.activities, "submit",
+        lambda kind, title, function, **kwargs: work.append(function),
+    )
     browse.share()
+    assert browse.share_button.property("shareAccepted") is True
     browse.custom_title.setText("Changed after snapshot")
     browse.in_ms = 1000
-    work[0](lambda: False, lambda text: None)
+    work[0](lambda: False, lambda percent, text: None)
     args, kwargs = calls[0]
     assert args[0]["in_ms"] == 800
     assert args[0]["out_ms"] == 1500
@@ -2655,25 +2660,93 @@ def test_background_locks_immediately_until_cancel_finishes(window, application)
     assert QApplication.activeModalWidget() is None
 
 
-def test_export_shows_progress_before_preparation(window, application, tmp_path, monkeypatch):
-    project = window.catalogue.save_project("Immediate progress")
+def test_export_submits_frozen_manifest_without_modal(window, application, tmp_path, monkeypatch):
+    ids = add_clips(window, tmp_path)
+    project = window.catalogue.save_project("Frozen export")
+    window.catalogue.patch(
+        ids[0], {"triage": "keep", "metadata": {"agent": "Jett"}},
+        membership=(project, True),
+    )
     window.refresh_references()
     window.export_project.setCurrentIndex(window.export_project.findData(project))
     window.export_destination.setText(str(tmp_path / "output"))
-    preparation = []
-
-    def member_ids(project_id):
-        preparation.append(project_id)
-        raise ValueError("Preparation failed")
-
-    monkeypatch.setattr(window.catalogue, "member_ids", member_ids)
+    submitted = []
+    monkeypatch.setattr(
+        window.activities, "submit",
+        lambda kind, title, function, **kwargs: submitted.append((kind, title, kwargs)),
+    )
     window.run_export()
-    assert not preparation
-    assert isinstance(QApplication.activeModalWidget(), QProgressDialog)
-    assert QApplication.activeModalWidget().isVisible()
-    assert wait_for(application, lambda: window.worker is None)
-    assert preparation == [project]
+    assert submitted and submitted[0][0] == "Export"
     assert QApplication.activeModalWidget() is None
+    record = window.catalogue.export_jobs()[0]
+    assert record["manifest"]["choices"]["project_id"] == project
+    item = record["manifest"]["items"][0]
+    assert item["source_path"] == window.catalogue.clip(ids[0])["source_path"]
+    assert item["stem"]
+    window.catalogue.patch(ids[0], {"mainline": "Changed later"})
+    assert window.catalogue.export_jobs()[0]["manifest"]["items"][0] == item
+
+
+def test_activities_bound_parallel_jobs_and_confirm_exit(window, application, monkeypatch):
+    release = threading.Event()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+
+    def operation(cancelled, progress):
+        progress(25, "Working")
+        release.wait(5)
+        if cancelled():
+            raise InterruptedError("Cancelled")
+        return "done"
+
+    first = window.activities.submit("Share", "Share first", operation)
+    second = window.activities.submit("Share", "Share second", operation)
+    export = window.activities.submit("Export", "Export project", operation)
+    try:
+        assert wait_for(application, lambda: first.state == "Running" and export.state == "Running")
+        assert second.state == "Queued"
+        assert window.activities_button.toolTip() == "Activities (3)"
+        assert window.activities_button.property("iconColorRole") == "accent_default"
+        assert QApplication.activeModalWidget() is None
+
+        monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
+        assert not window.close()
+        assert window.isVisible() and not window.close_requested
+        monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+        assert not window.close()
+        assert window.close_requested and second.state == "Cancelled"
+        assert first.worker.cancelled.is_set() and export.worker.cancelled.is_set()
+    finally:
+        release.set()
+        window.activities.cancel_all()
+        wait_for(application, lambda: not window.activities.busy(), timeout=2)
+    assert wait_for(application, lambda: not window.isVisible())
+
+
+def test_unfinished_export_is_offered_for_resume_after_restart(window, application, tmp_path):
+    from dfsorter.output import prepare_export_manifest
+
+    ids = add_clips(window, tmp_path)
+    window.catalogue.patch(ids[0], {"triage": "keep", "metadata": {"agent": "Jett"}})
+    manifest = prepare_export_manifest(
+        [window.catalogue.clip(ids[0])], window.registry,
+        tmp_path / "resumed-export", window.catalogue.folders(),
+    )
+    manifest["project_name"] = "Saved project"
+    window.catalogue.save_export_job("restart-job", manifest, "Cancelled")
+    window.close()
+    restarted = Window(tmp_path)
+    restarted.show()
+    application.processEvents()
+    try:
+        job = next(job for job in restarted.activities.jobs if job.record_id == "restart-job")
+        assert job.state == "Paused" and job.action.text() == "Resume export"
+        assert restarted.activities_button.toolTip() == "Activities (1)"
+        job.action.click()
+        assert wait_for(application, lambda: job.state == "Completed")
+        assert len(list((tmp_path / "resumed-export").glob("*.mp4"))) == 1
+        assert restarted.catalogue.export_jobs() == []
+    finally:
+        restarted.close()
 
 
 def test_game_change_confirmation_and_undo(window, application, tmp_path, monkeypatch):
@@ -2899,6 +2972,8 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     ]
     assert {control.height() for control in utilities} == {28}
     assert len({control.geometry().center().y() for control in utilities}) == 1
+    assert window.activities_button.size() == QSize(26, 26)
+    assert window.activities_button.geometry().center().y() == utilities[0].geometry().center().y()
     assert window.projects_toggle.height() == 30
     assert window.projects_toggle.geometry().right() == window.central.width() - 1
     assert window.projects_tab_edge.geometry().getRect() == (91, 4, 1, 22)
@@ -2907,6 +2982,17 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     assert window.projects_toggle.iconSize() == QSize(17, 16)
     assert window.undo_button.property("navUtilityStyle") == "ghost"
     assert window.redo_button.property("navUtilityStyle") == "ghost"
+    assert window.activities_button.property("navUtilityStyle") == "ghost"
+    assert window.activities_button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    assert window.activities_button.iconSize() == window.theme_button.iconSize()
+    assert window.activities_button.property("iconRenderSize") == window.theme_button.property("iconRenderSize")
+    assert window.activities_button.property("iconYOffset") == -1
+    assert window.activities_button.text() == ""
+    assert window.activities_button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
+    assert window.undo_button.property("iconYOffset") == -2
+    assert window.redo_button.property("iconYOffset") == -2
+    assert window.theme_button.property("iconYOffset") == -2
+    assert window.settings_button.property("iconYOffset") == -2
     assert window.theme_button.property("navUtilityStyle") == "ghost"
     assert window.settings_button.property("navUtilityStyle") == "ghost"
 

@@ -1,4 +1,8 @@
+import hashlib
+import os
 import re
+import tempfile
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -137,6 +141,191 @@ def export_project(
     return result
 
 
+def prepare_export_manifest(clips, registry, destination, folders, formats=None,
+                            group_rating=False, *, lowercase=True):
+    """Freeze all choices needed to resume a project export without live catalogue data."""
+    errors = validate(clips, registry)
+    if errors:
+        raise ValueError("\n".join(message for _, message in errors))
+    root = check_destination(destination, folders)
+    items = []
+    for clip in clips:
+        if clip["triage"] != "keep":
+            continue
+        source = Path(clip["source_path"])
+        source_stat = source.stat()
+        options = (formats or {}).get(clip["game"], {})
+        name = safe_stem(title(
+            clip, registry, options.get("fields"), options.get("prefix", True),
+            lowercase=lowercase,
+        ))
+        directory = (
+            f"Rating {clip['rating']}" if clip["rating"] else "Unrated"
+        ) if group_rating else ""
+        items.append({
+            "clip_id": clip["clip_id"], "source_path": str(source),
+            "source_size": source_stat.st_size, "source_mtime_ns": source_stat.st_mtime_ns,
+            "stem": name, "directory": directory, "completed": None,
+        })
+    return {"destination": str(root), "items": items}
+
+
+def _hash_file(path, cancelled):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            if cancelled():
+                raise InterruptedError("Export cancelled")
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _copy_resumable(item, directory, job_id, cancelled, advanced,
+                    before_publish=lambda target, temporary, size, checksum: None,
+                    on_abort=lambda: None):
+    """Build a complete temporary copy, then publish it without overwriting a name."""
+    directory.mkdir(parents=True, exist_ok=True)
+    source = Path(item["source_path"])
+    digest = hashlib.sha256()
+    temporary = None
+    published = False
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=directory, prefix=f".dfsorter-export-{job_id}-",
+            suffix=".part", delete=False,
+        ) as output, source.open("rb") as input_file:
+            temporary = Path(output.name)
+            before = source.stat()
+            copied = 0
+            while chunk := input_file.read(1024 * 1024):
+                if cancelled():
+                    raise InterruptedError("Export cancelled")
+                output.write(chunk)
+                digest.update(chunk)
+                copied += len(chunk)
+                advanced(len(chunk))
+            after = source.stat()
+            if (copied != before.st_size or (after.st_size, after.st_mtime_ns)
+                    != (before.st_size, before.st_mtime_ns)):
+                raise OSError("Source changed during copying")
+        suffix = 0
+        while True:
+            if cancelled():
+                raise InterruptedError("Export cancelled")
+            target = directory / f"{item['stem']}{f' ({suffix})' if suffix else ''}{source.suffix}"
+            before_publish(target, temporary, copied, digest.hexdigest())
+            try:
+                if os.name == "nt":
+                    temporary.rename(target)  # Windows rename refuses an existing destination.
+                else:
+                    os.link(temporary, target)  # link is exclusive on POSIX.
+                published = True
+                return str(target), digest.hexdigest()
+            except FileExistsError:
+                suffix += 1
+    finally:
+        if temporary is not None:
+            if not published:
+                on_abort()
+            temporary.unlink(missing_ok=True)
+
+
+def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
+                        detailed_progress=lambda percent, message: None):
+    """Verify recorded outputs, then continue only the unfinished frozen entries."""
+    record = next((job for job in catalogue.export_jobs() if job["job_id"] == job_id), None)
+    if record is None:
+        raise ValueError("Export job no longer exists")
+    manifest = deepcopy(record["manifest"])
+    catalogue.save_export_job(job_id, manifest, "Running")
+    result = CopyResult()
+    total = sum(item["source_size"] for item in manifest["items"])
+    done_bytes = 0
+    try:
+        recovered = set()
+        for item in manifest["items"]:
+            pending = item.get("pending")
+            if not pending:
+                continue
+            target = Path(pending["target"])
+            temporary = Path(pending["temporary"])
+            owned = target.is_file() and (
+                not temporary.exists() or os.path.samefile(target, temporary)
+            )
+            if owned:
+                if (target.stat().st_size != pending["size"]
+                        or _hash_file(target, cancelled) != pending["sha256"]):
+                    raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+                item["completed"] = {
+                    "path": str(target), "size": pending["size"],
+                    "sha256": pending["sha256"],
+                }
+                recovered.add(str(target))
+            temporary.unlink(missing_ok=True)
+            item["pending"] = None
+            catalogue.save_export_job(job_id, manifest, "Running")
+        for directory in {Path(manifest["destination"]) / item["directory"] for item in manifest["items"]}:
+            if directory.is_dir():
+                for temporary in directory.glob(f".dfsorter-export-{job_id}-*.part"):
+                    temporary.unlink(missing_ok=True)
+        for item in manifest["items"]:
+            completed = item["completed"]
+            if not completed:
+                continue
+            detailed_progress(min(99, int(done_bytes * 100 / max(1, total))),
+                              f"Verifying {Path(completed['path']).name}")
+            target = Path(completed["path"])
+            if (not target.is_file() or target.stat().st_size != completed["size"]
+                    or (str(target) not in recovered
+                        and _hash_file(target, cancelled) != completed["sha256"])):
+                raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+            result.completed.append(str(target))
+            done_bytes += item["source_size"]
+        for item in manifest["items"]:
+            if item["completed"]:
+                continue
+            if cancelled():
+                raise InterruptedError("Export cancelled")
+            source = Path(item["source_path"])
+            stat = source.stat()
+            if (stat.st_size, stat.st_mtime_ns) != (
+                item["source_size"], item["source_mtime_ns"]
+            ):
+                raise ValueError(f"Source changed since export was queued: {source}")
+            directory = Path(manifest["destination"]) / item["directory"]
+            def advanced(amount):
+                nonlocal done_bytes
+                done_bytes += amount
+                detailed_progress(min(99, int(done_bytes * 100 / max(1, total))),
+                                  f"Copying {source.name}")
+            def before_publish(target, temporary, size, checksum):
+                item["pending"] = {
+                    "target": str(target), "temporary": str(temporary),
+                    "size": size, "sha256": checksum,
+                }
+                catalogue.save_export_job(job_id, manifest, "Running")
+            def on_abort():
+                item["pending"] = None
+                catalogue.save_export_job(job_id, manifest, "Running")
+            target, checksum = _copy_resumable(
+                item, directory, job_id, cancelled, advanced, before_publish, on_abort,
+            )
+            copied = Path(target)
+            item["completed"] = {
+                "path": target, "size": copied.stat().st_size,
+                "sha256": checksum,
+            }
+            item["pending"] = None
+            result.completed.append(target)
+            catalogue.save_export_job(job_id, manifest, "Running")
+        catalogue.save_export_job(job_id, manifest, "Completed")
+    except (OSError, ValueError, InterruptedError) as error:
+        result.error = str(error)
+        result.cancelled = isinstance(error, InterruptedError)
+        catalogue.save_export_job(job_id, manifest, "Cancelled" if result.cancelled else "Failed")
+    return result
+
+
 def share_clip(
     clip,
     registry,
@@ -150,6 +339,7 @@ def share_clip(
     lowercase=True,
     selected_range=False,
     progress=lambda text: None,
+    detailed_progress=None,
 ):
     from .sharing import encode_share
 
@@ -157,4 +347,7 @@ def share_clip(
     stem = (
         custom if custom is not None else title(clip, registry, fields, prefix, lowercase=lowercase)
     )
-    return encode_share(clip, destination, safe_stem(stem), selected_range, cancelled, progress)
+    options = {"detailed_progress": detailed_progress} if detailed_progress else {}
+    return encode_share(
+        clip, destination, safe_stem(stem), selected_range, cancelled, progress, **options
+    )

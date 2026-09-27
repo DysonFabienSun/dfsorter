@@ -264,6 +264,7 @@ def stylesheet():
         QPushButton[role="primary"] { background: %(accent_default)s; color: %(text_inverse)s; border-color: %(accent_default)s; font-weight: 600; }
         QPushButton[role="primary"]:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; }
         QPushButton[role="primary"]:pressed { background: %(accent_pressed)s; border-color: %(accent_pressed)s; }
+        QPushButton[shareAccepted="true"], QToolButton[shareAccepted="true"] { background: %(status_success_soft)s; color: %(status_success)s; border: 1px solid %(status_success)s; }
         QPushButton[role="prominentNeutral"] { border-color: %(border_default)s; font-weight: 600; }
         QPushButton[role="danger"], QToolButton[role="danger"] { color: %(status_danger)s; border-color: %(border_default)s; background: %(status_danger_soft)s; }
         QPushButton[role="danger"]:hover, QToolButton[role="danger"]:hover { color: %(status_danger_hover)s; border-color: %(status_danger)s; }
@@ -271,7 +272,7 @@ def stylesheet():
         QPushButton[role="discard"]:checked { background: %(status_danger_soft)s; color: %(status_danger)s; border-color: %(status_danger)s; }
         QPushButton[role="undefined"]:checked { background: %(surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
         QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 2px solid %(focus)s; }
-        QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator { image: none; width: 0px; }
+        QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator, QToolButton#activitiesButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QToolButton[sessionAction="true"] { padding: 4px 2px 0px 2px; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
@@ -291,6 +292,14 @@ def stylesheet():
         QPushButton[navUtilityStyle="ghost"]:hover, QToolButton[navUtilityStyle="ghost"]:hover { background: %(surface_hover)s; border-color: transparent; }
         QPushButton[navUtilityStyle="ghost"]:pressed, QToolButton[navUtilityStyle="ghost"]:pressed { background: %(surface_pressed)s; border-color: transparent; }
         QPushButton[navUtilityStyle="ghost"]:disabled, QToolButton[navUtilityStyle="ghost"]:disabled { background: transparent; border-color: transparent; }
+        QToolButton#activitiesButton { background: transparent; border: 1px solid %(border_default)s; min-height: 20px; max-height: 20px; }
+        QToolButton#activitiesButton:hover { background: %(surface_hover)s; border-color: %(border_strong)s; }
+        QToolButton#activitiesButton:pressed { background: %(surface_pressed)s; border-color: %(border_strong)s; }
+        QToolButton#activitiesButton[activityBusy="true"] { background: %(accent_soft)s; color: %(accent_default)s; border: 1px solid %(accent_default)s; }
+        QToolButton#activitiesButton[activityBusy="true"]:hover { background: %(accent_soft_hover)s; }
+        QToolButton#activitiesButton[activityAttention="true"] { background: %(status_warning_soft)s; color: %(status_warning)s; border: 1px solid %(status_warning)s; }
+        QProgressBar { background: %(surface_subtle)s; color: %(text_primary)s; border: 1px solid %(border_subtle)s; border-radius: 4px; text-align: center; min-height: 13px; }
+        QProgressBar::chunk { background: %(accent_default)s; border-radius: 3px; }
         QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx; font-weight: 500; padding: 0px 16px; min-height: 32px; }
         QPushButton#navigation:hover { color: %(text_primary)s; background: %(surface_hover)s; }
         QPushButton#navigation:checked { background: transparent; color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }

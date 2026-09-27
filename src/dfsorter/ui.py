@@ -9,6 +9,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
+from uuid import uuid4
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
@@ -60,13 +61,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .activities import Activities
 from .browse import BrowsePage
 from .catalogue import Catalogue
 from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
-from .output import export_project, share_clip, validate
+from .output import prepare_export_manifest, run_export_manifest, share_clip, validate
 from .overview import PERIOD_DAYS, capture_datetime, library_overview, relative_capture_time
 from .parsing import (
     parse_command_details,
@@ -293,6 +295,7 @@ class Window(QMainWindow):
         self.pending_out = None
         self.range_block_message = ""
         self.worker = None
+        self.share_flash_timers = {}
         self.close_requested = False
         self.refreshing = False
         self.positioned_clip_pages = set()
@@ -321,6 +324,8 @@ class Window(QMainWindow):
         navigation.addStretch()
         self.undo_button = tool("undo-2", "Undo · Ctrl+Z", lambda: self.undo(False))
         self.redo_button = tool("redo-2", "Redo · Ctrl+Shift+Z", lambda: self.undo(True))
+        set_icon(self.undo_button, "undo-2", y_offset=-2)
+        set_icon(self.redo_button, "redo-2", y_offset=-2)
         self.undo_button.setProperty("navUtilityStyle", "ghost")
         self.redo_button.setProperty("navUtilityStyle", "ghost")
         self.update_history_controls()
@@ -328,6 +333,18 @@ class Window(QMainWindow):
         navigation.addSpacing(4)
         navigation.addWidget(self.redo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(16)
+        self.activities_button = tool("list-todo", "Activities", lambda: None)
+        self.activities_button.setFixedSize(26, 26)
+        self.activities_button.setObjectName("activitiesButton")
+        self.activities_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.activities_button.setProperty("navUtilityStyle", "ghost")
+        self.activities_button.setProperty("navUtility", True)
+        self.activities = Activities(self, self.activities_button)
+        self.activities.idle.connect(
+            lambda: QTimer.singleShot(0, self.close) if self.close_requested else None
+        )
+        navigation.addWidget(self.activities_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        navigation.addSpacing(12)
         self.projects_toggle = button("Projects", self.toggle_projects)
         set_icon(self.projects_toggle, "folder-open", size=16, y_offset=1, right_padding=1)
         self.projects_toggle.setToolTip("Show Projects")
@@ -349,6 +366,7 @@ class Window(QMainWindow):
         navigation.addWidget(self.theme_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(4)
         self.settings_button = tool("settings", "Settings and actions", lambda: None)
+        set_icon(self.settings_button, "settings", y_offset=-2)
         self.settings_button.setProperty("navUtilityStyle", "ghost")
         for control in (
             self.undo_button,
@@ -677,6 +695,7 @@ class Window(QMainWindow):
         self.panel("Home")
         self.reset_layout()
         self.schedule_preload()
+        self.restore_export_jobs()
         if self.registry.errors:
             self.statusBar().showMessage("Configuration errors — see Config panel")
         QTimer.singleShot(0, self.rescan)
@@ -956,7 +975,10 @@ class Window(QMainWindow):
                 "Share": "share-2",
             }
             label = {"Set In": "Set In · I", "Set Out": "Set Out · O"}.get(text, text)
-            controls.addWidget(tool(names[text], label, callback))
+            control = tool(names[text], label, callback)
+            if text == "Share":
+                self.edit_share_button = control
+            controls.addWidget(control)
         project_separator = QWidget()
         project_separator.setFixedSize(1, 20)
         role(project_separator, "divider")
@@ -1072,7 +1094,7 @@ class Window(QMainWindow):
         target = "dark" if scheme == "light" else "light"
         icon_name = "moon" if target == "dark" else "sun"
         label = f"Switch to {target} mode"
-        set_icon(self.theme_button, icon_name)
+        set_icon(self.theme_button, icon_name, y_offset=-2)
         self.theme_button.setToolTip(label)
         self.theme_button.setAccessibleName(label)
 
@@ -3430,7 +3452,7 @@ class Window(QMainWindow):
     def background(self, function, done, label="Working…", *, quiet=False):
         if self.close_requested:
             return
-        if self.worker is not None:
+        if self.worker is not None or self.activities.busy():
             self.error("Wait for the current operation to finish")
             return
         self.worker = Worker(function)
@@ -3447,6 +3469,7 @@ class Window(QMainWindow):
             def finished_quietly():
                 self.worker.deleteLater()
                 self.worker = None
+                self.activities._schedule()
                 if self.close_requested:
                     QTimer.singleShot(0, self.close)
                     return
@@ -3490,6 +3513,7 @@ class Window(QMainWindow):
             progress.deleteLater()
             self.worker.deleteLater()
             self.worker = None
+            self.activities._schedule()
             if self.close_requested:
                 QTimer.singleShot(0, self.close)
                 return
@@ -3587,7 +3611,8 @@ class Window(QMainWindow):
     def auto_scan(self):
         if self.close_requested:
             return
-        if self.worker is not None or QApplication.activeModalWidget() is not None:
+        if (self.worker is not None or self.activities.busy()
+                or QApplication.activeModalWidget() is not None):
             self.scan_retry_timer.start()
             return
         self.rescan(quiet=True)
@@ -3857,7 +3882,7 @@ class Window(QMainWindow):
         self.save_settings()
 
     def run_export(self):
-        if self.worker is not None:
+        if self.worker is not None or self.close_requested:
             self.error("Wait for the current operation to finish")
             return
         destination = self.export_destination.text().strip()
@@ -3868,47 +3893,72 @@ class Window(QMainWindow):
         if not project_id:
             self.error("Choose a project")
             return
-        formats = self.formats.copy()
+        formats = deepcopy(self.formats)
         group = self.group_rating.isChecked()
         lowercase = self.settings.get("lowercase_generated_titles", True)
-
-        def export(cancelled, progress):
-            if cancelled():
-                raise InterruptedError("Export cancelled")
+        try:
             ids = self.catalogue.member_ids(project_id)
             clips = [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
-            return export_project(
-                clips,
-                self.registry,
-                destination,
-                self.catalogue.folders(),
-                formats,
-                group,
-                cancelled,
-                progress,
-                lowercase=lowercase,
+            manifest = prepare_export_manifest(
+                clips, self.registry, destination, self.catalogue.folders(),
+                formats, group, lowercase=lowercase,
+            )
+            manifest["project_name"] = self.export_project.currentText()
+            manifest["choices"] = {
+                "project_id": project_id, "formats": formats,
+                "group_rating": group, "lowercase": lowercase,
+            }
+            job_id = str(uuid4())
+            self.catalogue.save_export_job(job_id, manifest, "Queued")
+        except (OSError, ValueError) as error:
+            self.error(error)
+            return
+        self.settings["export_folder"] = destination
+        self.save_settings()
+        self.add_export_job(job_id, f"Export · {self.export_project.currentText()}")
+
+    def add_export_job(self, job_id, label, *, paused=False):
+        return self.activities.submit(
+            "Export", label,
+            lambda cancelled, progress: run_export_manifest(
+                self.catalogue, job_id, cancelled, progress,
+            ),
+            record_id=job_id, forget=self.catalogue.delete_export_job, paused=paused,
+        )
+
+    def restore_export_jobs(self):
+        for record in self.catalogue.export_jobs():
+            if record["status"] == "Completed":
+                self.catalogue.delete_export_job(record["job_id"])
+                continue
+            self.add_export_job(
+                record["job_id"],
+                f"Export · {record['manifest'].get('project_name', Path(record['manifest']['destination']).name)}",
+                paused=True,
             )
 
-        def done(result):
-            self.settings["export_folder"] = destination
-            self.save_settings()
-            QMessageBox.information(
-                self,
-                "Project Export",
-                f"{len(result.completed)} clips copied.\n"
-                + (result.error or "Complete.")
-                + "\n"
-                + "\n".join(result.completed),
-            )
-
-        self.background(export, done, label="Preparing project export…")
+    def flash_share(self, control):
+        control.setProperty("shareAccepted", True)
+        control.style().unpolish(control)
+        control.style().polish(control)
+        timer = self.share_flash_timers.get(control)
+        if timer is None:
+            timer = QTimer(control)
+            timer.setSingleShot(True)
+            def reset():
+                control.setProperty("shareAccepted", False)
+                control.style().unpolish(control)
+                control.style().polish(control)
+            timer.timeout.connect(reset)
+            self.share_flash_timers[control] = timer
+        timer.start(1200)
 
     def share(self):
         if self.current_panel == "Browse":
             self.browse.share()
             return
         try:
-            clip = self.selected_clip()
+            clip = deepcopy(self.selected_clip())
         except ValueError as error:
             self.error(error)
             return
@@ -4004,24 +4054,23 @@ class Window(QMainWindow):
         include_prefix = prefix.isChecked()
         selected_range = mode.currentData()
         lowercase = self.settings.get("lowercase_generated_titles", True)
-        self.background(
+        stem = custom_name or title(clip, self.registry, fields, include_prefix, lowercase=lowercase)
+        self.activities.submit(
+            "Share", f"Share · {Path(clip['source_path']).name}",
             lambda cancelled, progress: share_clip(
                 clip,
                 self.registry,
                 folder,
                 folders,
-                custom_name,
-                fields,
-                include_prefix,
+                stem,
+                None,
+                False,
                 cancelled,
                 selected_range=selected_range,
-                lowercase=lowercase,
-                progress=progress,
-            ),
-            lambda target: QMessageBox.information(
-                self, "Shared", f"Shared H.264 MP4 to:\n{target}"
+                detailed_progress=progress,
             ),
         )
+        self.flash_share(self.edit_share_button)
 
     def open_configs(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.root / "configs/games")))
@@ -4049,6 +4098,25 @@ class Window(QMainWindow):
         ):
             event.ignore()
             return
+        if self.activities.busy():
+            if not self.close_requested:
+                answer = QMessageBox.question(
+                    self, "Exit while output jobs are active?",
+                    "Output jobs are queued or running. Exit and cancel them?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    event.ignore()
+                    return
+            self.close_requested = True
+            self.scan_timer.stop()
+            self.scan_retry_timer.stop()
+            self.activities.cancel_all()
+            if self.activities.busy():
+                self.statusBar().showMessage("Closing after output jobs stop…")
+                event.ignore()
+                return
         if self.worker:
             self.close_requested = True
             self.scan_timer.stop()

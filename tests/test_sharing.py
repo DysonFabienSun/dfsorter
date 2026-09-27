@@ -173,3 +173,24 @@ def test_share_missing_tools(tmp_path, registry, monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda name: None)
     with pytest.raises(ValueError, match="ffmpeg"):
         share_clip({"source_path": "missing"}, registry, tmp_path, [], custom="sample")
+
+
+def test_share_reports_encoding_and_publication_progress(tmp_path, registry):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg required")
+    source = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "testsrc2=size=320x180:rate=24", "-t", "2", "-c:v", "libx264",
+        "-threads", "2", str(source),
+    ], check=True, capture_output=True)
+    updates = []
+    result = share_clip(
+        {"source_path": str(source), "in_ms": 0, "out_ms": 1500},
+        registry, tmp_path / "shares", [], custom="progress", selected_range=True,
+        detailed_progress=lambda percent, phase: updates.append((percent, phase)),
+    )
+    assert Path(result).is_file()
+    assert any(0 < percent < 90 and phase.startswith("Encoding") for percent, phase in updates)
+    assert any(phase == "Validating output" for _, phase in updates)
+    assert any(phase == "Saving shared clip" for _, phase in updates)

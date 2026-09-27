@@ -25,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 6:
+            if version > 7:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -64,6 +64,10 @@ class Catalogue:
                     path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
                     duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS export_jobs (
+                    job_id TEXT PRIMARY KEY, manifest TEXT NOT NULL,
+                    status TEXT NOT NULL, created_at TEXT NOT NULL
+                );
             """)
             if version < 4:
                 columns = {row["name"] for row in database.execute("PRAGMA table_info(clips)")}
@@ -99,7 +103,27 @@ class Catalogue:
                 "CREATE INDEX IF NOT EXISTS tag_casefold_identity "
                 "ON clips(casefold(tag)) WHERE tag IS NOT NULL"
             )
-            database.execute("PRAGMA user_version = 6")
+            database.execute("PRAGMA user_version = 7")
+
+    def export_jobs(self):
+        return [
+            {"job_id": row["job_id"], "manifest": json.loads(row["manifest"]),
+             "status": row["status"]}
+            for row in self.rows("SELECT * FROM export_jobs ORDER BY created_at")
+        ]
+
+    def save_export_job(self, job_id, manifest, status):
+        with self.connection() as database:
+            database.execute(
+                "INSERT INTO export_jobs(job_id,manifest,status,created_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET "
+                "manifest=excluded.manifest,status=excluded.status",
+                (job_id, json.dumps(manifest), status, now()),
+            )
+
+    def delete_export_job(self, job_id):
+        with self.connection() as database:
+            database.execute("DELETE FROM export_jobs WHERE job_id=?", (job_id,))
 
     def hidden_deleted_ids(self):
         """Hide intentional deletions until their current (possibly relinked) source returns."""

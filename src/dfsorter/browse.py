@@ -340,10 +340,14 @@ class BrowsePage(QWidget):
         folders = self.window.catalogue.folders()
         self.window.settings["share_folder"] = destination
         self.window.save_settings()
-        self.window.background(
+        self.window.activities.submit(
+            "Share", f"Share · {Path(clip['source_path']).name}",
             lambda cancelled, progress: share_clip(
                 clip, self.window.registry, destination, folders, custom=custom,
-                selected_range=selected_range, cancelled=cancelled, progress=progress,
+                selected_range=selected_range, cancelled=cancelled,
+                detailed_progress=progress,
             ),
-            lambda target: QMessageBox.information(self, "Shared", f"Shared H.264 MP4 to:\n{target}"),
         )
+        self.window.flash_share(self.share_button)
+        if self.fullscreen_state is not None:
+            self.window.flash_share(self.fullscreen_share_button)

@@ -7,7 +7,15 @@ import yaml
 from dfsorter.catalogue import Catalogue, normalized
 from dfsorter.config import Registry, source_fallback, title
 from dfsorter.media import discover
-from dfsorter.output import copy_one, export_project, safe_stem, share_clip, validate
+from dfsorter.output import (
+    copy_one,
+    export_project,
+    prepare_export_manifest,
+    run_export_manifest,
+    safe_stem,
+    share_clip,
+    validate,
+)
 from dfsorter.parsing import parse_command, parse_command_details, preview_command, query_clips
 
 
@@ -677,6 +685,102 @@ def test_partial_export_reports_completed(catalogue, clips, registry, tmp_path, 
     assert result.error == "Simulated destination failure"
     assert Path(result.completed[0]).exists()
     assert len(list((tmp_path / "export").glob("*.mp4"))) == 1
+
+
+def test_resumable_export_verifies_completed_files_and_preserves_snapshot(
+    catalogue, clips, registry, tmp_path, monkeypatch
+):
+    import dfsorter.output as output
+
+    for clip in clips:
+        catalogue.patch(clip["clip_id"], {
+            "triage": "keep", "metadata": {"agent": "Jett"},
+        })
+    frozen = catalogue.clips()
+    destination = tmp_path / "export"
+    manifest = prepare_export_manifest(frozen, registry, destination, catalogue.folders())
+    catalogue.save_export_job("resume-test", manifest, "Queued")
+    original_copy = output._copy_resumable
+    cancelled = False
+    calls = []
+
+    def copy_then_cancel(*args, **kwargs):
+        nonlocal cancelled
+        result = original_copy(*args, **kwargs)
+        calls.append(result[0])
+        cancelled = True
+        return result
+
+    monkeypatch.setattr(output, "_copy_resumable", copy_then_cancel)
+    first = run_export_manifest(catalogue, "resume-test", lambda: cancelled)
+    assert first.cancelled and len(first.completed) == 1
+    completed_path = Path(first.completed[0])
+    original_bytes = completed_path.read_bytes()
+    assert catalogue.export_jobs()[0]["manifest"]["items"][0]["completed"]["sha256"]
+
+    completed_path.write_bytes(b"x" * len(original_bytes))
+    monkeypatch.setattr(output, "_copy_resumable", original_copy)
+    reopened = Catalogue(catalogue.path)
+    failed = run_export_manifest(reopened, "resume-test")
+    assert "changed" in failed.error and not failed.completed
+    assert len(list(destination.glob("*.mp4"))) == 1
+
+    completed_path.write_bytes(original_bytes)
+    # Later metadata changes cannot alter frozen filenames or membership.
+    catalogue.patch(frozen[1]["clip_id"], {"mainline": "Changed later"})
+    resumed = run_export_manifest(reopened, "resume-test")
+    assert resumed.error is None and len(resumed.completed) == len(frozen)
+    assert resumed.completed[0] == str(completed_path)
+    assert len(list(destination.glob("*.mp4"))) == len(frozen)
+
+
+def test_parallel_export_jobs_never_overwrite_each_other(catalogue, clips, registry, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    catalogue.patch(clips[0]["clip_id"], {
+        "triage": "keep", "metadata": {"agent": "Jett"},
+    })
+    destination = tmp_path / "shared-destination"
+    manifest = prepare_export_manifest(
+        [catalogue.clip(clips[0]["clip_id"])], registry, destination, catalogue.folders(),
+    )
+    for job_id in ("parallel-a", "parallel-b"):
+        catalogue.save_export_job(job_id, manifest, "Queued")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda job_id: run_export_manifest(catalogue, job_id),
+                                ("parallel-a", "parallel-b")))
+    assert all(result.error is None for result in results)
+    paths = [result.completed[0] for result in results]
+    assert len(set(paths)) == 2
+    assert all(Path(path).read_bytes() == Path(clips[0]["source_path"]).read_bytes()
+               for path in paths)
+
+
+def test_export_resume_recovers_copy_published_before_manifest_commit(
+    catalogue, clips, registry, tmp_path
+):
+    import hashlib
+
+    catalogue.patch(clips[0]["clip_id"], {
+        "triage": "keep", "metadata": {"agent": "Jett"},
+    })
+    manifest = prepare_export_manifest(
+        [catalogue.clip(clips[0]["clip_id"])], registry,
+        tmp_path / "export", catalogue.folders(),
+    )
+    item = manifest["items"][0]
+    target = Path(manifest["destination"]) / f"{item['stem']}.mp4"
+    target.parent.mkdir()
+    data = Path(item["source_path"]).read_bytes()
+    target.write_bytes(data)
+    item["pending"] = {
+        "target": str(target), "temporary": str(target.parent / "gone.part"),
+        "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    catalogue.save_export_job("published-before-commit", manifest, "Running")
+    result = run_export_manifest(Catalogue(catalogue.path), "published-before-commit")
+    assert result.error is None and result.completed == [str(target)]
+    assert len(list(target.parent.glob("*.mp4"))) == 1
 
 
 def test_purge_only_catalogue(catalogue, clips):

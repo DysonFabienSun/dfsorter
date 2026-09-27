@@ -467,7 +467,7 @@ Capture folders are persisted across application runs. Successful scheduled or f
 
 On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, missing-source entries and frozen Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available. Additionally, request quiet incremental scans every 30 seconds and when the application regains focus. Coalesce requests and defer while another background operation or modal dialog is active; retry after it finishes. Quiet scans use the same inspection cache and enabled-folder rules without modal progress or error dialogs. Report failures in the status bar. Preserve selection, viewport anchor, playback, temporary Browse fields and frozen Session membership/order when refreshing results.
 
-Closing the application during a background operation requests cancellation and closes the window automatically after the worker stops. Do not restart automatic scans or show scan results while closure is pending.
+Closing the application during a background operation requests cancellation and closes the window automatically after the worker stops. When Share or Project Export jobs are queued or running, first confirm that exiting will cancel them; declining keeps the application open. Confirmed exit cancels queued jobs, waits for running jobs to clean up, then closes. Do not restart automatic scans or show scan results while closure is pending.
 
 ### 11.1 Capture-Folder Classification
 
@@ -830,6 +830,8 @@ Range shares decode and re-encode through the exact source-frame/audio-sample bo
 
 Share outputs use `.mp4`. Project Export retains the source extension and original bytes.
 
+Confirmed Shares enter the nonmodal Activities queue. The initiating Share control briefly changes to the success color when submission succeeds. The job freezes the clip, selected range, filename choices, and destination at submission. Activities reports encoding time progress, validation, and saving; it retains completion and errors until dismissed. Share jobs are not resumed across application restarts.
+
 Filesystem-invalid characters are sanitized only in the copied filename; catalogue text is not altered.
 
 Existing destination files are never overwritten. Name collisions receive a numeric suffix.
@@ -921,7 +923,9 @@ After copying, DFSorter does not:
 - track user edits to them;
 - treat them as new catalogue sources.
 
-Re-exporting the same Project later is a new copy operation. Existing files are never overwritten and therefore receive collision suffixes as necessary.
+Re-exporting the same Project later is a new copy operation. Existing files are never overwritten and therefore receive collision suffixes as necessary. A separate **Resume export** action continues an unfinished recorded job using its frozen clip list and output choices. Unfinished job records are stored in the catalogue until resumed to completion or explicitly forgotten. Each completed file records its size and SHA-256 digest; Resume verifies both before skipping it. If verification fails, Resume stops and reports the affected file for manual repair. Successfully copied files remain after cancellation or failure.
+
+Share and Project Export appear in a top-navigation Activities dropdown with per-job percentages, phase text, cancellation, and retained results. At most two output jobs run at once, including at most one FFmpeg Share. Pending output jobs wait in submission order when a matching slot is unavailable. Automatic scanning is deferred during output jobs. A confirmed exit cancels active output jobs; unfinished and failed Project Export records are offered for Resume after restart.
 
 ---
 
