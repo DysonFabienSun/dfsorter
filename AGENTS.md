@@ -14,8 +14,7 @@
 
 ## Portable ZIP Builds
 
-- Rebuild `build/DFSorter-Windows-x64.zip` with `pwsh -File packaging/build-release.ps1` only when the user asks for a new tagged version release.
-- Do not rebuild the ZIP for ordinary code, documentation, or instruction changes. The ZIP is a local build artifact ignored by Git; public downloads are created by the release workflow.
+- Never generate `build/DFSorter-Windows-x64.zip` on this device, including for tagged releases. The release CI/CD workflow builds the ZIP and creates the release draft when a version tag is pushed.
 
 ## Application-Wide Style and Font Consistency
 

@@ -1,6 +1,6 @@
 [project]
 name = "dfsorter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Non-destructive gameplay clip catalogue"
 requires-python = ">=3.13,<3.14"
 dependencies = [
