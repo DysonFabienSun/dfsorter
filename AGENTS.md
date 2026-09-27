@@ -4,7 +4,7 @@
 
 - Use PowerShell 7 (`pwsh`) for shell commands.
 - Use `uv` to manage Python environments and dependencies and to run Python commands.
-- This machine is behind the PRC's internet firewalls. Use the `proxy_on` and `proxy_off` commands from the default PowerShell profile when accessing the broader internet. Load the profile explicitly if the shell was started without it, enable the proxy before network access, and disable it afterward in a `finally` block.
+- This machine is behind the PRC's internet firewalls. Use the `proxyon` and `proxyoff` commands from the default PowerShell profile when accessing the broader internet. Load the profile explicitly if the shell was started without it, enable the proxy before network access, and disable it afterward in a `finally` block.
 
 ## Minimal Relevant Testing
 
