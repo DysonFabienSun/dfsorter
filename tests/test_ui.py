@@ -150,6 +150,39 @@ def test_session_pane_top_rows_align_in_dark_mode(window, application):
     assert home_heading.mapTo(window, QPoint()).y() == overview_top
 
 
+def test_library_toolbar_surface_and_alignment(window, application):
+    from dfsorter.theme import THEMES
+
+    for scheme in ("light", "dark"):
+        window.set_theme(scheme, persist=False)
+        for panel, search in (("Home", window.search), ("Browse", window.browse_search)):
+            window.panel(panel)
+            application.processEvents()
+            toolbar = window.library_toolbar
+            assert toolbar.isVisible()
+            assert toolbar.geometry().top() == 0
+            assert toolbar.width() == window.left.width()
+            assert search.mapTo(toolbar, QPoint()).x() == 8
+            assert search.mapTo(toolbar, QPoint()).y() == 8
+            assert search.mapTo(toolbar, QPoint()).x() + search.width() == toolbar.width() - 8
+            assert window.clip_filter.mapTo(toolbar, QPoint()).x() == 8
+            assert (
+                window.time_sort.mapTo(toolbar, QPoint()).x() + window.time_sort.width()
+                <= toolbar.width() - 8
+            )
+            assert (
+                window.filters.y() - (search.mapTo(toolbar, QPoint()).y() + search.height())
+                == 8
+            )
+            toolbar_image = toolbar.grab().toImage()
+            toolbar_color = QColor(THEMES[scheme]["bg_library_toolbar"])
+            assert toolbar_image.pixelColor(2, 2) == toolbar_color
+            assert toolbar_image.pixelColor(toolbar.width() - 2, toolbar.height() - 1) == toolbar_color
+        window.panel("Config")
+        application.processEvents()
+        assert window.library_toolbar.isHidden()
+
+
 def test_editing_header_uses_compact_left_inset(window, application, tmp_path):
     add_clips(window, tmp_path)
     window.set_theme("dark", persist=False)
@@ -1783,7 +1816,7 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.catalogue.clip(ids[0])["description"] == "Notes <keep literal>"
     window.edit({"description": None})
     assert window.description.isHidden()
-    assert window.add_project_next.parentWidget() is window.player
+    assert window.add_project_next.parentWidget() is window.player.control_bar
     application.processEvents()
     assert window.library_error.isHidden()
     assert window.left.objectName() == "clipLibraryPane"
@@ -1811,14 +1844,14 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.session_counts.isHidden()
     window.panel("Session")
     application.processEvents()
-    card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
-    assert window.search.mapTo(window, QPoint(0, 0)).x() == card_title_x
-    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    toolbar_x = window.library_toolbar.mapTo(window, QPoint(0, 0)).x() + 8
+    assert window.search.mapTo(window, QPoint(0, 0)).x() == toolbar_x
+    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == toolbar_x
     window.panel("Browse")
     application.processEvents()
-    card_title_x = window.library.mapTo(window, QPoint(0, 0)).x() + 1 + 7
-    assert window.browse_search.mapTo(window, QPoint(0, 0)).x() == card_title_x
-    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == card_title_x
+    toolbar_x = window.library_toolbar.mapTo(window, QPoint(0, 0)).x() + 8
+    assert window.browse_search.mapTo(window, QPoint(0, 0)).x() == toolbar_x
+    assert window.clip_filter.mapTo(window, QPoint(0, 0)).x() == toolbar_x
     assert wait_for(application, lambda: not window.transition_pending)
     window.grab().save(str(artifact / "browse-dark.png"))
 

@@ -10,6 +10,8 @@ THEMES = {
         "surface_canvas": "#F3F5F7",
         "surface_workspace": "#FFFFFF",
         "surface_sidebar": "#F8F9FA",
+        "bg_library_toolbar": "#F1F3F5",
+        "bg_library_search": "#F8F9FA",
         "surface_panel": "#FFFFFF",
         "surface_subtle": "#F6F8FA",
         "surface_control": "#FFFFFF",
@@ -71,6 +73,8 @@ THEMES = {
         "surface_canvas": "#181C21",
         "surface_workspace": "#1F242B",
         "surface_sidebar": "#1B2026",
+        "bg_library_toolbar": "#171B20",
+        "bg_library_search": "#1D2329",
         "surface_panel": "#1F242B",
         "surface_subtle": "#252B33",
         "surface_control": "#20262D",
@@ -219,6 +223,10 @@ def stylesheet():
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
+        QWidget#libraryToolbar { background: %(bg_library_toolbar)s; }
+        QLineEdit[librarySearch="true"] { background: %(bg_library_search)s; border-color: %(border_subtle)s; }
+        QLineEdit[librarySearch="true"]:hover { border-color: %(border_strong)s; }
+        QLineEdit[librarySearch="true"]:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
         QWidget#clipLibraryPane, QWidget#projectsPane { border-radius: %(radius_structural)spx; }
         QWidget#projectsPane { background: %(surface_sidebar)s; border-left: 1px solid %(border_subtle)s; }
         QWidget[role="transparent"] { background: transparent; }

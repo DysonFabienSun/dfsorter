@@ -236,14 +236,14 @@ Activities sits between Redo and Theme as an icon-only 26 px navigation utility 
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Position the Editing header title and count at a 16 px inset; align its action to the card edge and footer text to the card title. Library search and filter control edges use the 8 px guide; metadata clip rows shift their title text right to make room for the standalone verdict dot. The left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar uses shared 2 px structural corners, matching Projects. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Position the Editing header title and count at a 16 px inset; align its action to the card edge and footer text to the card title. Library controls sit on a flat toolbar surface slightly darker than the list, spanning the full pane width from its top edge without a divider; use equal 8 px top and horizontal padding, 8 px between search and filters, and aligned search/filter edges. Metadata clip rows shift their title text right to make room for the standalone verdict dot. The list body retains 8 px right / 4 px vertical margins. The sidebar uses shared 2 px structural corners, matching Projects. These are component-specific offsets, not general panel-padding replacements.
 
-Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
+Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. The Editing header stays transparent. Filters and footer visibility follow page requirements.
 
 Search is the primary filter entry. The three filter menu buttons beneath it share height,
 radius, padding, border treatment and arrow placement. Menus use persistent checkboxes for
-multi-selection. Do not frame the row as a separate card when the sidebar surface and spacing
-already establish the group.
+multi-selection. Keep the toolbar plane flat without an enclosing rounded card. Search keeps
+rounded input styling with a quiet resting border, stronger hover border and accent focus ring.
 
 ### Clip cards
 
