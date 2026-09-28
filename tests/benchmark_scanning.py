@@ -10,16 +10,26 @@ from dfsorter.catalogue import Catalogue
 from dfsorter.config import Registry
 from dfsorter.scanning import ScanCoordinator
 
+BASELINE_REF = "0e078867643ab602af5010bce6f59a26a80e367a"
+
 
 def main():
     root = Path(__file__).resolve().parents[1]
     registry = Registry(root / "configs/games")
     parser = argparse.ArgumentParser()
     parser.add_argument("capture", type=Path)
-    capture = parser.parse_args().capture
+    parser.add_argument(
+        "--baseline-ref",
+        default=BASELINE_REF,
+        help="Git revision of the sequential scanner (default: pre-cache revision)",
+    )
+    args = parser.parse_args()
+    capture = args.capture
     namespace = {}
     source = subprocess.check_output(
-        ["git", "show", "HEAD:src/dfsorter/media.py"], text=True, encoding="utf-8"
+        ["git", "show", f"{args.baseline_ref}:src/dfsorter/media.py"],
+        text=True,
+        encoding="utf-8",
     )
     exec(compile(source, "baseline_media.py", "exec"), namespace)
     baseline_probe = namespace["inspect_media"]
@@ -49,6 +59,7 @@ def main():
             json.dumps(
                 dict(
                     mode="baseline",
+                    revision=args.baseline_ref,
                     videos=len(found),
                     traversal=traversal,
                     probing=probe_seconds,

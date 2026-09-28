@@ -783,7 +783,7 @@ def test_export_resume_recovers_copy_published_before_manifest_commit(
     assert len(list(target.parent.glob("*.mp4"))) == 1
 
 
-def test_purge_only_catalogue(catalogue, clips):
+def test_remove_folder_purges_catalogue_without_deleting_sources(catalogue, clips):
     source = Path(clips[0]["source_path"])
     before = source.read_bytes()
     catalogue.create_session([clip["clip_id"] for clip in clips])

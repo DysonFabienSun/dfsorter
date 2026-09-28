@@ -18,7 +18,7 @@ def test_cache_lifecycle(catalogue, registry, clips, monkeypatch):
         return dict(duration=12, created="2026-09-17", error=None)
 
     monkeypatch.setattr("dfsorter.scanning.inspect_media", probe)
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
     folder = catalogue.folders()[0]
     catalogue.patch(clips[0]["clip_id"], {"mainline": "Keep this"})
     catalogue.create_session([clip["clip_id"] for clip in reversed(clips)])
@@ -52,7 +52,7 @@ def test_cache_lifecycle(catalogue, registry, clips, monkeypatch):
 
 
 def test_failure_expiry_change_and_purge(catalogue, registry, clips, monkeypatch):
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
     monkeypatch.setattr(
         "dfsorter.scanning.inspect_media",
         lambda *args: dict(duration=None, created=None, error="broken"),
@@ -70,11 +70,11 @@ def test_failure_expiry_change_and_purge(catalogue, registry, clips, monkeypatch
 
 
 def test_missing_tool_and_unstable_file(catalogue, registry, clips, monkeypatch):
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: None)
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: None)
     result = ScanCoordinator(catalogue, registry).run(catalogue.folders())
     assert len(result[1]) == 1
     assert not catalogue.media_cache()
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
 
     def changed(path, *args):
         path.write_bytes(b"replacement")
@@ -89,7 +89,7 @@ def test_missing_tool_and_unstable_file(catalogue, registry, clips, monkeypatch)
 def test_concurrency_order_and_folder_cancellation(
     catalogue, registry, clips, tmp_path, monkeypatch
 ):
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
     lock = threading.Lock()
     active = 0
     peak = 0

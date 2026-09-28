@@ -2953,7 +2953,7 @@ def test_rescan_modal_cache_restart(window, application, tmp_path, monkeypatch):
         return dict(duration=15, created="2026-09-17", error=None)
 
     monkeypatch.setattr("dfsorter.scanning.inspect_media", probe)
-    monkeypatch.setattr("dfsorter.scanning.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
     ScanCoordinator(window.catalogue, window.registry).run(window.catalogue.folders())
     restarted = Window(tmp_path)
     assert next(iter(restarted.media_info.values()))["duration"] == 15

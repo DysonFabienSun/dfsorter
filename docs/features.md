@@ -111,8 +111,9 @@ Enabled capture folders rescan automatically on startup; manual rescan remains a
 UI refresh measured separately: 0.083 s. Inspection timing includes scheduling,
 attribute checks and cache lookup; database timing includes cache writes and ingestion.
 Warm filesystem caches and machine load affect timings. Benchmark helper:
-`tests/benchmark_scanning.py`, with a disposable project-local database and read-only
-access to capture media. Automated coverage includes immediate modal startup/manual
+`tests/benchmark_scanning.py`, with a disposable project-local database, read-only
+access to capture media, and a pinned pre-cache baseline revision (overridable with
+`--baseline-ref`). Automated coverage includes immediate modal startup/manual
 progress, restart metadata, failure expiry, forced inspection, cancellation rollback,
 process cleanup and the existing regression suite.
 
