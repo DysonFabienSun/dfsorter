@@ -21,6 +21,8 @@ THEMES = {
         "text_muted": "#65717C",
         "text_disabled": "#A3ABB3",
         "text_inverse": "#FFFFFF",
+        "heading_icon_badge": "#252B33",
+        "heading_icon_foreground": "#FFFFFF",
         "player_chrome_text": "#F1F4F6",
         "player_chrome_secondary": "#E0E5E9",
         "player_chrome_muted": "#CDD5DC",
@@ -81,6 +83,8 @@ THEMES = {
         "text_muted": "#8E99A4",
         "text_disabled": "#626C76",
         "text_inverse": "#111317",
+        "heading_icon_badge": "#252B33",
+        "heading_icon_foreground": "#FFFFFF",
         "player_chrome_text": "#F1F4F6",
         "player_chrome_secondary": "#E0E5E9",
         "player_chrome_muted": "#CDD5DC",
@@ -226,6 +230,7 @@ def stylesheet():
         QLabel[role="helper"] { color: %(text_muted)s; font-size: %(font_xs)spx; }
         QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
         QLabel[role="sectionHeading"] { font-size: %(font_xl)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="headingIconBadge"] { background: %(heading_icon_badge)s; border-radius: 16px; }
         QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }

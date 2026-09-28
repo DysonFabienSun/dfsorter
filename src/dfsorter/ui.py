@@ -291,14 +291,24 @@ def page():
 def heading(text, icon_name, heading_role="sectionHeading"):
     row = QHBoxLayout()
     row.setSpacing(8)
-    icon_size = SIZES["icon_md"] if heading_role == "paneHeading" else SIZES["icon_lg"]
-    box_size = icon_size + 4
+    section = heading_role == "sectionHeading"
+    icon_size = SIZES["icon_xl"] if section else SIZES["icon_md"]
+    box_size = SIZES["normal"] if section else icon_size + 4
     glyph = QLabel()
     glyph.setProperty("headingIcon", icon_name)
     glyph.setProperty("headingIconSize", icon_size)
+    glyph.setProperty("headingIconColorRole", "heading_icon_foreground" if section else None)
     glyph.setFixedSize(box_size, box_size)
     glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    glyph.setPixmap(icon(icon_name, size=icon_size).pixmap(icon_size, icon_size))
+    if section:
+        role(glyph, "headingIconBadge")
+    glyph.setPixmap(
+        icon(
+            icon_name,
+            COLORS["heading_icon_foreground"] if section else None,
+            size=icon_size,
+        ).pixmap(icon_size, icon_size)
+    )
     label = QLabel(text)
     role(label, heading_role)
     label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -1233,7 +1243,14 @@ class Window(QMainWindow):
             name = glyph.property("headingIcon")
             if name:
                 size = glyph.property("headingIconSize") or 20
-                glyph.setPixmap(icon(name, size=size).pixmap(size, size))
+                color_role = glyph.property("headingIconColorRole")
+                glyph.setPixmap(
+                    icon(
+                        name,
+                        COLORS[color_role] if color_role else None,
+                        size=size,
+                    ).pixmap(size, size)
+                )
         self.range_warning_icon.setPixmap(
             icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
         )

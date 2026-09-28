@@ -3209,7 +3209,40 @@ def test_facelift_heading_icons_share_title_centerline(window, application):
                 glyph.mapToGlobal(glyph.rect().center()).y()
                 - label.mapToGlobal(label.rect().center()).y()
             ) <= 1
-            assert glyph.property("headingIconSize") == (16 if name == "Projects" else 20)
+            assert glyph.property("headingIconSize") == (16 if name == "Projects" else 24)
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_section_heading_icons_are_centered_and_unclipped(window, application, theme):
+    window.set_theme(theme, persist=False)
+    for panel, names in (
+        ("Home", ("Capture folders",)),
+        ("Session", ("Library overview", "No active session")),
+    ):
+        window.panel(panel)
+        application.processEvents()
+        for name in names:
+            label = next(child for child in window.findChildren(QLabel) if child.text() == name)
+            glyph = next(
+                child for child in window.findChildren(QLabel)
+                if child.parent() is label.parent() and child.property("headingIcon")
+            )
+            assert glyph.property("role") == "headingIconBadge"
+            assert glyph.size() == QSize(32, 32)
+            badge = glyph.grab().toImage()
+            assert badge.pixelColor(16, 2) == QColor(COLORS["heading_icon_badge"])
+            pixmap = glyph.pixmap().toImage()
+            painted = [
+                (x, y)
+                for x in range(pixmap.width()) for y in range(pixmap.height())
+                if pixmap.pixelColor(x, y).alpha() > 128
+            ]
+            assert painted
+            assert abs(
+                (min(y for _, y in painted) + max(y for _, y in painted)) / 2
+                - (pixmap.height() - 1) / 2
+            ) <= pixmap.devicePixelRatio()
+            assert any(pixmap.pixelColor(x, y) == QColor("#FFFFFF") for x, y in painted)
 
 
 def test_settings_remain_available_in_browse(window):
