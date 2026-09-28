@@ -582,7 +582,6 @@ class Window(QMainWindow):
         scrollbar.valueChanged.connect(self.schedule_thumbnails)
         scrollbar.rangeChanged.connect(self.schedule_thumbnails)
         self.library.currentItemChanged.connect(self.select_clip)
-        self.library.itemDoubleClicked.connect(self.browse_library_clip)
         self.library.itemSelectionChanged.connect(self.library.viewport().update)
         self.library.itemEntered.connect(self.update_library_hover_row)
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -3327,6 +3326,16 @@ class Window(QMainWindow):
             QEvent.Type.Leave, QEvent.Type.HoverLeave,
         }:
             self.update_library_hover_row()
+        if (
+            watched is self.library.viewport()
+            and self.current_panel in {"Home", "Session"}
+            and event.type() == QEvent.Type.MouseButtonDblClick
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            item = self.library.itemAt(event.position().toPoint())
+            if item is not None:
+                self.browse_library_clip(item)
+                return True
         if (
             watched is self.library.viewport()
             and self.current_panel == "Home"

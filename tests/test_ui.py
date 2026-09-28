@@ -2951,14 +2951,35 @@ def test_home_clip_left_click_retains_inert_highlight_without_context_menu(
 
 
 @pytest.mark.parametrize("origin", ["Home", "Session"])
-def test_double_click_library_clip_opens_it_in_browse(window, application, tmp_path, origin):
-    add_clips(window, tmp_path)
+@pytest.mark.parametrize("target_row", [0, 1])
+def test_double_click_library_clip_opens_it_in_browse(
+    window, application, tmp_path, origin, target_row
+):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{index}.mp4" for index in range(2)]
+    for path in paths:
+        path.write_bytes(b"video")
+    folder_id = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(
+        folder_id, [{"path": str(path), "game": None} for path in paths]
+    )
     window.panel("Browse")
     window.browse_search.setText("does not match")
     window.panel(origin)
-    clip_id = window.library.item(0).data(Qt.ItemDataRole.UserRole)
+    item = window.library.item(target_row)
+    clip_id = item.data(Qt.ItemDataRole.UserRole)
+    window.library.setCurrentItem(window.library.item(0))
+    assert (window.library.currentItem() is item) == (target_row == 0)
 
-    window.library.itemDoubleClicked.emit(window.library.item(0))
+    position = window.library.visualItemRect(item).center()
+    QTest.mouseClick(window.library.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    QTest.mouseDClick(
+        window.library.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=position,
+    )
+    application.processEvents()
 
     assert window.current_panel == "Browse"
     assert window.browse_search.text() == ""
