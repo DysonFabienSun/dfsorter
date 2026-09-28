@@ -132,7 +132,7 @@ THEMES = {
 COLORS = dict(THEMES["light"])
 ACTIVE_SCHEME = "light"
 
-FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "lg": 16, "xl": 20, "xxl": 26}
+FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "library_title": 15, "lg": 16, "xl": 20, "xxl": 26}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
 RADII = {"none": 0, "sm": 3, "md": 5, "lg": 7, "control": 4}
@@ -143,11 +143,13 @@ SIZES = {
     "toolbar": 28,
     "nav": 34,
     "card": 56,
+    "compact_card": 53,
     "browse_card": 64,
     "thumbnail_width": 84,
     "thumbnail_height": 48,
     "card_gap": 1,
     "card_padding": 7,
+    "card_dot_space": 18,
     "panel_padding": 12,
     "timeline": 7,
     "icon_xs": 12,
@@ -414,9 +416,16 @@ def apply_theme(application, mode="light"):
     return ACTIVE_SCHEME
 
 
-def title_styles(card=False, on_video=False):
-    small = FONT_SIZES["md"]
-    large = FONT_SIZES["card_title" if card else "lg"]
+def title_styles(card=False, on_video=False, library=False, compact_card=False):
+    small = FONT_SIZES["base" if library and not compact_card else "md"]
+    if compact_card:
+        large_role = "card_title"
+    elif library:
+        large_role = "library_title"
+    else:
+        large_role = "card_title" if card else "lg"
+    large = FONT_SIZES[large_role]
+    mainline_weight = 600 if compact_card else 700
     muted = COLORS["player_chrome_muted" if on_video else "text_muted"]
     secondary = COLORS["player_chrome_secondary" if on_video else "text_secondary"]
     primary = COLORS["player_chrome_text"] if on_video else COLORS["text_primary"]
@@ -424,5 +433,5 @@ def title_styles(card=False, on_video=False):
         "prefix": f"color:{muted}; font-size:{small}px; font-weight:400",
         "metadata": f"color:{secondary}; font-size:{small}px; font-weight:400",
         "separator": f"color:{muted}; font-size:{small}px; font-weight:400",
-        "mainline": f"color:{primary}; font-size:{large}px; font-weight:700",
+        "mainline": f"color:{primary}; font-size:{large}px; font-weight:{mainline_weight}",
     }

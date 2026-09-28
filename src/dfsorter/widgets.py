@@ -18,7 +18,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QAbstractButton, QStyle, QStyledItemDelegate, QToolButton, QWidget
 
 from .app_paths import ROOT
-from .theme import COLORS, SIZES, font
+from .theme import COLORS, FONT_SIZES, SIZES, font
 
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -110,14 +110,15 @@ class ClipScrollFade(QWidget):
         painter.fillRect(self.rect(), gradient)
 
 
-def tag_prefix(clip, rich=False, on_video=False):
+def tag_prefix(clip, rich=False, on_video=False, size_role="library_title"):
     value = (clip.get("tag") or "").strip()
     if not value:
         return ""
     text = f"[{value}]"
     if rich:
         color = COLORS["player_chrome_tag" if on_video else "tag"]
-        return f'<b style="color:{color}">{html.escape(text)}</b> '
+        size = FONT_SIZES[size_role]
+        return f'<b style="color:{color};font-size:{size}px">{html.escape(text)}</b> '
     return text + " "
 
 
@@ -202,13 +203,17 @@ def tool(name, label, callback):
 
 class ClipDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
-        browse = (index.data(CLIP_ROLE) or {}).get("browse_details") is not None
+        data = index.data(CLIP_ROLE) or {}
+        browse = data.get("browse_details") is not None
+        compact_card = data.get("compact_card", False)
+        title_size = "card_title" if browse or compact_card else "library_title"
         height = (
-            QFontMetrics(font("card_title", "bold", base=option.font)).height()
-            + QFontMetrics(font("sm", base=option.font)).height()
+            QFontMetrics(font(title_size, "semibold" if compact_card else "bold", base=option.font)).height()
+            + QFontMetrics(font("xs" if compact_card else "sm", base=option.font)).height()
             + 14
         )
-        return QSize(100, max(SIZES["browse_card"] if browse else SIZES["card"], height) + SIZES["card_gap"])
+        minimum = SIZES["browse_card"] if browse else SIZES["compact_card" if compact_card else "card"]
+        return QSize(100, max(minimum, height) + SIZES["card_gap"])
 
     def paint(self, painter, option, index):
         painter.save()
@@ -219,56 +224,48 @@ class ClipDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
-        library_row = data.get("library_row", False)
-        active_card = option.rect.adjusted(1, -2, -1, 0) if library_row else card
-        next_index = index.siblingAtRow(index.row() + 1)
-        selected_below = (
-            library_row and next_index.isValid()
-            and self.parent().selectionModel().isSelected(next_index)
-        )
-        hovered_below = (
-            library_row and not selected and next_index.isValid()
-            and self.parent().library_hover_row == next_index.row()
+        compact_card = data.get("compact_card", False)
+        active_card = option.rect.adjusted(1, 0, -1, 0)
+        previous_index = index.siblingAtRow(index.row() - 1)
+        previous_active = previous_index.isValid() and (
+            self.parent().selectionModel().isSelected(previous_index)
+            or self.parent().library_hover_row == previous_index.row()
         )
         if selected or hovered:
             painter.setBrush(QColor(COLORS["accent_selection" if selected else "surface_hover"]))
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(active_card, 3, 3)
-        else:
+            if selected and compact_card:
+                painter.drawRect(active_card)
+            else:
+                painter.drawRoundedRect(active_card, 3, 3)
+        elif index.row() > 0 and not previous_active:
             painter.setPen(QColor(COLORS["border_subtle"]))
             painter.drawLine(
                 card.left() + SIZES["card_padding"],
-                option.rect.bottom() if library_row else card.bottom(),
+                option.rect.top(),
                 card.right() - SIZES["card_padding"],
-                option.rect.bottom() if library_row else card.bottom(),
+                option.rect.top(),
             )
-        if selected_below or hovered_below:
-            painter.save()
-            painter.setClipRect(option.rect)
-            painter.setBrush(QColor(COLORS["accent_selection" if selected_below else "surface_hover"]))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(
-                self.parent().visualRect(next_index).adjusted(1, -2, -1, 0), 3, 3
-            )
-            painter.restore()
         if focused:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QColor(COLORS["focus"]))
-            painter.drawRoundedRect(active_card if selected or hovered else card, 3, 3)
+            if selected and compact_card:
+                painter.drawRect(active_card)
+            else:
+                painter.drawRoundedRect(active_card if selected or hovered else card, 3, 3)
         if selected:
             painter.fillRect(
-                active_card.left() + 1,
-                active_card.top() + 4,
-                2,
-                active_card.height() - 8,
+                QRect(active_card.left(), active_card.top(), 2, active_card.height()),
                 QColor(COLORS["accent_default"]),
             )
-        title_font = font("base", base=option.font)
-        detail_font = font("sm", base=option.font)
-        title_metrics = QFontMetrics(font("card_title", "bold", base=option.font))
-        detail_metrics = QFontMetrics(detail_font)
-        browse = data.get("browse_details") is not None
         compact_time = data.get("compact_time")
+        browse = data.get("browse_details") is not None
+        metadata_row = not browse
+        title_size = "card_title" if browse or compact_card else "library_title"
+        title_font = font(title_size, "semibold" if compact_card else "bold", base=option.font)
+        detail_font = font("xs" if compact_card else "sm", base=option.font)
+        title_metrics = QFontMetrics(title_font)
+        detail_metrics = QFontMetrics(detail_font)
         content_left = card.left() + SIZES["card_padding"]
         if browse:
             thumbnail = QRect(content_left, card.top() + (card.height() - SIZES["thumbnail_height"]) // 2,
@@ -278,10 +275,11 @@ class ClipDelegate(QStyledItemDelegate):
             if picture is not None and not picture.isNull():
                 painter.drawImage(thumbnail, picture)
             content_left = thumbnail.right() + 11
+        if metadata_row:
+            content_left += SIZES["card_dot_space"]
         content_right = card.right() - SIZES["card_padding"]
         time_rect = None
         if compact_time is not None:
-            content_left += 18
             time_width = min(
                 detail_metrics.horizontalAdvance(compact_time), max(0, card.width() // 4)
             )
@@ -310,28 +308,65 @@ class ClipDelegate(QStyledItemDelegate):
             span.format = fragment.charFormat()
             formats.append(span)
             fragment_iterator += 1
-        text = data.get("title", str(index.data()))
-        elided = title_metrics.elidedText(
-            text, Qt.TextElideMode.ElideRight, area.width()
-        )
-        text_layout = QTextLayout(elided, title_font)
-        text_layout.setFormats(formats)
-        text_layout.beginLayout()
-        line = text_layout.createLine()
-        line.setLineWidth(area.width())
-        text_layout.endLayout()
+        text = document.toPlainText()
+
+        def layout_for(prefix_length):
+            clipped = prefix_length < len(text)
+            rendered = text[:prefix_length] + ("…" if clipped else "")
+            visible_formats = []
+            ellipsis_format = None
+            for span in formats:
+                if span.start <= max(0, prefix_length - 1) < span.start + span.length:
+                    ellipsis_format = span.format
+                length = min(span.start + span.length, prefix_length) - span.start
+                if length > 0:
+                    visible = QTextLayout.FormatRange()
+                    visible.start = span.start
+                    visible.length = length
+                    visible.format = span.format
+                    visible_formats.append(visible)
+            if clipped and ellipsis_format is not None:
+                ellipsis = QTextLayout.FormatRange()
+                ellipsis.start = prefix_length
+                ellipsis.length = 1
+                ellipsis.format = ellipsis_format
+                visible_formats.append(ellipsis)
+            result = QTextLayout(rendered, title_font)
+            result.setFormats(visible_formats)
+            result.beginLayout()
+            result_line = result.createLine()
+            result_line.setLineWidth(1_000_000)
+            result.endLayout()
+            return result, result_line
+
+        text_layout, line = layout_for(len(text))
+        if line.naturalTextWidth() > area.width():
+            low, high = 0, len(text)
+            while low < high:
+                middle = (low + high + 1) // 2
+                candidate, candidate_line = layout_for(middle)
+                if candidate_line.naturalTextWidth() <= area.width():
+                    low = middle
+                else:
+                    high = middle - 1
+            text_layout, line = layout_for(low)
         line_height = max(title_metrics.height(), round(line.height()))
-        block_height = line_height + 2 + detail_metrics.height()
-        optical_y = -3 if compact_time is not None else 0
-        area.moveTop(card.top() + (card.height() - block_height) // 2 + optical_y)
+        line_gap = 3 if compact_card else 2
+        block_height = line_height + line_gap + detail_metrics.height()
+        optical_y = -1 if metadata_row else 0
+        text_y = optical_y + (1 if compact_card else 0)
+        area.moveTop(card.top() + (card.height() - block_height) // 2 + text_y)
         area.setHeight(line_height)
         painter.save()
         painter.setClipRect(area)
         text_layout.draw(painter, QPointF(area.left(), area.top()))
         painter.restore()
-        detail_left = area.left() + (0 if compact_time is not None else 12)
+        detail_left = area.left() + (12 if browse else 0)
         detail = QRect(
-            detail_left, area.bottom() + 3, max(0, content_right - detail_left), detail_metrics.height()
+            detail_left,
+            area.bottom() + line_gap + 1,
+            max(0, content_right - detail_left),
+            detail_metrics.height(),
         )
         if time_rect is not None:
             time_rect.translate(0, optical_y)
@@ -347,7 +382,7 @@ class ClipDelegate(QStyledItemDelegate):
         warning = "  Unavailable" if data.get("unavailable") else ""
         rating = data.get("rating")
         rating_text = f"R{rating}" if rating is not None else ""
-        rating_font = font("sm", "bold", base=option.font)
+        rating_font = font("xs" if compact_card else "sm", "bold", base=option.font)
         rating_metrics = QFontMetrics(rating_font)
         separator = " · " if rating is not None else ""
         folder_separator = " · "
@@ -439,9 +474,10 @@ class ClipDelegate(QStyledItemDelegate):
             )
         )
         painter.setPen(Qt.PenStyle.NoPen)
-        if compact_time is not None:
+        if metadata_row:
             center = QPointF(
-                card.left() + SIZES["card_padding"] + 4, card.center().y() + optical_y
+                card.left() + SIZES["card_padding"] + 4,
+                card.center().y() + optical_y + (2 if compact_card else 0),
             )
         else:
             baseline = (

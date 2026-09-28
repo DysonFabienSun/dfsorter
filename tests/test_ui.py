@@ -1509,6 +1509,10 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     assert "!&nbsp;weapon" in window.field_reminder.text()
     assert "<u>player</u> clutch" in window.working_title.text().lower()
     assert "<u>player</u> clutch" in window.library.item(0).data(CLIP_ROLE)["rich_title"].lower()
+    assert "font-size:15px" in window.working_title.text()
+    assert "font-size:13px" in window.library.item(0).data(CLIP_ROLE)["rich_title"]
+    assert "font-style:italic" not in window.working_title.text()
+    assert "font-style:italic" not in window.library.item(0).data(CLIP_ROLE)["rich_title"]
     window.command.setText("[3rd] R4")
     document = QTextDocument()
     document.setHtml(window.command_feedback.text())
@@ -1540,6 +1544,39 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     window.submit()
     assert window.catalogue.clip(ids[0])["rating"] == 4
     assert window.rating.command_preview is None
+    window.panel("Home")
+    tagged = next(
+        window.library.item(index)
+        for index in range(window.library.count())
+        if window.library.item(index).data(Qt.ItemDataRole.UserRole) == ids[0]
+    )
+    assert "font-size:13px" in tagged.data(CLIP_ROLE)["rich_title"]
+
+
+def test_clip_card_title_sizes_are_scoped_to_home_session_and_editing(window, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.catalogue.patch(clip_id, {"mainline": "Player clutch"})
+    project = window.catalogue.save_project("Typography check")
+    window.catalogue.patch(clip_id, {}, membership=(project, True))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project))
+
+    for panel, compact, metadata_size, mainline_size, weight in (
+        ("Home", True, 13, 14, 600),
+        ("Session", True, 13, 14, 600),
+        ("Editing", True, 13, 14, 600),
+        ("Browse", False, 13, 14, 700),
+        ("Export", False, 14, 15, 700),
+    ):
+        window.panel(panel)
+        card = next(
+            window.library.item(index).data(CLIP_ROLE)
+            for index in range(window.library.count())
+            if window.library.item(index).data(Qt.ItemDataRole.UserRole) == clip_id
+        )
+        assert card["compact_card"] is compact
+        assert f"font-size:{metadata_size}px; font-weight:400" in card["rich_title"]
+        assert f"font-size:{mainline_size}px; font-weight:{weight}" in card["rich_title"]
 
 
 def test_reject_then_enter_is_one_shot(window, application, tmp_path):
@@ -1654,8 +1691,8 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.left.mapTo(window, QPoint(0, 0)).x() == 13
     heading = window.session_header.findChild(QLabel)
     heading_x = heading.mapTo(window.left, QPoint(0, 0)).x()
-    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
-    card_title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 1 + 7
+    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 26
+    card_title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 1 + 7 + 18
     assert heading_x == footer_x == card_title_x
     artifact = ROOT / "cache/verification/session-counts"
     artifact.mkdir(parents=True, exist_ok=True)
@@ -3339,18 +3376,40 @@ def test_library_selection_reaches_both_row_boundaries(
     window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
     ids = [clip["clip_id"] for clip in window.catalogue.clips()]
     window.set_theme(theme)
+    window.library.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     for panel in ("Home", "Browse", "Session"):
         window.panel(panel)
         application.processEvents()
+        window.library.clearSelection()
         window.library.setCurrentRow(1)
         application.processEvents()
         rect = window.library.visualItemRect(window.library.item(1))
         image = window.library.viewport().grab().toImage()
         x = rect.center().x()
-        assert image.pixelColor(x, rect.top() - 2) == QColor(COLORS["accent_selection"])
-        assert image.pixelColor(x, rect.top() - 1) == QColor(COLORS["accent_selection"])
+        assert rect.height() == (65 if panel == "Browse" else 54)
+        corner = image.pixelColor(rect.right() - 1, rect.top())
+        if panel == "Browse":
+            assert corner != QColor(COLORS["accent_selection"])
+        else:
+            assert corner == QColor(COLORS["accent_selection"])
+        assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["accent_selection"])
         assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
         assert image.pixelColor(x, rect.bottom()) == QColor(COLORS["accent_selection"])
+        next_rect = window.library.visualItemRect(window.library.item(2))
+        assert image.pixelColor(x, next_rect.top()) != QColor(COLORS["border_subtle"])
+        indicator_x = rect.left() + 2
+        for y in (rect.top(), rect.top() + 3, rect.bottom() - 3, rect.bottom()):
+            assert image.pixelColor(indicator_x, y) == QColor(COLORS["accent_default"])
+        assert image.pixelColor(rect.left() + 1, rect.top()) == QColor(COLORS["accent_default"])
+        assert image.pixelColor(rect.left() + 3, rect.center().y()) != QColor(
+            COLORS["accent_default"]
+        )
+        if panel == "Session":
+            window.library.item(0).setSelected(True)
+            application.processEvents()
+            image = window.library.viewport().grab().toImage()
+            assert image.pixelColor(x, rect.top() - 1) == QColor(COLORS["accent_selection"])
+            assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
         window.library.clearSelection()
         window.library.setCurrentRow(2)
         window.library.item(2).setSelected(True)
@@ -3362,11 +3421,52 @@ def test_library_selection_reaches_both_row_boundaries(
     window.catalogue.create_session(ids)
     window.panel("Editing")
     application.processEvents()
-    assert not window.library.item(1).data(CLIP_ROLE)["library_row"]
+    window.library.clearSelection()
+    window.library.setCurrentRow(1)
+    application.processEvents()
+    rect = window.library.visualItemRect(window.library.currentItem())
+    image = window.library.viewport().grab().toImage()
+    x = rect.center().x()
+    assert rect.height() == 54
+    assert image.pixelColor(rect.right() - 1, rect.top()) == QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, rect.bottom()) == QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, window.library.visualItemRect(window.library.item(2)).top()) != QColor(
+        COLORS["border_subtle"]
+    )
+    for y in (rect.top(), rect.bottom()):
+        assert image.pixelColor(rect.left() + 2, y) == QColor(COLORS["accent_default"])
+    assert image.pixelColor(rect.left() + 3, rect.center().y()) != QColor(
+        COLORS["accent_default"]
+    )
+    heading_x = window.session_heading.mapTo(window.left, QPoint(0, 0)).x()
+    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 26
+    title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 26
+    assert heading_x == footer_x == title_x
+
+    project = window.catalogue.save_project("Card alignment")
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {}, membership=(project, True))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project))
+    window.panel("Export")
+    window.library.clearSelection()
+    window.library.setCurrentRow(1)
+    application.processEvents()
+    rect = window.library.visualItemRect(window.library.item(1))
+    image = window.library.viewport().grab().toImage()
+    x = rect.center().x()
+    assert rect.height() == 57
+    assert image.pixelColor(rect.right() - 1, rect.top()) != QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, rect.bottom()) == QColor(COLORS["accent_selection"])
+    assert image.pixelColor(x, window.library.visualItemRect(window.library.item(2)).top()) != QColor(
+        COLORS["border_subtle"]
+    )
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_library_hover_covers_preceding_separator(window, application, tmp_path, theme):
+def test_library_hover_covers_owned_separator(window, application, tmp_path, theme):
     captures = tmp_path / "captures"
     captures.mkdir()
     paths = [captures / f"clip-{index}.mp4" for index in range(3)]
@@ -3374,42 +3474,49 @@ def test_library_hover_covers_preceding_separator(window, application, tmp_path,
         path.write_bytes(b"test")
     folder = window.catalogue.add_folder(captures)
     window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    window.catalogue.create_session([clip["clip_id"] for clip in window.catalogue.clips()])
     window.set_theme(theme)
-    window.panel("Home")
-    application.processEvents()
-    assert not window.library.selectedItems()
-    viewport = window.library.viewport()
-    assert viewport.hasMouseTracking()
-    rect = window.library.visualItemRect(window.library.item(1))
-    point = rect.center()
-    QCoreApplication.sendEvent(
-        viewport,
-        QMouseEvent(
-            QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
-            Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
-    application.processEvents()
-    assert window.library.library_hover_row == 1
-    image = viewport.grab().toImage()
-    x = rect.center().x()
-    for y in (rect.top() - 2, rect.top() - 1, rect.top(), rect.bottom()):
-        assert image.pixelColor(x, y) == QColor(COLORS["surface_hover"])
+    for panel in ("Home", "Editing"):
+        window.panel(panel)
+        window.library.clearSelection()
+        application.processEvents()
+        viewport = window.library.viewport()
+        assert viewport.hasMouseTracking()
+        rect = window.library.visualItemRect(window.library.item(1))
+        point = rect.center()
+        QCoreApplication.sendEvent(
+            viewport,
+            QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
+                Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        application.processEvents()
+        assert window.library.library_hover_row == 1
+        image = viewport.grab().toImage()
+        x = rect.center().x()
+        assert image.pixelColor(rect.right() - 1, rect.top()) != QColor(COLORS["surface_hover"])
+        assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["surface_hover"])
+        for y in (rect.top(), rect.bottom()):
+            assert image.pixelColor(x, y) == QColor(COLORS["surface_hover"])
+        assert image.pixelColor(x, window.library.visualItemRect(window.library.item(2)).top()) != QColor(
+            COLORS["border_subtle"]
+        )
 
-    point = window.library.visualItemRect(window.library.item(2)).center()
-    QCoreApplication.sendEvent(
-        viewport,
-        QMouseEvent(
-            QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
-            Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
-    application.processEvents()
-    assert window.library.library_hover_row == 2
-    image = viewport.grab().toImage()
-    assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["surface_hover"])
+        point = window.library.visualItemRect(window.library.item(2)).center()
+        QCoreApplication.sendEvent(
+            viewport,
+            QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
+                Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        application.processEvents()
+        assert window.library.library_hover_row == 2
+        image = viewport.grab().toImage()
+        assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["surface_hover"])
 
 
 def test_browse_entry_selects_newest(window, tmp_path, application):

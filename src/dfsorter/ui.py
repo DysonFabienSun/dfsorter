@@ -545,7 +545,8 @@ class Window(QMainWindow):
         self.session_header = QWidget()
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
-        session_header_layout.setContentsMargins(8, 0, 5, 0)
+        clip_text_inset = 1 + SIZES["card_padding"] + SIZES["card_dot_space"]
+        session_header_layout.setContentsMargins(clip_text_inset, 0, 5, 0)
         self.session_heading = QLabel("Session clips")
         role(self.session_heading, "paneHeading")
         session_header_layout.addWidget(self.session_heading)
@@ -596,7 +597,7 @@ class Window(QMainWindow):
         self.session_counts = QLabel()
         self.session_counts.setWordWrap(True)
         self.session_counts.setAccessibleName("Session clip counts")
-        self.session_counts.setContentsMargins(8, 0, 5, 0)
+        self.session_counts.setContentsMargins(clip_text_inset, 0, 5, 0)
         role(self.session_counts, "secondary")
         self.session_counts.hide()
         left_layout.addWidget(self.session_counts)
@@ -2054,6 +2055,7 @@ class Window(QMainWindow):
 
     def render_card(self, item, clip):
         previous = item.data(CLIP_ROLE) or {}
+        compact_card = self.current_panel in {"Home", "Session", "Editing"}
         available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
         card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
@@ -2087,20 +2089,28 @@ class Window(QMainWindow):
             CLIP_ROLE,
             {
                 "title": card_title,
-                "rich_title": tag_prefix(clip, rich=True)
+                "rich_title": tag_prefix(
+                    clip,
+                    rich=True,
+                    size_role="md" if self.current_panel == "Browse" or compact_card else "base",
+                )
                 + title(
                     {**clip, "mainline": (clip.get("mainline") or "").strip()},
                     self.registry,
                     rich=True,
                     lowercase=self.settings.get("lowercase_generated_titles", True),
-                    rich_styles=title_styles(card=True),
+                    rich_styles=title_styles(
+                        card=True,
+                        library=self.current_panel == "Export",
+                        compact_card=compact_card,
+                    ),
                     mainline_separator=" | ",
                     underline_first_mainline_word=(clip.get("tag") or "").strip().casefold()
                     == "3rd",
                 ),
                 "browse_details": browse_details,
                 "compact_time": compact_time,
-                "library_row": self.current_panel in {"Home", "Browse", "Session"},
+                "compact_card": compact_card,
                 "game": clip["game"],
                 "rating": clip["rating"],
                 "folder": folder_name,
@@ -3213,8 +3223,8 @@ class Window(QMainWindow):
             return
         previous = self.library.library_hover_row
         self.library.library_hover_row = row
-        for neighbor in {previous - 1, row - 1}:
-            item = self.library.item(neighbor) if neighbor >= 0 else None
+        for changed in {previous, previous + 1, row, row + 1}:
+            item = self.library.item(changed) if changed >= 0 else None
             if item is not None:
                 self.library.viewport().update(self.library.visualItemRect(item))
 
