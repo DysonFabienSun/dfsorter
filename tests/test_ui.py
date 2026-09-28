@@ -183,6 +183,45 @@ def test_library_toolbar_surface_and_alignment(window, application):
         assert window.library_toolbar.isHidden()
 
 
+def test_home_session_first_visible_clip_meets_toolbar(window, application, tmp_path):
+    captures = tmp_path / "captures"
+    captures.mkdir()
+    paths = [captures / "hidden.mp4", captures / "visible.mp4"]
+    for path in paths:
+        path.write_bytes(b"test")
+    folder = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
+    for panel in ("Home", "Session"):
+        window.panel(panel)
+        window.search.setText("visible")
+        application.processEvents()
+        assert window.library.count() == 1
+        toolbar_bottom = window.library_toolbar.mapTo(window, QPoint()).y() + window.library_toolbar.height()
+        viewport_top = window.library.viewport().mapTo(window, QPoint()).y()
+        assert viewport_top == toolbar_bottom
+        assert window.library.visualItemRect(window.library.item(0)).top() == 0
+        viewport = window.library.viewport()
+        row = window.library.visualItemRect(window.library.item(0))
+        assert viewport.grab().toImage().pixelColor(row.center().x(), 0) == QColor(
+            COLORS["accent_selection"]
+        )
+        window.library.clearSelection()
+        point = row.center()
+        QCoreApplication.sendEvent(
+            viewport,
+            QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(point), QPointF(viewport.mapToGlobal(point)),
+                Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        application.processEvents()
+        assert viewport.grab().toImage().pixelColor(row.center().x(), 0) == QColor(
+            COLORS["surface_hover"]
+        )
+        window.search.clear()
+
+
 def test_config_heading_matches_workspace_sections_in_dark_mode(window, application):
     window.set_theme("dark", persist=False)
     window.panel("Home")
