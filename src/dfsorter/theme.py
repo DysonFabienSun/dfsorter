@@ -21,8 +21,7 @@ THEMES = {
         "text_muted": "#65717C",
         "text_disabled": "#A3ABB3",
         "text_inverse": "#FFFFFF",
-        "heading_icon_badge": "#252B33",
-        "heading_icon_foreground": "#FFFFFF",
+        "heading_icon_foreground": "#000000",
         "player_chrome_text": "#F1F4F6",
         "player_chrome_secondary": "#E0E5E9",
         "player_chrome_muted": "#CDD5DC",
@@ -83,7 +82,6 @@ THEMES = {
         "text_muted": "#8E99A4",
         "text_disabled": "#626C76",
         "text_inverse": "#111317",
-        "heading_icon_badge": "#252B33",
         "heading_icon_foreground": "#FFFFFF",
         "player_chrome_text": "#F1F4F6",
         "player_chrome_secondary": "#E0E5E9",
@@ -136,7 +134,7 @@ THEMES = {
 COLORS = dict(THEMES["light"])
 ACTIVE_SCHEME = "light"
 
-FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "library_title": 15, "lg": 16, "xl": 20, "xxl": 26}
+FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "library_title": 15, "lg": 16, "xl": 20, "section_heading": 22, "pane_heading": 16, "xxl": 26}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
 RADII = {"none": 0, "sm": 3, "md": 5, "lg": 7, "control": 4}
@@ -228,10 +226,9 @@ def stylesheet():
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
         QLabel[role="helper"] { color: %(text_muted)s; font-size: %(font_xs)spx; }
-        QLabel[role="heading"] { font-size: %(font_xl)spx; font-weight: 600; }
-        QLabel[role="sectionHeading"] { font-size: %(font_xl)spx; font-weight: 600; color: %(text_primary)s; }
-        QLabel[role="headingIconBadge"] { background: %(heading_icon_badge)s; border-radius: 16px; }
-        QLabel[role="paneHeading"] { font-size: %(font_base)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="heading"] { font-size: %(font_section_heading)spx; font-weight: 600; }
+        QLabel[role="sectionHeading"] { font-size: %(font_section_heading)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
         QPushButton[periodSegment="true"] { border-radius: 0px; margin: 0px; border-left: none; }

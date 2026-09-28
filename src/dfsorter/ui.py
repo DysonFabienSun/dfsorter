@@ -297,21 +297,20 @@ def heading(text, icon_name, heading_role="sectionHeading"):
     glyph = QLabel()
     glyph.setProperty("headingIcon", icon_name)
     glyph.setProperty("headingIconSize", icon_size)
-    glyph.setProperty("headingIconColorRole", "heading_icon_foreground" if section else None)
+    glyph.setProperty("headingIconColorRole", "heading_icon_foreground")
     glyph.setFixedSize(box_size, box_size)
     glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    if section:
-        role(glyph, "headingIconBadge")
     glyph.setPixmap(
         icon(
             icon_name,
-            COLORS["heading_icon_foreground"] if section else None,
+            COLORS["heading_icon_foreground"],
             size=icon_size,
         ).pixmap(icon_size, icon_size)
     )
     label = QLabel(text)
     role(label, heading_role)
     label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+    label.setContentsMargins(0, 0, 0, 4)
     row.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()

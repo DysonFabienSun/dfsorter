@@ -3209,7 +3209,9 @@ def test_projects_drawer_tab_and_pane_close(window):
     assert window.projects_close.isVisible()
 
 
-def test_facelift_heading_icons_share_title_centerline(window, application):
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_facelift_heading_icons_share_title_centerline(window, application, theme):
+    window.set_theme(theme, persist=False)
     for panel, names in (
         ("Home", ("Capture folders",)),
         ("Session", ("Library overview", "No active session", "Projects")),
@@ -3230,14 +3232,26 @@ def test_facelift_heading_icons_share_title_centerline(window, application):
                 - label.mapToGlobal(label.rect().center()).y()
             ) <= 1
             assert glyph.property("headingIconSize") == (16 if name == "Projects" else 24)
+            assert label.font().pixelSize() == (16 if name == "Projects" else 22)
+            image = label.grab().toImage()
+            painted_rows = [
+                y for y in range(image.height())
+                if any(image.pixelColor(x, y).alpha() > 128 for x in range(image.width()))
+            ]
+            assert painted_rows
+            painted_center = (
+                label.mapToGlobal(QPoint(0, 0)).y()
+                + (min(painted_rows) + max(painted_rows)) / (2 * image.devicePixelRatio())
+            )
+            assert abs(painted_center - glyph.mapToGlobal(glyph.rect().center()).y()) <= 2
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_section_heading_icons_are_centered_and_unclipped(window, application, theme):
+def test_heading_icons_are_unbacked_centered_and_unclipped(window, application, theme):
     window.set_theme(theme, persist=False)
     for panel, names in (
         ("Home", ("Capture folders",)),
-        ("Session", ("Library overview", "No active session")),
+        ("Session", ("Library overview", "No active session", "Projects")),
     ):
         window.panel(panel)
         application.processEvents()
@@ -3247,10 +3261,9 @@ def test_section_heading_icons_are_centered_and_unclipped(window, application, t
                 child for child in window.findChildren(QLabel)
                 if child.parent() is label.parent() and child.property("headingIcon")
             )
-            assert glyph.property("role") == "headingIconBadge"
-            assert glyph.size() == QSize(32, 32)
-            badge = glyph.grab().toImage()
-            assert badge.pixelColor(16, 2) == QColor(COLORS["heading_icon_badge"])
+            assert glyph.property("role") is None
+            assert glyph.size() == (QSize(20, 20) if name == "Projects" else QSize(32, 32))
+            assert glyph.grab().toImage().pixelColor(0, 0).alpha() == 0
             pixmap = glyph.pixmap().toImage()
             painted = [
                 (x, y)
@@ -3262,7 +3275,8 @@ def test_section_heading_icons_are_centered_and_unclipped(window, application, t
                 (min(y for _, y in painted) + max(y for _, y in painted)) / 2
                 - (pixmap.height() - 1) / 2
             ) <= pixmap.devicePixelRatio()
-            assert any(pixmap.pixelColor(x, y) == QColor("#FFFFFF") for x, y in painted)
+            expected_color = QColor("#000000" if theme == "light" else "#FFFFFF")
+            assert any(pixmap.pixelColor(x, y) == expected_color for x, y in painted)
 
 
 def test_settings_remain_available_in_browse(window):
