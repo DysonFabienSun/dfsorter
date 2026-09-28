@@ -2388,6 +2388,26 @@ def test_non_video_page_switch_skips_transition_cover(window, application):
     assert window.transition_cover.isHidden()
 
 
+def test_browse_is_hidden_before_player_cleanup(window, application, tmp_path, monkeypatch):
+    add_clips(window, tmp_path)
+    window.panel("Browse")
+    application.processEvents()
+    assert window.browse.clip is not None
+    assert window.browse.isVisible()
+    original_leave = window.browse.leave
+    cleanup_state = []
+
+    def record_leave():
+        cleanup_state.append((window.center.currentWidget(), window.browse.isVisible()))
+        original_leave()
+
+    monkeypatch.setattr(window.browse, "leave", record_leave)
+    window.panel("Home")
+
+    assert cleanup_state == [(window.pages["Home"][0], False)]
+    assert window.browse.clip is None
+
+
 @pytest.mark.parametrize("player_name", ["player", "export_player", "browse_player"])
 @pytest.mark.parametrize("size_at_ready", [False, True])
 def test_preview_reveal_waits_for_display_size(

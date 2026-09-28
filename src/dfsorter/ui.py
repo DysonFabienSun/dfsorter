@@ -1718,8 +1718,9 @@ class Window(QMainWindow):
         self.player.media.pause()
         self.export_player.media.pause()
         self.browse.player.media.pause()
-        if self.current_panel == "Browse" and name != "Browse":
-            self.browse.leave()
+        leaving_browse = self.current_panel == "Browse" and name != "Browse"
+        if leaving_browse:
+            self.browse.set_fullscreen(False)
             self.thumbnails.retain(set())
         changing_panel = name != self.current_panel
         if changing_panel:
@@ -1745,6 +1746,9 @@ class Window(QMainWindow):
             self.rating.command_preview = None
             self.rating.update()
         self.center.setCurrentWidget(self.pages[name][0])
+        if leaving_browse:
+            # Clearing the player changes Browse's layout; do it after the page is hidden.
+            self.browse.leave()
         self.update_projects_visibility()
         for destination, control in self.nav.items():
             control.setChecked(destination == name)
