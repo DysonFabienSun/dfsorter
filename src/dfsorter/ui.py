@@ -569,8 +569,7 @@ class Window(QMainWindow):
         self.session_header = QWidget()
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
-        clip_text_inset = 1 + SIZES["card_padding"] + SIZES["card_dot_space"]
-        session_header_layout.setContentsMargins(16, 0, 5, 0)
+        session_header_layout.setContentsMargins(16, 8, 8, 8)
         self.session_heading = QLabel("Session clips")
         role(self.session_heading, "paneHeading")
         session_header_layout.addWidget(self.session_heading)
@@ -586,7 +585,7 @@ class Window(QMainWindow):
         self.next_undefined_button.setProperty("sessionAction", True)
         session_header_layout.addWidget(self.next_undefined_button)
         self.session_header.hide()
-        left_layout.addWidget(self.session_header)
+        outer_left_layout.insertWidget(1, self.session_header)
         self.library = QListWidget()
         self.library.library_hover_row = -1
         self.library.setObjectName("clipLibrary")
@@ -621,7 +620,7 @@ class Window(QMainWindow):
         self.session_counts = QLabel()
         self.session_counts.setWordWrap(True)
         self.session_counts.setAccessibleName("Session clip counts")
-        self.session_counts.setContentsMargins(clip_text_inset, 0, 5, 0)
+        self.session_counts.setContentsMargins(8, 0, 5, 0)
         role(self.session_counts, "secondary")
         self.session_counts.hide()
         left_layout.addWidget(self.session_counts)

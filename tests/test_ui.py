@@ -188,6 +188,11 @@ def test_editing_header_uses_compact_left_inset(window, application, tmp_path):
     window.set_theme("dark", persist=False)
     window.panel("Editing")
     application.processEvents()
+    assert window.session_header.geometry().left() == 0
+    assert window.session_header.width() == window.left.width()
+    assert window.session_header.grab().toImage().pixelColor(2, 2) == QColor(
+        COLORS["bg_library_toolbar"]
+    )
     assert window.session_heading.mapTo(window.left, QPoint()).x() == 16
     assert window.session_position.text() == "1 / 1"
     assert window.session_position.mapTo(window.left, QPoint()).x() < 150
@@ -1823,16 +1828,21 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     assert window.splitter.objectName() == "workspaceSplitter"
     assert window.splitter.handleWidth() == 5
     assert window.next_undefined_button.property("sessionAction") is True
-    assert window.session_header.geometry().bottom() < window.library.geometry().top()
+    assert (
+        window.session_header.mapTo(window.left, QPoint(0, window.session_header.height())).y()
+        <= window.library.mapTo(window.left, QPoint()).y()
+    )
     assert window.left.height() == window.center_column.height()
-    assert window.session_counts.geometry().bottom() >= window.left.height() - 8
+    assert (
+        window.session_counts.mapTo(window.left, QPoint(0, window.session_counts.height())).y()
+        >= window.left.height() - 8
+    )
     assert window.left.mapTo(window, QPoint(0, 0)).x() == 13
     heading = window.session_header.findChild(QLabel)
     heading_x = heading.mapTo(window.left, QPoint(0, 0)).x()
-    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 26
-    card_title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 1 + 7 + 18
+    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
     assert heading_x == 16
-    assert footer_x == card_title_x
+    assert footer_x == 8
     artifact = ROOT / "cache/verification/session-counts"
     artifact.mkdir(parents=True, exist_ok=True)
     assert wait_for(application, lambda: not window.transition_pending)
@@ -3695,9 +3705,9 @@ def test_library_selection_reaches_both_row_boundaries(
         COLORS["accent_default"]
     )
     heading_x = window.session_heading.mapTo(window.left, QPoint(0, 0)).x()
-    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 26
-    title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 26
-    assert heading_x == footer_x == title_x
+    footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
+    assert heading_x == 16
+    assert footer_x == 8
 
     project = window.catalogue.save_project("Card alignment")
     for clip_id in ids:
