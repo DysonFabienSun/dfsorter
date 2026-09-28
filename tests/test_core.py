@@ -584,8 +584,26 @@ def test_queries(catalogue, clips, registry):
     catalogue.patch(clips[0]["clip_id"], {"mainline": "Ace", "tag": "Highlight"})
     for term in ("highlight", "VAL_", "jett", "operator", "ace"):
         assert query_clips(catalogue.clips(), term, registry)[0]["clip_id"] == clips[0]["clip_id"]
-    with pytest.raises(ValueError, match="Rating"):
-        query_clips(catalogue.clips(), "rating:5", registry)
+    catalogue.patch(clips[0]["clip_id"], {"rating": 4})
+    catalogue.patch(clips[1]["clip_id"], {"rating": 2})
+    for expression in ("rating:4", "R4", "r4 agent:jett"):
+        assert [clip["clip_id"] for clip in query_clips(catalogue.clips(), expression, registry)] == [
+            clips[0]["clip_id"]
+        ]
+    assert query_clips(catalogue.clips(), "rating:5", registry) == []
+    for expression, expected in (
+        ("rating:>2", {clips[0]["clip_id"]}),
+        ("rating:>=2", {clips[0]["clip_id"], clips[1]["clip_id"]}),
+        ("rating:<4", {clips[1]["clip_id"]}),
+        ("rating:<=4", {clips[0]["clip_id"], clips[1]["clip_id"]}),
+        ("rating:=4", {clips[0]["clip_id"]}),
+        ("rating:>=4 agent:jett", {clips[0]["clip_id"]}),
+        ("rating:>4", set()),
+    ):
+        assert {clip["clip_id"] for clip in query_clips(catalogue.clips(), expression, registry)} == expected
+    for expression in ("rating:", "rating:>=", "rating:0", "rating:>6", "r0", "r6"):
+        with pytest.raises(ValueError, match="Rating comparison needs a value from R1 through R5"):
+            query_clips(catalogue.clips(), expression, registry)
 
 
 def test_discovery_nearest_and_forced(tmp_path, registry, monkeypatch):

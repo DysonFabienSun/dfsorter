@@ -300,6 +300,28 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
     tests = []
     known_fields = {key for game in registry.games.values() for key in game.fields}
     for term in terms:
+        short_rating = re.fullmatch(r"r(\d+)", term, re.IGNORECASE)
+        if short_rating or term.casefold().startswith("rating:"):
+            value = short_rating[1] if short_rating else term.split(":", 1)[1]
+            match = re.fullmatch(r"(>=|<=|>|<|=)?([1-5])", value)
+            if not match or (short_rating and match[1]):
+                raise ValueError("Rating comparison needs a value from R1 through R5")
+            operator, rating = match[1] or "=", int(match[2])
+
+            def rating_matches(clip, operator=operator, rating=rating):
+                stored = clip.get("rating")
+                if stored is None:
+                    return False
+                return {
+                    "=": stored == rating,
+                    ">": stored > rating,
+                    "<": stored < rating,
+                    ">=": stored >= rating,
+                    "<=": stored <= rating,
+                }[operator]
+
+            tests.append(rating_matches)
+            continue
         if ":" not in term:
             needle = term.casefold()
             tests.append(
@@ -319,8 +341,6 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
             continue
         key, value = term.split(":", 1)
         key = key.casefold()
-        if key == "rating":
-            raise ValueError("Rating is not searchable or filterable")
         if key not in known_fields | {"game", "triage", "tag"}:
             raise ValueError(f"Unknown query field: {key}")
         if not value:

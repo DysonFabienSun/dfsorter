@@ -906,7 +906,7 @@ def test_search_updates_live_and_invalid_query_preserves_results(window, applica
     add_clips(window, tmp_path)
     window.catalogue.patch(
         window.catalogue.clips()[0]["clip_id"],
-        {"mainline": "Ace", "metadata": {"agent": "Jett"}, "tag": "Highlight"},
+        {"mainline": "Ace", "metadata": {"agent": "Jett"}, "tag": "Highlight", "rating": 4},
     )
     window.refresh_library()
     for panel, search in (("Home", window.search), ("Browse", window.browse_search)):
@@ -922,6 +922,15 @@ def test_search_updates_live_and_invalid_query_preserves_results(window, applica
         application.processEvents()
         assert window.library.count() == 1
         assert window.library_error.isHidden()
+        for expression in ("rating:4", "r4", "rating:>=4"):
+            search.setText(expression)
+            application.processEvents()
+            assert window.library.count() == 1
+            assert window.library_error.isHidden()
+        search.setText("rating:6")
+        application.processEvents()
+        assert window.library.count() == 1
+        assert not window.library_error.isHidden()
 
 
 def test_generated_share_dialog_defaults_and_master_toggle(

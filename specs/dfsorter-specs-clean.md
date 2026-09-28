@@ -406,9 +406,9 @@ tag:LOW_FPS
 
 Plain terms search human-facing text such as source filename, `mainline`, and `description`.
 
-Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable. Home, Session and Browse search update on every text change. Invalid or incomplete structured expressions show the inline error while retaining the last valid result list. Plain terms match the source filename, tag, complete displayed working title (game-code prefix, structured metadata and mainline), and description; ratings remain unsearchable.
+Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable. Home, Session and Browse search update on every text change. Invalid or incomplete structured expressions show the inline error while retaining the last valid result list. Plain terms match the source filename, tag, complete displayed working title (game-code prefix, structured metadata and mainline), and description. `rating:4` and `r4` match only clips rated R4. The `rating:` form also supports `=`, `>`, `<`, `>=`, and `<=` comparisons, such as `rating:>=4`; the `r4` shorthand is exact only. Rating values and comparison thresholds must be 1 through 5. Rating terms can be combined with other search terms and never match unrated clips. Missing or out-of-range values are invalid.
 
-Ratings are deliberately **not** searchable or filterable in the initial design. Rating exists mainly as an editorial reference and optional export-grouping value.
+Rating remains an editorial reference and optional export-grouping value; rating searches do not change triage or clip order.
 
 ---
 
@@ -766,7 +766,7 @@ The parser is case-insensitive.
 
 The Editing panel displays the stored rating as a clickable 1-5 star control. The adjacent `x` action and right-click clear the rating. A fully valid command draft containing `R1`–`R5` previews static dull-yellow stars and temporarily replaces `x` with a disabled clock. Muted lowercase hints beside the stars read `r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic`.
 
-Rating is reference metadata only. It does not automatically Keep, Discard, or prioritize a clip and is not included in ordinary search/filter functionality.
+Rating is reference metadata only. It does not automatically Keep, Discard, or prioritize a clip; rating search is supported as described in the search section.
 
 ### 13.8 Active Project Behavior
 
