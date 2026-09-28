@@ -721,6 +721,12 @@ class Window(QMainWindow):
         # Keep the command baseline stable when checklist glyphs change font metrics.
         self.field_reminder.setMinimumHeight(self.field_reminder.fontMetrics().height())
         self.field_reminder.setAccessibleName("Metadata field checklist with command preview")
+        self.field_reminder.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.field_reminder.setMouseTracking(True)
+        self.field_reminder.linkHovered.connect(self.field_reminder_hovered)
+        self.field_reminder_hover = None
+        self.field_reminder_tooltips = {}
+        self.field_reminder_default_tooltip = ""
         self.field_reminder.hide()
         fields_row = QHBoxLayout()
         fields_row.addWidget(self.field_reminder, 1)
@@ -2642,11 +2648,79 @@ class Window(QMainWindow):
         self.command_history.setText("<br>".join(history_lines))
         self.command_history.setVisible(bool(self.command_history.text()))
 
+    def field_reminder_hovered(self, link):
+        self.field_reminder_hover = link.removeprefix("field:") if link.startswith("field:") else None
+        self.field_reminder.setToolTip(
+            self.field_reminder_tooltips.get(
+                self.field_reminder_hover, self.field_reminder_default_tooltip
+            )
+        )
+
+    @staticmethod
+    def field_options_tooltip(game, key, state):
+        label = html.escape(key.replace("_", " ").title())
+        definition = game.fields.get(key, {})
+        if definition.get("type") == "enum":
+            values = definition["values"]
+            aliases = defaultdict(list)
+            for alias, canonical in definition.get("aliases", {}).items():
+                aliases[canonical].append(alias)
+            options = [
+                html.escape(str(value))
+                + (
+                    " (" + ", ".join(
+                        f"<i>{html.escape(alias)}</i>" for alias in aliases[value]
+                    ) + ")"
+                    if aliases[value]
+                    else ""
+                )
+                for value in values
+            ]
+            columns = 4 if len(options) > 36 else 3 if len(options) > 20 else 2 if len(options) > 10 else 1
+            if max(map(len, options)) > 28:
+                columns = min(columns, 2)
+            rows = (len(options) + columns - 1) // columns
+            cells = [
+                "<tr>" + "".join(
+                    f'<td style="padding-right:12px; white-space:nowrap">{options[row + col * rows]}</td>'
+                    if row + col * rows < len(options) else "<td></td>"
+                    for col in range(columns)
+                ) + "</tr>"
+                for row in range(rows)
+            ]
+            details = f"Valid options ({len(values)}):<br><table>{''.join(cells)}</table>"
+            if definition.get("multiple"):
+                details += "<br>Multiple values can be entered in order."
+        elif definition.get("type") == "freeform":
+            prefixes = [key, *definition.get("prefixes", [])]
+            details = "Free text. Use " + " or ".join(
+                f"{html.escape(prefix)}:text" for prefix in prefixes
+            ) + "."
+            if definition.get("multiple"):
+                details += " Repeat the prefix for multiple values."
+        elif key == "kill":
+            details = "Enter 0K, 1K, 2K, and so on."
+        elif key == "clutch":
+            details = "Enter 1v1, 1v2, 1v3, and so on."
+        elif key == "rating":
+            details = "Valid options: R1, R2, R3, R4, R5."
+        elif key == "tag":
+            details = 'Enter [TAG], tag:TAG, or tag:"text with spaces".'
+        elif key == "mainline":
+            details = "Enter text after the first -- separator."
+        else:
+            details = "Enter a value in the metadata command."
+        return f"{html.escape(state)}<br><br><b>{label}</b><br>{details}"
+
     def render_field_reminder(self, clip, game):
         self.update_range_warning()
         self.field_reminder.setVisible(self.current_panel == "Editing" and game is not None)
         if game is None:
             self.field_reminder.clear()
+            self.field_reminder_hover = None
+            self.field_reminder_tooltips = {}
+            self.field_reminder_default_tooltip = ""
+            self.field_reminder.setToolTip("")
             return
         state = "Saved metadata."
         inferred_fields = set()
@@ -2669,7 +2743,7 @@ class Window(QMainWindow):
                 if validation == "valid"
                 else "Partial command preview; finish or correct the command before saving."
             )
-        self.field_reminder.setToolTip(
+        self.field_reminder_default_tooltip = (
             state
             + " ✓ populated · ◇ inferred · ! suggested · o optional · x invalid for current configuration."
         )
@@ -2677,6 +2751,9 @@ class Window(QMainWindow):
             dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
         )
         entries = []
+        self.field_reminder_tooltips = {
+            key: self.field_options_tooltip(game, key, state) for key in fields
+        }
         for key in fields:
             if key == "description":
                 continue
@@ -2713,10 +2790,16 @@ class Window(QMainWindow):
             else:
                 mark, color = "o", "text_muted"
             entries.append(
-                f'<span style="color:{COLORS[color]}">{mark}&nbsp;{html.escape(key)}</span>'
+                f'<a href="field:{key}" style="color:{COLORS[color]}; text-decoration:none">'
+                f"{mark}&nbsp;{html.escape(key)}</a>"
             )
         self.field_reminder.setText(
             '<span style="font-size:11px">' + " &nbsp; ".join(entries) + "</span>"
+        )
+        self.field_reminder.setToolTip(
+            self.field_reminder_tooltips.get(
+                self.field_reminder_hover, self.field_reminder_default_tooltip
+            )
         )
 
     def edit(self, patch, **kwargs):

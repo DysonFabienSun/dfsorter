@@ -643,7 +643,7 @@ Use native Qt video presentation and prefer hardware decoding, allowing logged s
 
 The command bar receives one complete string.
 
-The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; the checklist tooltip distinguishes partial previews from complete drafts. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
+The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; checklist tooltips distinguish partial previews from complete drafts. Hovering a field shows every configured enum value with its accepted aliases, or the accepted syntax for fields without a fixed list. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
 
 Fields inferred by YAML links use a cyan `◇` marker while previewing. After submission they use the
 normal populated marker. Command history appends smaller muted provenance such as

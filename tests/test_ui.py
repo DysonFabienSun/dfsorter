@@ -1436,6 +1436,45 @@ def test_field_checklist_previews_commands_without_saving(window, application, t
     assert "✓&nbsp;tag" in window.field_reminder.text()
 
 
+def test_field_checklist_hover_shows_all_overwatch_options(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.catalogue.patch(ids[0], {"game": "Overwatch"})
+    window.panel("Editing")
+    application.processEvents()
+    checklist = window.field_reminder
+    assert checklist.isVisible()
+    checklist.linkHovered.emit("field:hero")
+    assert window.field_reminder_hover == "hero"
+    tooltip = QTextDocument()
+    tooltip.setHtml(checklist.toolTip())
+    plain = tooltip.toPlainText()
+    assert "Saved metadata." in plain
+    assert "Valid options (53):" in plain
+    assert "D.Va (dva)" in plain
+    assert "D.Va (<i>dva</i>)" in checklist.toolTip()
+    assert "Zenyatta" in plain
+    assert all(value in plain for value in window.registry.game("Overwatch").fields["hero"]["values"])
+    assert "Multiple values can be entered in order." in plain
+    assert "<table>" in checklist.toolTip()
+    assert "Chamber (<i>ch</i>)" in window.field_options_tooltip(
+        window.registry.game("VALORANT"), "agent", "Saved metadata."
+    )
+
+    checklist.linkHovered.emit("field:map")
+    tooltip.setHtml(checklist.toolTip())
+    plain = tooltip.toPlainText()
+    assert "Valid options (30):" in plain
+    assert "Watchpoint: Gibraltar (gibraltar)" in plain
+    assert "Suravasa" in plain
+    assert all(value in plain for value in window.registry.game("Overwatch").fields["map"]["values"])
+
+    checklist.linkHovered.emit("")
+    assert "✓ populated" in checklist.toolTip()
+    window.command.setText("dva unknown ")
+    checklist.linkHovered.emit("field:hero")
+    assert "Partial command preview" in checklist.toolTip()
+
+
 def test_inferred_field_preview_and_history(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
