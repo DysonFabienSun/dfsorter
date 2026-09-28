@@ -298,7 +298,6 @@ def stylesheet():
         QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 2px solid %(focus)s; }
         QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator, QToolButton#activitiesButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
-        QToolButton[sessionAction="true"] { padding: 4px 2px 0px 2px; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
         QPushButton#projectsDrawerTab { background: %(surface_sidebar)s; border: 1px solid %(border_subtle)s; border-top: none; border-top-left-radius: 0px; border-top-right-radius: 0px; border-bottom-left-radius: 9px; border-bottom-right-radius: 0px; padding: 3px 11px 5px 6px; }
         QPushButton#projectsDrawerTab:hover { background: %(surface_hover)s; border-color: %(border_default)s; border-top-color: transparent; }

@@ -241,7 +241,25 @@ def test_editing_header_uses_compact_left_inset(window, application, tmp_path):
     assert window.session_header.grab().toImage().pixelColor(2, 2) == QColor(
         COLORS["bg_library_toolbar"]
     )
-    assert window.session_heading.mapTo(window.left, QPoint()).x() == 16
+    assert window.session_heading.mapTo(window.left, QPoint()).x() == 12
+    heading_top = window.session_heading.mapTo(window.session_header, QPoint()).y()
+    heading_center = heading_top + window.session_heading.height() / 2
+    position_center = (
+        window.session_position.mapTo(window.session_header, QPoint()).y()
+        + window.session_position.height() / 2
+    )
+    action_center = (
+        window.next_undefined_button.mapTo(window.session_header, QPoint()).y()
+        + window.next_undefined_button.height() / 2
+    )
+    assert heading_top == 12
+    heading_bottom_gap = (
+        window.session_header.height() - heading_top - window.session_heading.height()
+    )
+    assert abs(heading_top - heading_bottom_gap) <= 1
+    assert window.session_position.contentsMargins().top() == 2
+    assert abs(heading_center - position_center) <= 1
+    assert abs(heading_center - action_center) <= 1
     assert window.session_position.text() == "1 / 1"
     assert window.session_position.mapTo(window.left, QPoint()).x() < 150
 
@@ -1889,7 +1907,7 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     heading = window.session_header.findChild(QLabel)
     heading_x = heading.mapTo(window.left, QPoint(0, 0)).x()
     footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
-    assert heading_x == 16
+    assert heading_x == 12
     assert footer_x == 8
     artifact = ROOT / "cache/verification/session-counts"
     artifact.mkdir(parents=True, exist_ok=True)
@@ -3754,7 +3772,7 @@ def test_library_selection_reaches_both_row_boundaries(
     )
     heading_x = window.session_heading.mapTo(window.left, QPoint(0, 0)).x()
     footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 8
-    assert heading_x == 16
+    assert heading_x == 12
     assert footer_x == 8
 
     project = window.catalogue.save_project("Card alignment")

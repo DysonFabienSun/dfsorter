@@ -539,13 +539,14 @@ class Window(QMainWindow):
         self.session_header = QWidget()
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
-        session_header_layout.setContentsMargins(16, 8, 8, 8)
+        session_header_layout.setContentsMargins(12, 9, 8, 9)
         self.session_heading = QLabel("Session clips")
         role(self.session_heading, "paneHeading")
-        session_header_layout.addWidget(self.session_heading)
+        session_header_layout.addWidget(self.session_heading, 0, Qt.AlignmentFlag.AlignVCenter)
         self.session_position = QLabel()
         role(self.session_position, "secondary")
-        session_header_layout.addWidget(self.session_position)
+        self.session_position.setContentsMargins(0, 2, 0, 0)
+        session_header_layout.addWidget(self.session_position, 0, Qt.AlignmentFlag.AlignVCenter)
         session_header_layout.addStretch()
         self.next_undefined_button = tool(
             "list-todo",
@@ -553,7 +554,9 @@ class Window(QMainWindow):
             self.navigate_next_undefined,
         )
         self.next_undefined_button.setProperty("sessionAction", True)
-        session_header_layout.addWidget(self.next_undefined_button)
+        session_header_layout.addWidget(
+            self.next_undefined_button, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         self.session_header.hide()
         outer_left_layout.insertWidget(1, self.session_header)
         self.library = QListWidget()
