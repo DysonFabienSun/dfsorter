@@ -40,6 +40,7 @@ from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS, FONT_SIZES
 from dfsorter.ui import ROOT, Window, style_application
+from dfsorter.update_ui import UpdateController
 from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate
 
 
@@ -79,6 +80,62 @@ def test_status_bar_exists_before_deferred_startup_work(window):
 
 def test_update_check_is_in_settings_menu(window):
     assert "Check for updates…" in [action.text() for action in window.settings_menu.actions()]
+
+
+def test_portable_launch_checks_for_updates_once(application, tmp_path, monkeypatch):
+    import dfsorter.ui as ui
+
+    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    monkeypatch.setattr(ui, "installed_release", lambda: {"version": "1.0.0"})
+    checks = []
+    monkeypatch.setattr(
+        Window, "check_for_updates", lambda self, *, quiet=False: checks.append(quiet)
+    )
+    result = Window(tmp_path)
+    result.show()
+    try:
+        application.processEvents()
+        application.processEvents()
+        assert checks == [True]
+    finally:
+        result.close()
+        application.processEvents()
+
+
+@pytest.mark.parametrize(
+    "outcome, expected",
+    [("current", []), ("offline", []), ("newer", ["question"])],
+)
+def test_quiet_update_check_only_prompts_for_new_release(
+    window, application, monkeypatch, outcome, expected
+):
+    import dfsorter.update_ui as update_ui
+
+    monkeypatch.setattr(update_ui, "installed_release", lambda: {"version": "1.0.0"})
+    result = {
+        "current": {"version": "1.0.0"},
+        "offline": OSError("offline"),
+        "newer": {"version": "1.1.0"},
+    }[outcome]
+    def latest_release():
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(update_ui, "latest_release", latest_release)
+    dialogs = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: dialogs.append("information"))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: dialogs.append("warning"))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args: dialogs.append("question") or QMessageBox.StandardButton.No,
+    )
+    controller = UpdateController(window)
+    controller.check(quiet=True)
+    assert wait_for(application, lambda: not controller.checking)
+    assert controller.progress is None
+    assert dialogs == expected
 
 
 def test_session_library_overview_defaults_and_does_not_change_filters(
@@ -1178,8 +1235,13 @@ def test_home_folder_context_toggle(window, application, tmp_path, enabled):
     assert menu.isVisible()
     assert window.selected_id(window.folders) == target
     assert [action.text() for action in menu.actions()] == [
-        "Pause scanning" if enabled else "Resume scanning"
+        "Pause scanning" if enabled else "Resume scanning",
+        "Relink folder…",
+        "Remove folder…",
     ]
+    assert all(action.isEnabled() for action in menu.actions())
+    assert "Relink folder…" not in [action.text() for action in window.folder_menu.actions()]
+    assert "Remove folder…" not in [action.text() for action in window.folder_menu.actions()]
     action = menu.actions()[0]
     assert action.isEnabled()
     QTest.mouseClick(menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center())
@@ -1205,13 +1267,17 @@ def test_home_folder_context_guards(window, application, tmp_path):
     try:
         window.folders.customContextMenuRequested.emit(position)
         assert menu.isVisible()
-        assert not menu.actions()[0].isEnabled()
+        assert all(not action.isEnabled() for action in menu.actions())
         menu.hide()
     finally:
         window.worker = None
     item.setData(Qt.ItemDataRole.UserRole, "__unlinked__")
     window.folders.customContextMenuRequested.emit(position)
     assert not menu.isVisible()
+    window.folders.setCurrentItem(item)
+    window.update_folder_actions()
+    assert window.folder_unlinked_remove_action.isVisible()
+    assert window.folder_unlinked_remove_action.isEnabled()
 
 
 def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
@@ -2882,6 +2948,22 @@ def test_home_clip_left_click_retains_inert_highlight_without_context_menu(
     assert window.library.selectedItems() == [item]
     assert window.current_id is None
     assert not popups
+
+
+@pytest.mark.parametrize("origin", ["Home", "Session"])
+def test_double_click_library_clip_opens_it_in_browse(window, application, tmp_path, origin):
+    add_clips(window, tmp_path)
+    window.panel("Browse")
+    window.browse_search.setText("does not match")
+    window.panel(origin)
+    clip_id = window.library.item(0).data(Qt.ItemDataRole.UserRole)
+
+    window.library.itemDoubleClicked.emit(window.library.item(0))
+
+    assert window.current_panel == "Browse"
+    assert window.browse_search.text() == ""
+    assert window.browse_id == clip_id
+    assert window.selected_id(window.library) == clip_id
 
 
 def test_library_rebuild_keeps_viewport(window, application, tmp_path):

@@ -20,14 +20,14 @@ No Git, Python, `uv`, FFmpeg, or 7-Zip installation is required. An unsigned rel
 
 ## Update
 
-Choose **Settings → Check for updates…** in DFSorter. If a newer release is available, confirm the update. DFSorter closes, updates its files, and reopens. Update backups are kept in `backups\updates\` inside the extracted folder.
+The portable app checks for updates once on each launch and prompts only when a newer release is available. To check manually, choose **Settings → Check for updates…**. After confirmation, DFSorter closes, updates its files, and reopens. Update backups are kept in `backups\updates\` inside the extracted folder.
 
 The catalogue, settings, and editable game definitions remain in that folder under `data\` and `configs\games\`. Updates preserve edited definitions; revised defaults appear in `configs\default-updates\`. Capture recordings stay in their original locations. To move or back up DFSorter, close it first and copy the whole extracted folder.
 
 ## Quick Start
 
 1. Open DFSorter and, on **Home**, choose **Add folder…**. Select a recorder folder containing game-named subfolders. Review the scan preview and add the folder; clips will appear in the library without being copied.
-2. Open **Browse** to play recordings and find clips with search and filters. Select a clip to watch it, or use **Edit clip…** to work on that clip directly.
+2. Open **Browse** to play recordings and find clips with search and filters. Select a clip to watch it, or double-click a clip on Home or Session to open it in Browse. Use **Edit clip…** to work on that clip directly.
 3. Open **Session** to create a review queue from selected clips, the first N results, or all current results. **Editing** then opens the queue: add a working title or other metadata, and mark clips Keep or Discard as the review progresses.
 4. Add kept clips to a **Project**. Use **Share** for an individual clip or marked range, or open **Export** to copy a project's ready clips to an output folder.
 
@@ -37,7 +37,7 @@ The sections below give a little more context for each part of the app. The top 
 
 ### Home
 
-Home manages capture folders and shows the clip library. Use **Rescan** to check for new recordings. **More…** provides options to pause or resume scanning, relink a moved folder, or remove a folder from the catalogue. Pausing scanning keeps existing clip information but excludes that folder from new Sessions. Removing a folder from the catalogue does not delete its video files.
+Home manages capture folders and shows the clip library. Use **Rescan** to check for new recordings. Right-click a capture folder to pause or resume scanning, relink a moved folder, or remove it from the catalogue. **More…** also offers pause or resume scanning and **Rebuild media information…**. Pausing scanning keeps existing clip information but excludes that folder from new Sessions. Removing a folder from the catalogue does not delete its video files.
 
 ### Browse
 

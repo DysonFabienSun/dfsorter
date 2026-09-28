@@ -84,6 +84,7 @@ from .parsing import (
     query_clips,
 )
 from .playback import Player, playback_volume, volume_step
+from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
@@ -581,6 +582,7 @@ class Window(QMainWindow):
         scrollbar.valueChanged.connect(self.schedule_thumbnails)
         scrollbar.rangeChanged.connect(self.schedule_thumbnails)
         self.library.currentItemChanged.connect(self.select_clip)
+        self.library.itemDoubleClicked.connect(self.browse_library_clip)
         self.library.itemSelectionChanged.connect(self.library.viewport().update)
         self.library.itemEntered.connect(self.update_library_hover_row)
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -841,6 +843,8 @@ class Window(QMainWindow):
         if self.registry.errors:
             self.statusBar().showMessage("Configuration errors — see Config panel")
         QTimer.singleShot(0, self.rescan)
+        if installed_release():
+            QTimer.singleShot(0, lambda: self.check_for_updates(quiet=True))
 
     def build_pages(self):
         for name in ["Home", "Browse", "Session", "Editing", "Export", "Config"]:
@@ -883,9 +887,9 @@ class Window(QMainWindow):
         self.folder_toggle_action.setToolTip(
             "Pause scanning and exclude this folder from new sessions. Existing clips and sessions remain."
         )
-        self.folder_migrate_action = self.folder_menu.addAction("Relink folder…", self.migrate)
-        self.folder_migrate_action.setToolTip("Find an already moved folder; no files are moved.")
-        self.folder_remove_action = self.folder_menu.addAction("Remove folder…", self.remove_folder)
+        self.folder_unlinked_remove_action = self.folder_menu.addAction(
+            "Remove saved entries…", self.remove_folder
+        )
         self.folder_menu.addSeparator()
         rebuild = self.folder_menu.addAction("Rebuild media information…", self.reinspect)
         rebuild.setToolTip(
@@ -905,12 +909,15 @@ class Window(QMainWindow):
         self.folders.setWordWrap(True)
         self.folder_context_menu = QMenu(self.folders)
         self.folder_context_menu.addAction(self.folder_toggle_action)
+        self.folder_migrate_action = self.folder_context_menu.addAction("Relink folder…", self.migrate)
+        self.folder_migrate_action.setToolTip("Find an already moved folder; no files are moved.")
+        self.folder_remove_action = self.folder_context_menu.addAction("Remove folder…", self.remove_folder)
         self.folder_context_menu.setToolTipsVisible(True)
         self.folders.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.folders.customContextMenuRequested.connect(self.show_folder_context_menu)
         home.addWidget(self.folders, 1)
         note = QLabel(
-            "Right-click a folder to pause or resume scanning; select More for other actions.\n"
+            "Right-click a folder to pause or resume scanning, relink it, or remove it.\n"
             "Paused folders remain in the library but are excluded from new sessions. "
             "Unlinked clips are saved entries from folders no longer tracked."
         )
@@ -1246,10 +1253,10 @@ class Window(QMainWindow):
         self.settings_dialog = None
         dialog.deleteLater()
 
-    def check_for_updates(self):
+    def check_for_updates(self, *, quiet=False):
         if not hasattr(self, "update_controller"):
             self.update_controller = UpdateController(self)
-        self.update_controller.check()
+        self.update_controller.check(quiet=quiet)
 
     def update_theme_button(self):
         scheme = resolved_scheme(QApplication.instance(), self.settings.get("theme", "light"))
@@ -1590,6 +1597,21 @@ class Window(QMainWindow):
         item.setSelected(True)
         self.library.blockSignals(False)
         self.library.viewport().update()
+
+    def browse_library_clip(self, item):
+        if self.current_panel not in {"Home", "Session"}:
+            return
+        clip_id = item.data(Qt.ItemDataRole.UserRole)
+        self.browse_selected_id = clip_id
+        if self.browse_search.text():
+            self.browse_search.clear()
+        self.panel("Browse")
+        for index in range(self.library.count()):
+            candidate = self.library.item(index)
+            if candidate.data(Qt.ItemDataRole.UserRole) == clip_id:
+                self.library.setCurrentItem(candidate)
+                self.library.scrollToItem(candidate)
+                break
 
     def edit_context_clip(self):
         if self.context_clip_id:
@@ -4101,10 +4123,9 @@ class Window(QMainWindow):
         self.folder_toggle_action.setText(
             "Pause scanning" if not folder or folder["enabled"] else "Resume scanning"
         )
-        if folder_id == "__unlinked__":
-            self.folder_remove_action.setEnabled(self.worker is None)
-        self.folder_remove_action.setText(
-            "Remove saved entries…" if folder_id == "__unlinked__" else "Remove folder…"
+        self.folder_unlinked_remove_action.setVisible(folder_id == "__unlinked__")
+        self.folder_unlinked_remove_action.setEnabled(
+            folder_id == "__unlinked__" and self.worker is None
         )
 
     def toggle_folder(self):

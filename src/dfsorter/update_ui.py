@@ -1,5 +1,6 @@
-"""Qt-facing, manually initiated portable release updates."""
+"""Qt-facing portable release updates."""
 
+import logging
 import os
 import shutil
 import subprocess
@@ -25,21 +26,29 @@ class UpdateController(QObject):
         super().__init__(window)
         self.window = window
         self.progress = None
+        self.checking = False
+        self.quiet = False
         self.cancelled = threading.Event()
         self.checked.connect(self._checked)
         self.downloaded.connect(self._downloaded)
 
-    def check(self):
-        if self.progress is not None:
+    def check(self, *, quiet=False):
+        if self.checking or self.progress is not None:
+            if not quiet:
+                self.quiet = False
             return
         if not installed_release():
-            QMessageBox.information(
-                self.window,
-                "Portable updates",
-                "Update checks are available in packaged Windows releases.",
-            )
+            if not quiet:
+                QMessageBox.information(
+                    self.window,
+                    "Portable updates",
+                    "Update checks are available in packaged Windows releases.",
+                )
             return
-        self._busy("Checking for updates…", cancel=False)
+        self.checking = True
+        self.quiet = quiet
+        if not quiet:
+            self._busy("Checking for updates…", cancel=False)
         threading.Thread(target=self._check_worker, daemon=True).start()
 
     def _busy(self, label, *, cancel):
@@ -60,14 +69,20 @@ class UpdateController(QObject):
             self.checked.emit(error)
 
     def _checked(self, result):
-        self.progress.close()
-        self.progress = None
+        self.checking = False
+        if self.progress is not None:
+            self.progress.close()
+            self.progress = None
         if isinstance(result, Exception):
-            QMessageBox.warning(self.window, "Update check failed", str(result))
+            if self.quiet:
+                logging.warning("Automatic update check failed: %s", result)
+            else:
+                QMessageBox.warning(self.window, "Update check failed", str(result))
             return
         installed = installed_release()
         if version_tuple(result["version"]) <= version_tuple(installed["version"]):
-            QMessageBox.information(self.window, "DFSorter updates", "This copy is up to date.")
+            if not self.quiet:
+                QMessageBox.information(self.window, "DFSorter updates", "This copy is up to date.")
             return
         answer = QMessageBox.question(
             self.window,

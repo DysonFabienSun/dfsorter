@@ -74,7 +74,7 @@ A missing source file does **not** cause its database entry to be deleted. It re
 
 Removing a capture folder requires explicit confirmation and removes its catalogue entries, cached media information, and project/session references. Save a database backup first. Original source files are never deleted. Pause scanning is the reversible alternative that retains the folder and its clips.
 
-On Home, right-clicking a capture folder selects it and opens a context menu containing only Pause scanning (enabled folders) or Resume scanning (paused folders), using the same action as More. Disable the action during background operations. Empty list space and unlinked catalogue entries have no folder context menu.
+On Home, right-clicking a capture folder selects it and opens a context menu containing Pause scanning (enabled folders) or Resume scanning (paused folders), Relink folder…, and Remove folder…. Disable these actions during background operations. Empty list space and unlinked catalogue entries have no folder context menu.
 
 ---
 
@@ -334,7 +334,7 @@ Page and clip transitions keep the native video surface hidden until the surroun
 
 ### 9.2 Settings and Actions
 
-The settings menu also contains Check for updates… after Settings…. This manual action is available in portable releases; it checks the latest stable public GitHub Release, asks before downloading, closes the app, applies the update through a separate helper, and reopens it. Failed replacement restores the previous application files and retains the state backup.
+The settings menu also contains Check for updates… after Settings…. This manual action is available in portable releases; it checks the latest stable public GitHub Release, asks before downloading, closes the app, applies the update through a separate helper, and reopens it. Failed replacement restores the previous application files and retains the state backup. Each portable-app launch also checks once after UI initialization, without a progress dialog. The automatic check stays quiet when the copy is current or the check fails; a newer release prompts for download and installation. Development copies do not check automatically.
 
 There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Reset window and panes, and Exit. Undo and Redo icon buttons sit at the right with 4 px between them; retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Undo, Redo, Theme and Settings use matching 28 px heights and one vertical centerline with frameless styling. When available and closed, Projects uses a labeled folder-like tab hanging beneath Settings. Opening the pane hides the tab; the pane has a prominent Projects heading and its own close action. Retain the shared optical 1 px downward icon offset on icon-only utilities.
 
@@ -416,7 +416,7 @@ Rating remains an editorial reference and optional export-grouping value; rating
 
 Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
 
-Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning**, **Relink folder…**, and **Remove folder…** actions, followed by the advanced global **Rebuild media information…** action. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
+Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning** and the advanced global **Rebuild media information…** action. **Relink folder…** and **Remove folder…** are available from the selected folder's context menu. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
 
 Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
@@ -500,8 +500,8 @@ Home shows:
 - total capture-folder size and newly discovered clip size in GB;
 - manual Rescan;
 - Add Folder;
-- Remove folder… under More;
-- Relink folder… under More.
+- Remove folder… from the folder context menu;
+- Relink folder… from the folder context menu.
 
 Adding a folder should allow a preview before confirmation, including at least the number of recognized videos per game.
 
@@ -784,7 +784,7 @@ Changing a clip away from Keep does not automatically delete existing project me
 
 ### 13.9 Atomic single-clip Editing
 
-Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
+Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Double-clicking a Home or Session clip opens that clip in Browse. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
 
 Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation, catalogue Undo/Redo and permanent source deletion are unavailable. Native text-field undo remains available.
 
