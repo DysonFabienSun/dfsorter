@@ -1003,6 +1003,8 @@ def test_generated_share_dialog_defaults_and_master_toggle(
 
 def test_all_players_mix_tracks_and_ignore_stale_loads(window, application, tmp_path):
     ids = add_clips(window, tmp_path, valid=True)
+    window.preload_timer.stop()
+    window.schedule_preload = lambda: None
     original = window.catalogue.clip(ids[0])
     sources = []
     for count in (0, 2):
@@ -1436,37 +1438,43 @@ def add_clips(window, tmp_path, valid=False, codec="libx264"):
     captures.mkdir(exist_ok=True)
     path = captures / f"{codec}.mp4"
     if valid:
-        codec_options = ["-cpu-used", "8"] if codec == "libaom-av1" else []
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=320x180:rate=24",
-                "-f",
-                "lavfi",
-                "-i",
-                # Keep an audio track for playback coverage without audible test tones.
-                "anullsrc=channel_layout=mono:sample_rate=44100",
-                "-t",
-                "3",
-                "-c:v",
-                codec,
-                *codec_options,
-                "-threads",
-                "2",
-                "-c:a",
-                "aac",
-                str(path),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        cached = ROOT / "cache/test-videos" / f"{codec}.mp4"
+        if not cached.is_file():
+            if not shutil.which("ffmpeg"):
+                pytest.skip("ffmpeg required for playback fixtures")
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            codec_options = ["-cpu-used", "8"] if codec == "libaom-av1" else []
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc2=size=320x180:rate=24",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    # Keep an audio track for playback coverage without audible test tones.
+                    "anullsrc=channel_layout=mono:sample_rate=44100",
+                    "-t",
+                    "3",
+                    "-c:v",
+                    codec,
+                    *codec_options,
+                    "-threads",
+                    "2",
+                    "-c:a",
+                    "aac",
+                    str(cached),
+                ],
+                check=True,
+                capture_output=True,
+            )
+        shutil.copyfile(cached, path)
     else:
         path.write_bytes(b"test")
     folder_id = window.catalogue.add_folder(captures)
@@ -2125,6 +2133,8 @@ def test_real_playback(window, application, tmp_path, codec):
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg required for playback fixtures")
     ids = add_clips(window, tmp_path, valid=True, codec=codec)
+    window.preload_timer.stop()
+    window.schedule_preload = lambda: None
     window.panel("Editing")
     player = window.player
     assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
