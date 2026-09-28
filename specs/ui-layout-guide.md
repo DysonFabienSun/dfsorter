@@ -169,7 +169,7 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 | Section / pane heading font sizes | 22 / 16 |
 | Weights regular / medium / semibold / bold | 400 / 500 / 600 / 700 |
 | Spacing 1–6 | 4 / 8 / 12 / 16 / 24 / 32 |
-| Radius none / sm / md / lg | 0 / 3 / 5 / 7 |
+| Radius none / structural / sm / md / lg | 0 / 2 / 3 / 5 / 7 |
 | Control radius | 4 |
 | Control compact / normal / large | 24 / 32 / 36 |
 | Toolbar / navigation height | 28 / 34 |
@@ -177,7 +177,7 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 
 Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 12 px. Editing working titles use 13 px regular metadata in `text.secondary`, 13 px regular game codes and separators in `text.muted`, and 16 px bold mainline in `text.primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 22 px semibold text with a centered 24 px leading icon. Heading icons have no backing fill and use pure black in Light mode and pure white in Dark mode. Apply this shared style to Home, Session, and future section headings. Compact pane headings use 16 px semibold primary text; Projects has a centered 16 px leading icon with the same theme-dependent color and no backing fill. Raise icon-bearing heading text optically so its painted center aligns with the icon. The Session clips header has a transparent background, shows the numeric session position as secondary text beside its title, aligns its title to clip-card text, and aligns its right action to the card edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
-Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; larger grouped panels may use 5–7 px. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
+Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; structural panels and grouped containers use at most 2 px. Avoid simultaneously visible nested rounded container contours within 16 logical pixels: remove redundant framing or square the inner container. This rule excludes ordinary controls, menus, tooltips and transient row highlights. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
 
 ### Surface and border hierarchy
 
@@ -201,7 +201,7 @@ input, theme switching or navigation.
 - Navigation sits at the top of the application with no menu bar or outer top gap; the workspace beneath it has its own 12 px inset. Navigation uses a continuous `surface.panel` strip with a subtle bottom divider and compact rectangular text-only tabs. Labels are 14 px medium; active labels are semibold. Inactive tabs use secondary text, transparent backgrounds and a neutral hover surface. The active tab uses primary text and a straight 2 px `accent.default` bottom indicator; it may use an extremely subtle active surface but must not also use strong side borders or accent text. Theme and Settings remain right-aligned utilities. When available and closed, Projects appears as a folder-like tab hanging beneath Settings; opening the pane hides the tab.
 - Inputs use `surface.control`, a subtle border, primary text, muted placeholders, a quiet neutral hover and an unmistakable focus treatment. Use a 2 px focus ring where QSS and geometry permit without layout movement; otherwise use an equivalently clear inset/outline treatment. The command bar uses the same idle styling and `component.commandValid` when valid. No neon glow or native dotted focus rectangles. Focus behavior follows main specs §13.2.
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Pending uses pressed-surface/strong-border/secondary-text.
-- Projects remain a secondary utility pane with a prominent **Projects** heading, a close action, secondary active-project text, a cyan active-project indicator and compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
+- Projects remains a secondary utility pane with a compact folder icon and semibold heading, a close action, muted `Active:` text with a cyan active-project name only when one is active, and a compact icon toolbar. Every icon action has a tooltip and accessible name. Keep destructive actions visually separate; project deletion behavior follows main specs §14.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render sharply at high DPI. Tooltips include actual shortcuts when applicable.
 - Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows static dull-yellow stars and a disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
 - Metadata-style clip lists show game, an optional bold `R1`–`R5` label, capture-folder name and verdict in that order. Rating uses the theme's five-step low-to-high scale; unrated clips omit that segment. Elide long folder names in the middle before they crowd out the other fields. Browse retains capture time and folder on its second line instead.
@@ -236,7 +236,7 @@ Activities sits between Redo and Theme as an icon-only 26 px navigation utility 
 
 ### Left pane
 
-Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Align the Editing header and footer text to its card title text and actions to the card edge, not merely to outer widget bounds. Library search and filter control edges use the 8 px guide; metadata clip rows shift their title text right to make room for the standalone verdict dot. The Editing heading and footer use that shifted title guide. The left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar retains the shared 7 px rounded corners. These are component-specific offsets, not general panel-padding replacements.
+Order search/filter controls, compact heading/action row where required, expanding clip list, then page-specific footer. Home and Browse place Clips, Games and Projects menu buttons in one row beneath search, followed by availability and capture-time sort icon actions at the right. Session Editing uses a Session clips heading with Next pending action. Atomic single-clip Editing replaces that heading with **Single clip**, hides Next pending and the progress footer, and shows exactly one card. Position the Editing header title and count at a 16 px inset; align its action to the card edge and footer text to the card title. Library search and filter control edges use the 8 px guide; metadata clip rows shift their title text right to make room for the standalone verdict dot. The left-pane layout itself has no left margin, with 8 px right / 4 px vertical margins. The sidebar uses shared 2 px structural corners, matching Projects. These are component-specific offsets, not general panel-padding replacements.
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. Header backgrounds stay transparent. Filters and footer visibility follow page requirements.
 
@@ -257,7 +257,7 @@ Grow only as required by font metrics.
 
 Home, Session and Editing line one uses 13 px regular muted game codes and structured metadata, with a 14 px semibold primary mainline or filename fallback. Their second line uses 11 px for the canonical game name (or Unassigned), optional rating and capture-folder name. Browse retains 13 px regular codes and metadata, 14 px bold mainline and fallback, and 12 px details. Export retains 14 px regular codes and metadata, 15 px bold mainline and fallback, and 12 px details. Separate structured metadata and mainline with a muted ` | ` when both exist. Do not repeat Keep, Discard or Pending as text. Keep the two lines together with a 3 px gap on Home, Session and Editing, or 2 px on Browse and Export, and center their actual rendered height in the row. On Home, Session and Editing, position the text block 1 logical px below its former optical offset and the verdict dot 2 px lower to align it with the visible capture time; keep the Home/Session time at its current offset. Export retains its 1 px upward optical offset for the text block and verdict dot. Put the 8 px verdict dot on its own at the left of the text block, with roughly 9 px between the dot edge and text; Home and Session keep a compact relative capture time right-aligned in the row with no overflow control following it. Browse keeps the dot beside line two. Reserve metadata width for the folder and an amber Unavailable label before eliding the game name. Long titles elide based on their rendered rich-text spans; no horizontal scrollbar. Tooltips show the complete title, metadata and source path.
 
-Hover uses `surface.hover` with rounded corners on every clip row. Selection uses `accent.selection` plus a full-height 2 px `accent.default` left indicator. Home, Session and Editing selection and focus boundaries have square corners; Browse and Export keep rounded right corners. In every clip view, hover and selection fills cover the row's top separator and reach the bottom row boundary; the next row omits its separator while the preceding row is active. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
+Hover uses `surface.hover` with rounded corners on every clip row. Selection uses `accent.selection`; Home, Session, Editing and Export add a full-height 2 px `accent.default` left indicator, while Browse uses a thin cyan outline on the thumbnail without an outer left indicator. Browse hover and selection fills begin on the 8 px control guide, with the thumbnail inset another 8 px. Home, Session and Editing selection and focus boundaries have square corners; Browse and Export keep rounded right corners. In every clip view, hover and selection fills cover the row's top separator and reach the bottom row boundary; the next row omits its separator while the preceding row is active. The selected fill must remain soft rather than becoming a saturated teal block. Keyboard focus uses a distinct focus boundary. Presentation data must use explicit roles, not substring matching against visible text.
 
 When additional cards exist beyond a visible list edge, overlay a non-interactive 16 px vertical gradient at that edge, fading from `surface.sidebar` to transparent toward the content. The fade sits above card content without consuming layout space and disappears completely at the corresponding start or end of the list. Do not add chevrons or borders. On the first opening of each applicable navigation page, position a selected card that is not first with only the bottom third of the immediately preceding card visible above it. Preserve the viewport on later selection and navigation changes.
 
@@ -265,13 +265,13 @@ Browse uses a 64 px row with an 84 × 48 px letterboxed thumbnail before the two
 
 ### Projects
 
-Secondary heading, active-project accent, expanding list and compact icon toolbar. Keep common actions grouped; destructive deletion remains separate in context menu. Every icon action needs tooltip and accessible name. Preserve enabled, disabled and checked states through shared styling.
+Use a compact folder icon and semibold heading, expanding project list, and bottom utility toolbar. Keep the pane on the sidebar surface, darker than the central workspace in Dark mode, with a subtle 1 px left divider and 8 px horizontal / 4 px vertical insets. Do not frame it as a card or add a decorative accent rule. The heading row shares the search control height. Show `Active:` as muted secondary text with only the active project name in cyan; hide the entire line when no project is active. Keep the active-project row indicator. The empty state sits slightly above center with a quiet small icon, brief title, and only a Create project action; hide the bottom toolbar. When populated, the toolbar has a subtle top divider, evenly spaced 28 px icon actions, hover states, and tooltips. Apply this composition wherever Projects appears. Keep destructive deletion in the context menu and preserve enabled, disabled and checked states through shared styling.
 
 ## 4. Sparse-page composition
 
 ### Home / Capture folders
 
-Preserve Capture Folders behavior and all existing information. Each watched folder is a
+Align the Capture folders heading with the Session overview at a 4 px top inset. Preserve Capture Folders behavior and all existing information. Each watched folder is a
 compact typographic group rather than raw diagnostic-looking text. The folder path is primary;
 scanning state, total clips, and folder size are secondary; detected-game counts are tertiary.
 Show newly discovered clip size in the same cyan accent as new clip counts. Align labels and
@@ -286,9 +286,26 @@ active Session shows its position and verdict progress with End session. With no
 show a clear inactive state followed by Scope, Selected / First N / All, the count field and
 Create Session. The setup panel fills the center workspace without changing the clip-library
 pane. Editing navigation opens the active Session at its saved position.
+Give the setup heading more space above than below. In the active state, show a distinct,
+square-cornered, thicker bar divided into equal segments in frozen Session order, one per
+clip. Keep is green, Discard red, Pending muted gray, and an unavailable source overrides
+the visible verdict with striped warning yellow. A cursor and attached processed count and
+percentage mark the trailing edge of the rightmost decided clip, even if pending clips
+precede it; with none decided, place the cursor at the left edge. Keep exact labeled counts
+below the bar, adding a yellow Unavailable count when needed. Unavailable decided clips
+still count as processed, though their verdict is hidden in the bar and verdict counts.
+Keep the numeric current position in Editing only, not in this Session summary.
+Render the processed label as a semibold cyan chat-bubble tag with a bottom pointer
+touching the cursor and high-contrast text. Keep the body sides vertical, including at
+the bar's left and right limits; shift the body within the bar at those limits while
+the pointer continues to target the cursor. Paint segments flush together without
+outlines or gaps.
 
-Place the library overview above Session setup. Give both sections a shared 1 px outline and
-workspace-matched fill. The Projects pane stays open on Session, so the overview uses the
+Place the library overview above Session setup on an open workspace surface with no enclosing
+boxes. A subtle 1 px horizontal divider separates the pinned setup area. Use 12 px horizontal
+padding and 4 px top/bottom insets. Align the overview and Projects heading rows with the left
+search row's top, allowing the 22 px overview heading its full 32 px height.
+Retain 22 px section headings and the 16 px Projects heading. The Projects pane stays open on Session, so the overview uses the
 remaining center width. Opening Session preserves the clip-library pane's current width;
 the center pane gives up the width needed by Projects.
 Scroll the overview vertically when its rows exceed the available height while keeping Session

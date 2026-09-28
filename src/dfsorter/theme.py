@@ -137,7 +137,7 @@ ACTIVE_SCHEME = "light"
 FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "library_title": 15, "lg": 16, "xl": 20, "section_heading": 22, "pane_heading": 16, "xxl": 26}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
-RADII = {"none": 0, "sm": 3, "md": 5, "lg": 7, "control": 4}
+RADII = {"none": 0, "structural": 2, "sm": 3, "md": 5, "lg": 7, "control": 4}
 SIZES = {
     "compact": 24,
     "normal": 32,
@@ -191,6 +191,7 @@ def stylesheet():
     values = {
         **COLORS,
         **SIZES,
+        **{f"radius_{key}": value for key, value in RADII.items()},
         **{f"font_{key}": value for key, value in FONT_SIZES.items()},
         "combo_chevron": (
             ROOT / "resources/icons/chevron-down.svg"
@@ -218,10 +219,11 @@ def stylesheet():
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
-        QWidget#clipLibraryPane { border-radius: 7px; }
+        QWidget#clipLibraryPane, QWidget#projectsPane { border-radius: %(radius_structural)spx; }
+        QWidget#projectsPane { background: %(surface_sidebar)s; border-left: 1px solid %(border_subtle)s; }
         QWidget[role="transparent"] { background: transparent; }
-        QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 5px; }
-        QWidget[role="outlinedGroup"] { background: %(surface_workspace)s; border: 1px solid %(border_default)s; border-radius: 5px; }
+        QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: %(radius_structural)spx; }
+        QWidget[role="outlinedGroup"] { background: %(surface_workspace)s; border: 1px solid %(border_default)s; border-radius: %(radius_structural)spx; }
         QWidget[role="divider"] { background: %(border_subtle)s; }
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
@@ -230,6 +232,9 @@ def stylesheet():
         QLabel[role="sectionHeading"] { font-size: %(font_section_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: transparent; }
+        QLabel#projectsActiveName { color: %(accent_default)s; font-size: %(font_sm)spx; }
+        QToolButton[projectsAction="true"]:hover { background: %(surface_hover)s; border-color: %(border_subtle)s; }
+        QToolButton[projectsAction="true"]:pressed { background: %(surface_pressed)s; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
         QPushButton[periodSegment="true"] { border-radius: 0px; margin: 0px; border-left: none; }
         QPushButton[periodSegment="true"][periodPosition="first"] { border-left: 1px solid %(border_subtle)s; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
@@ -318,6 +323,7 @@ def stylesheet():
         QListWidget#clipLibrary { padding: 0px; }
         QWidget#clipScrollTopFade, QWidget#clipScrollBottomFade { background: transparent; border: none; }
         QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
+        QListWidget#projectsList::item:selected { background: %(surface_pressed)s; color: %(text_primary)s; }
         QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
         QListWidget::item { padding: 2px 4px; }
         QListWidget::item:selected { background: %(accent_selection)s; color: %(text_primary)s; }

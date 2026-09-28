@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyleOptionComboBox,
     QTabWidget,
+    QToolButton,
     QWidget,
 )
 
@@ -128,9 +129,41 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
     assert window.clip_filter.selected_values() == selected
 
 
+def test_session_pane_top_rows_align_in_dark_mode(window, application):
+    window.set_theme("dark", persist=False)
+    window.panel("Session")
+    for width, height in ((1400, 900), (1200, 700)):
+        window.resize(width, height)
+        application.processEvents()
+        search_top = window.search.mapTo(window, QPoint()).y()
+        for label in (window.findChild(QLabel, "overviewHeading"), window.projects_heading):
+            assert label.mapTo(window, QPoint()).y() == search_top
+            assert label.height() >= window.search.height()
+        assert window.left.mapTo(window, QPoint()).y() == window.right.mapTo(window, QPoint()).y()
+    overview_top = window.findChild(QLabel, "overviewHeading").mapTo(window, QPoint()).y()
+    window.panel("Home")
+    application.processEvents()
+    home_heading = next(
+        label for label in window.findChildren(QLabel)
+        if label.text() == "Capture folders" and label.isVisible()
+    )
+    assert home_heading.mapTo(window, QPoint()).y() == overview_top
+
+
+def test_editing_header_uses_compact_left_inset(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    window.set_theme("dark", persist=False)
+    window.panel("Editing")
+    application.processEvents()
+    assert window.session_heading.mapTo(window.left, QPoint()).x() == 16
+    assert window.session_position.text() == "1 / 1"
+    assert window.session_position.mapTo(window.left, QPoint()).x() < 150
+
+
 def test_session_overview_scrolls_above_pinned_setup(
     window, application, tmp_path, monkeypatch
 ):
+    window.set_theme("dark", persist=False)
     window.panel("Session")
     window.resize(1400, 600)
     for index in range(40):
@@ -140,8 +173,8 @@ def test_session_overview_scrolls_above_pinned_setup(
     scroll = window.findChild(QScrollArea, "sessionOverviewScroll")
     overview = window.findChild(QWidget, "sessionOverview")
     setup = window.findChild(QWidget, "sessionSetup")
-    assert overview.property("role") == "outlinedGroup"
-    assert setup.property("role") == "outlinedGroup"
+    assert overview.property("role") == "transparent"
+    assert setup.property("role") == "transparent"
     controls = {control.text(): control for control in setup.findChildren(QPushButton)}
     assert scroll.verticalScrollBar().maximum() > 0
     assert abs(overview.width() - scroll.viewport().width()) <= 2
@@ -168,7 +201,15 @@ def test_session_overview_scrolls_above_pinned_setup(
     application.processEvents()
     assert setup.height() == setup_height
     assert window.session_setup_heading.text() == "Active session"
-    assert "Position 1 / 1" in window.session_status.text()
+    assert window.session_progress.states == ("pending",)
+    assert window.session_progress.processed == 0
+    assert window.session_progress.last_processed == 0
+    assert window.session_verdicts.text() == "0 Keep · 0 Discard · 1 Pending"
+    assert window.session_setup_heading.mapTo(setup, QPoint()).y() > 10
+    assert window.session_progress.mapTo(setup, QPoint()).y() - (
+        window.session_setup_heading.mapTo(setup, QPoint()).y()
+        + window.session_setup_heading.height()
+    ) < 12
     assert controls["End session"].isVisible()
     assert not controls["Create Session"].isVisible()
 
@@ -182,6 +223,70 @@ def test_session_overview_scrolls_above_pinned_setup(
 
     window.refresh_library_overview([])
     assert wait_for(application, lambda: scroll.verticalScrollBar().maximum() == 0, timeout=1)
+
+
+def test_session_progress_follows_frozen_order_and_marks_unavailable(
+    window, application, tmp_path
+):
+    window.set_theme("dark", persist=False)
+    captures = tmp_path / "session-progress"
+    captures.mkdir()
+    folder = window.catalogue.add_folder(captures)
+    paths = [captures / f"clip-{index}.mp4" for index in range(5)]
+    for path in paths:
+        path.write_bytes(b"video")
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"} for path in paths])
+    clip_ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(clip_ids)
+    window.catalogue.patch(clip_ids[1], {"triage": "keep"})
+    window.catalogue.patch(clip_ids[4], {"triage": "discard"})
+    paths[2].unlink()
+    window.refresh_session_status()
+    window.panel("Session")
+    application.processEvents()
+
+    assert window.session_progress.states == (
+        "pending", "keep", "unavailable", "pending", "discard"
+    )
+    assert window.session_progress.processed == 2
+    assert window.session_progress.last_processed == 5
+    assert window.session_progress.height() > 16
+    assert window.session_verdicts.text().endswith(
+        f'<span style="color: {COLORS["status_warning"]}">1 Unavailable</span>'
+    )
+    assert "2 processed (40%)" not in window.session_verdicts.text()
+
+    window.catalogue.patch(clip_ids[2], {"triage": "keep"})
+    window.refresh_session_status()
+    assert window.session_progress.processed == 3
+    assert window.session_progress.last_processed == 5
+    assert window.session_progress.states[2] == "unavailable"
+    end_image = window.session_progress.grab().toImage()
+    assert end_image.pixelColor(window.session_progress.width() - 2, 10) == QColor(
+        COLORS["accent_default"]
+    )
+    assert end_image.pixelColor(window.session_progress.width() - 12, 3) == QColor(
+        COLORS["accent_default"]
+    )
+
+    window.catalogue.patch(clip_ids[4], {"triage": None})
+    window.refresh_session_status()
+    assert window.session_progress.processed == 2
+    assert window.session_progress.last_processed == 3
+    progress = window.session_progress
+    image = progress.grab().toImage()
+    keep_start = round(progress.width() / 5)
+    cursor = round(progress.width() * 3 / 5)
+    assert image.pixelColor(keep_start, 36) == QColor(COLORS["status_success"])
+    assert image.pixelColor(cursor, 27) == QColor(COLORS["accent_default"])
+    assert image.pixelColor(cursor + 18, 3) == QColor(COLORS["accent_default"])
+
+    window.catalogue.patch(clip_ids[1], {"triage": None})
+    window.catalogue.patch(clip_ids[2], {"triage": None})
+    window.refresh_session_status()
+    start_image = progress.grab().toImage()
+    assert progress.last_processed == 0
+    assert start_image.pixelColor(1, 10) == QColor(COLORS["accent_default"])
 
 
 def test_video_surface_fits_landscape_and_portrait_sources(application):
@@ -1693,7 +1798,8 @@ def test_editing_session_counts_and_list_height(window, application, tmp_path):
     heading_x = heading.mapTo(window.left, QPoint(0, 0)).x()
     footer_x = window.session_counts.mapTo(window.left, QPoint(0, 0)).x() + 26
     card_title_x = window.library.mapTo(window.left, QPoint(0, 0)).x() + 1 + 7 + 18
-    assert heading_x == footer_x == card_title_x
+    assert heading_x == 16
+    assert footer_x == card_title_x
     artifact = ROOT / "cache/verification/session-counts"
     artifact.mkdir(parents=True, exist_ok=True)
     assert wait_for(application, lambda: not window.transition_pending)
@@ -3162,6 +3268,12 @@ def test_projects_drawer_tab_and_pane_close(window):
     assert window.projects_toggle.objectName() == "projectsDrawerTab"
     assert window.projects_heading.text() == "Projects"
     assert window.projects_heading.property("role") == "paneHeading"
+    assert window.active_row.isHidden()
+    assert window.projects_toolbar.isHidden()
+    assert not window.findChild(QWidget, "projectsAccent")
+    assert [button.text() for button in window.projects_empty.findChildren(QPushButton)] == [
+        "Create project…"
+    ]
 
     window.projects_toggle.click()
 
@@ -3194,7 +3306,6 @@ def test_projects_drawer_tab_and_pane_close(window):
     assert abs(window.left.width() - home_library_width) <= 1
     assert window.projects_toggle.isVisible()
 
-
     window.splitter.setSizes([500, 870, 0])
     resized_library_width = window.left.width()
     window.panel("Session")
@@ -3207,6 +3318,32 @@ def test_projects_drawer_tab_and_pane_close(window):
     window.panel("Home")
     assert window.right.isVisible()
     assert window.projects_close.isVisible()
+
+
+def test_projects_utility_pane_active_state_and_toolbar(window, application):
+    window.set_theme("dark", persist=False)
+    window.panel("Session")
+    project_id = window.catalogue.save_project("Highlights")
+    window.refresh_references()
+    application.processEvents()
+    assert window.active_row.isHidden()
+    assert window.projects_toolbar.isVisible()
+    actions = window.projects_toolbar.findChildren(QToolButton)
+    assert [action.toolTip() for action in actions] == [
+        "New project", "Rename", "Activate", "Deactivate", "Add to project", "Remove selected clips"
+    ]
+    assert all(action.property("projectsAction") for action in actions)
+    assert len({action.width() for action in actions}) == 1
+    assert len({action.height() for action in actions}) == 1
+    window.projects.setCurrentRow(0)
+    window.activate_project()
+    application.processEvents()
+    assert window.catalogue.state("active_project") == project_id
+    assert window.active_row.isVisible()
+    assert window.active_label.text() == "Active:"
+    assert window.active_project_name.text() == "Highlights"
+    window.deactivate()
+    assert window.active_row.isHidden()
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -3262,7 +3399,10 @@ def test_heading_icons_are_unbacked_centered_and_unclipped(window, application, 
                 if child.parent() is label.parent() and child.property("headingIcon")
             )
             assert glyph.property("role") is None
-            assert glyph.size() == (QSize(20, 20) if name == "Projects" else QSize(32, 32))
+            expected_size = QSize(20, 20) if name == "Projects" else QSize(32, 32)
+            if name == "Library overview":
+                expected_size.setHeight(min(32, window.search.sizeHint().height()))
+            assert glyph.size() == expected_size
             assert glyph.grab().toImage().pixelColor(0, 0).alpha() == 0
             pixmap = glyph.pixmap().toImage()
             painted = [
@@ -3465,9 +3605,24 @@ def test_library_selection_reaches_both_row_boundaries(
         next_rect = window.library.visualItemRect(window.library.item(2))
         assert image.pixelColor(x, next_rect.top()) != QColor(COLORS["border_subtle"])
         indicator_x = rect.left() + 2
-        for y in (rect.top(), rect.top() + 3, rect.bottom() - 3, rect.bottom()):
-            assert image.pixelColor(indicator_x, y) == QColor(COLORS["accent_default"])
-        assert image.pixelColor(rect.left() + 1, rect.top()) == QColor(COLORS["accent_default"])
+        if panel == "Browse":
+            for y in (rect.top(), rect.center().y(), rect.bottom()):
+                assert image.pixelColor(indicator_x, y) != QColor(COLORS["accent_default"])
+            assert image.pixelColor(indicator_x, rect.center().y()) != QColor(
+                COLORS["accent_selection"]
+            )
+            assert image.pixelColor(rect.left() + 8, rect.center().y()) == QColor(
+                COLORS["accent_selection"]
+            )
+            thumbnail_left = rect.left() + 16
+            assert image.pixelColor(thumbnail_left, rect.center().y()) != image.pixelColor(
+                thumbnail_left,
+                window.library.visualItemRect(window.library.item(0)).center().y(),
+            )
+        else:
+            for y in (rect.top(), rect.top() + 3, rect.bottom() - 3, rect.bottom()):
+                assert image.pixelColor(indicator_x, y) == QColor(COLORS["accent_default"])
+            assert image.pixelColor(rect.left() + 1, rect.top()) == QColor(COLORS["accent_default"])
         assert image.pixelColor(rect.left() + 3, rect.center().y()) != QColor(
             COLORS["accent_default"]
         )
@@ -3543,7 +3698,7 @@ def test_library_hover_covers_owned_separator(window, application, tmp_path, the
     window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
     window.catalogue.create_session([clip["clip_id"] for clip in window.catalogue.clips()])
     window.set_theme(theme)
-    for panel in ("Home", "Editing"):
+    for panel in ("Home", "Browse", "Editing"):
         window.panel(panel)
         window.library.clearSelection()
         application.processEvents()
@@ -3567,6 +3722,13 @@ def test_library_hover_covers_owned_separator(window, application, tmp_path, the
         assert image.pixelColor(x, rect.top() - 1) != QColor(COLORS["surface_hover"])
         for y in (rect.top(), rect.bottom()):
             assert image.pixelColor(x, y) == QColor(COLORS["surface_hover"])
+        if panel == "Browse":
+            assert image.pixelColor(rect.left() + 2, rect.center().y()) != QColor(
+                COLORS["surface_hover"]
+            )
+            assert image.pixelColor(rect.left() + 8, rect.center().y()) == QColor(
+                COLORS["surface_hover"]
+            )
         assert image.pixelColor(x, window.library.visualItemRect(window.library.item(2)).top()) != QColor(
             COLORS["border_subtle"]
         )

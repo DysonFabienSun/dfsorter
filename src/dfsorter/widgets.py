@@ -66,6 +66,81 @@ class VerdictBar(QWidget):
             left += width
 
 
+class SessionProgressBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.states = ()
+        self.processed = 0
+        self.last_processed = 0
+        self.setFixedHeight(48)
+        self.setMinimumWidth(120)
+
+    def set_states(self, states, processed, last_processed):
+        self.states = tuple(states)
+        self.processed = processed
+        self.last_processed = last_processed
+        total = len(self.states)
+        self.setAccessibleName(f"{processed} of {total} clips processed")
+        self.setToolTip(
+            f"{processed} of {total} clips processed; cursor after clip {last_processed}"
+        )
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        total = len(self.states)
+        bar_top = 26
+        bar_height = 20
+        bar_width = self.width()
+        painter.fillRect(QRect(0, bar_top, bar_width, bar_height), QColor(COLORS["surface_pressed"]))
+        if total:
+            for index, state in enumerate(self.states):
+                left = round(index * bar_width / total)
+                right = round((index + 1) * bar_width / total)
+                if right <= left:
+                    continue
+                segment = QRect(left, bar_top, right - left, bar_height)
+                color = {
+                    "keep": "status_success",
+                    "discard": "status_danger",
+                    "pending": "text_muted",
+                    "unavailable": "status_warning",
+                }[state]
+                painter.fillRect(segment, QColor(COLORS[color]))
+                if state == "unavailable":
+                    painter.save()
+                    painter.setClipRect(segment)
+                    painter.setPen(QPen(QColor(COLORS["status_warning_soft"]), 2))
+                    for offset in range(left - bar_height, right + bar_height, 7):
+                        painter.drawLine(offset, bar_top + bar_height, offset + bar_height, bar_top)
+                    painter.restore()
+        cursor = round(self.last_processed * bar_width / total) if total else 0
+        cursor = max(0, min(bar_width - 2, cursor))
+        label = f"{self.processed} processed ({self.processed / total:.0%})" if total else "0 processed (0%)"
+        tag_font = font("sm", "semibold", base=painter.font())
+        painter.setFont(tag_font)
+        metrics = painter.fontMetrics()
+        tag_width = metrics.horizontalAdvance(label) + 16
+        tag_left = max(0, min(bar_width - tag_width, cursor - tag_width // 2))
+        tag_right = tag_left + tag_width
+        tail_left = max(tag_left, min(tag_right - 12, cursor - 6))
+        tail_right = tail_left + 12
+        tag = QPainterPath()
+        tag.moveTo(tag_left, 0)
+        tag.lineTo(tag_right, 0)
+        tag.lineTo(tag_right, 19)
+        tag.lineTo(tail_right, 19)
+        tag.lineTo(cursor, 25)
+        tag.lineTo(tail_left, 19)
+        tag.lineTo(tag_left, 19)
+        tag.closeSubpath()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillPath(tag, QColor(COLORS["accent_default"]))
+        painter.setPen(QColor(COLORS["text_inverse"]))
+        painter.drawText(QRect(tag_left, 0, tag_width, 19), Qt.AlignmentFlag.AlignCenter, label)
+        painter.fillRect(QRect(cursor, bar_top, 2, bar_height), QColor(COLORS["accent_default"]))
+
+
 class EdgeChevron(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -220,12 +295,13 @@ class ClipDelegate(QStyledItemDelegate):
         painter.setClipRect(option.rect)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         data = index.data(CLIP_ROLE) or {}
+        browse = data.get("browse_details") is not None
         card = option.rect.adjusted(1, 1, -1, -SIZES["card_gap"] - 1)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
         compact_card = data.get("compact_card", False)
-        active_card = option.rect.adjusted(1, 0, -1, 0)
+        active_card = option.rect.adjusted(8 if browse else 1, 0, -1, 0)
         previous_index = index.siblingAtRow(index.row() - 1)
         previous_active = previous_index.isValid() and (
             self.parent().selectionModel().isSelected(previous_index)
@@ -241,7 +317,7 @@ class ClipDelegate(QStyledItemDelegate):
         elif index.row() > 0 and not previous_active:
             painter.setPen(QColor(COLORS["border_subtle"]))
             painter.drawLine(
-                card.left() + SIZES["card_padding"],
+                card.left() + SIZES["card_padding"] + (8 if browse else 0),
                 option.rect.top(),
                 card.right() - SIZES["card_padding"],
                 option.rect.top(),
@@ -253,20 +329,19 @@ class ClipDelegate(QStyledItemDelegate):
                 painter.drawRect(active_card)
             else:
                 painter.drawRoundedRect(active_card if selected or hovered else card, 3, 3)
-        if selected:
+        if selected and not browse:
             painter.fillRect(
                 QRect(active_card.left(), active_card.top(), 2, active_card.height()),
                 QColor(COLORS["accent_default"]),
             )
         compact_time = data.get("compact_time")
-        browse = data.get("browse_details") is not None
         metadata_row = not browse
         title_size = "card_title" if browse or compact_card else "library_title"
         title_font = font(title_size, "semibold" if compact_card else "bold", base=option.font)
         detail_font = font("xs" if compact_card else "sm", base=option.font)
         title_metrics = QFontMetrics(title_font)
         detail_metrics = QFontMetrics(detail_font)
-        content_left = card.left() + SIZES["card_padding"]
+        content_left = card.left() + SIZES["card_padding"] + (8 if browse else 0)
         if browse:
             thumbnail = QRect(content_left, card.top() + (card.height() - SIZES["thumbnail_height"]) // 2,
                               SIZES["thumbnail_width"], SIZES["thumbnail_height"])
@@ -274,6 +349,12 @@ class ClipDelegate(QStyledItemDelegate):
             picture = data.get("thumbnail")
             if picture is not None and not picture.isNull():
                 painter.drawImage(thumbnail, picture)
+            if selected:
+                outline = QColor(COLORS["accent_default"])
+                outline.setAlpha(140)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(QPen(outline, 1))
+                painter.drawRect(thumbnail.adjusted(0, 0, -1, -1))
             content_left = thumbnail.right() + 11
         if metadata_row:
             content_left += SIZES["card_dot_space"]

@@ -97,6 +97,7 @@ from .widgets import (
     ClipScrollFade,
     EdgeChevron,
     Rating,
+    SessionProgressBar,
     VerdictBar,
     icon,
     refresh_icons,
@@ -288,7 +289,7 @@ def page():
     return widget, layout
 
 
-def heading(text, icon_name, heading_role="sectionHeading"):
+def heading(text, icon_name, heading_role="sectionHeading", row_height=None):
     row = QHBoxLayout()
     row.setSpacing(8)
     section = heading_role == "sectionHeading"
@@ -298,7 +299,7 @@ def heading(text, icon_name, heading_role="sectionHeading"):
     glyph.setProperty("headingIcon", icon_name)
     glyph.setProperty("headingIconSize", icon_size)
     glyph.setProperty("headingIconColorRole", "heading_icon_foreground")
-    glyph.setFixedSize(box_size, box_size)
+    glyph.setFixedSize(box_size, min(box_size, row_height or box_size))
     glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
     glyph.setPixmap(
         icon(
@@ -311,6 +312,8 @@ def heading(text, icon_name, heading_role="sectionHeading"):
     role(label, heading_role)
     label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     label.setContentsMargins(0, 0, 0, 4)
+    if row_height is not None:
+        label.setFixedHeight(max(box_size, row_height))
     row.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()
@@ -555,7 +558,7 @@ class Window(QMainWindow):
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
         clip_text_inset = 1 + SIZES["card_padding"] + SIZES["card_dot_space"]
-        session_header_layout.setContentsMargins(clip_text_inset, 0, 5, 0)
+        session_header_layout.setContentsMargins(16, 0, 5, 0)
         self.session_heading = QLabel("Session clips")
         role(self.session_heading, "paneHeading")
         session_header_layout.addWidget(self.session_heading)
@@ -622,43 +625,71 @@ class Window(QMainWindow):
         self.build_pages()
         self.right, right_layout = page()
         self.right.setObjectName("projectsPane")
+        right_layout.setContentsMargins(8, 4, 8, 4)
         role(self.right, "sidebar")
         projects_header = QHBoxLayout()
         projects_header.setContentsMargins(0, 0, 0, 0)
-        projects_title_row, self.projects_heading = heading("Projects", "folder-open", "paneHeading")
+        projects_title_row, self.projects_heading = heading(
+            "Projects", "folder-open", "paneHeading", self.search.sizeHint().height()
+        )
         projects_header.addLayout(projects_title_row)
         projects_header.addStretch()
         self.projects_close = tool("x", "Close Projects", self.toggle_projects)
         self.projects_close.setObjectName("projectsPaneClose")
         projects_header.addWidget(self.projects_close)
         right_layout.addLayout(projects_header)
-        self.active_label = QLabel()
+        active_row = QWidget()
+        role(active_row, "transparent")
+        active_layout = QHBoxLayout(active_row)
+        active_layout.setContentsMargins(0, 0, 0, 0)
+        active_layout.setSpacing(4)
+        self.active_label = QLabel("Active:")
         role(self.active_label, "secondary")
-        self.active_label.setWordWrap(True)
-        right_layout.addWidget(self.active_label)
+        active_layout.addWidget(self.active_label)
+        self.active_project_name = QLabel()
+        self.active_project_name.setObjectName("projectsActiveName")
+        self.active_project_name.setWordWrap(True)
+        active_layout.addWidget(self.active_project_name, 1)
+        right_layout.addWidget(active_row)
+        self.active_row = active_row
         self.projects = QListWidget()
+        self.projects.setObjectName("projectsList")
         right_layout.addWidget(self.projects)
         self.projects_empty = QWidget()
+        role(self.projects_empty, "transparent")
         empty_layout = QVBoxLayout(self.projects_empty)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setContentsMargins(8, 0, 8, 0)
+        empty_layout.setSpacing(8)
+        empty_layout.addStretch(3)
         empty_icon = QLabel()
         empty_icon.setProperty("headingIcon", "folder")
-        empty_icon.setProperty("headingIconSize", 32)
-        empty_icon.setFixedSize(48, 48)
-        empty_icon.setPixmap(icon("folder", size=32).pixmap(32, 32))
+        empty_icon.setProperty("headingIconSize", 20)
+        empty_icon.setProperty("headingIconColorRole", "text_muted")
+        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_icon.setFixedSize(32, 32)
+        empty_icon.setPixmap(icon("folder", COLORS["text_muted"], size=20).pixmap(20, 20))
         empty_layout.addWidget(empty_icon, 0, Qt.AlignmentFlag.AlignHCenter)
         empty_title = QLabel("No projects yet")
         role(empty_title, "paneHeading")
         empty_layout.addWidget(empty_title, 0, Qt.AlignmentFlag.AlignHCenter)
-        empty_description = QLabel("Create a project to organize clips and exports.")
-        empty_description.setWordWrap(True)
-        role(empty_description, "secondary")
-        empty_layout.addWidget(empty_description, 0, Qt.AlignmentFlag.AlignHCenter)
         create_project = button("Create project…", self.new_project)
         set_icon(create_project, "plus")
         empty_layout.addWidget(create_project, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_layout.addStretch(4)
         right_layout.addWidget(self.projects_empty, 1)
+        self.projects_toolbar = QWidget()
+        self.projects_toolbar.setObjectName("projectsToolbar")
+        role(self.projects_toolbar, "transparent")
+        toolbar_layout = QVBoxLayout(self.projects_toolbar)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(4)
+        toolbar_divider = QWidget()
+        role(toolbar_divider, "divider")
+        toolbar_divider.setFixedHeight(1)
+        toolbar_layout.addWidget(toolbar_divider)
         project_tools = QHBoxLayout()
+        project_tools.setContentsMargins(0, 0, 0, 0)
+        project_tools.setSpacing(4)
         self.project_global_controls = []
         self.projects.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         for text, callback in [
@@ -683,11 +714,13 @@ class Window(QMainWindow):
             }
             if text in names:
                 control = tool(names[text], text, callback)
+                control.setProperty("projectsAction", True)
                 project_tools.addWidget(control)
                 if text in {"New project", "Rename", "Activate", "Deactivate"}:
                     self.project_global_controls.append(control)
         project_tools.addStretch()
-        right_layout.addLayout(project_tools)
+        toolbar_layout.addLayout(project_tools)
+        right_layout.addWidget(self.projects_toolbar)
         self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
@@ -833,6 +866,7 @@ class Window(QMainWindow):
         self.browse = BrowsePage(self)
         self.pages["Browse"][1].addWidget(self.browse)
         home = self.pages["Home"][1]
+        home.setContentsMargins(SIZES["panel_padding"], 4, SIZES["panel_padding"], SIZES["panel_padding"])
         home_title_row, _home_title = heading("Capture folders", "folder-open")
         home.addLayout(home_title_row)
         explanation = QLabel(
@@ -900,18 +934,22 @@ class Window(QMainWindow):
         role(note, "muted")
         home.addWidget(note)
         session = self.pages["Session"][1]
+        session.setContentsMargins(SIZES["panel_padding"], 4, SIZES["panel_padding"], 4)
         session_scroll = QScrollArea()
         session_scroll.setObjectName("sessionOverviewScroll")
         session_scroll.setWidgetResizable(True)
         session_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         overview_group = QWidget()
         overview_group.setObjectName("sessionOverview")
-        role(overview_group, "outlinedGroup")
+        role(overview_group, "transparent")
         overview_layout = QVBoxLayout(overview_group)
-        overview_layout.setContentsMargins(16, 16, 16, 16)
+        overview_layout.setContentsMargins(0, 0, 0, 0)
         overview_layout.setSpacing(8)
         overview_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
-        overview_title_row, _overview_heading = heading("Library overview", "chart-no-axes-column")
+        overview_title_row, _overview_heading = heading(
+            "Library overview", "chart-no-axes-column", row_height=self.search.sizeHint().height()
+        )
+        _overview_heading.setObjectName("overviewHeading")
         overview_layout.addLayout(overview_title_row)
         overview_description = QLabel(
             "Current verdicts for clips captured in the selected period."
@@ -957,21 +995,28 @@ class Window(QMainWindow):
         session_group = QWidget()
         session_group.setObjectName("sessionSetup")
         session_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        role(session_group, "outlinedGroup")
+        role(session_group, "transparent")
         session_setup = QVBoxLayout(session_group)
-        session_setup.setContentsMargins(16, 16, 16, 16)
-        session_setup.setSpacing(8)
+        session_setup.setContentsMargins(0, 0, 0, 0)
+        session_setup.setSpacing(4)
+        session_divider = QWidget()
+        role(session_divider, "divider")
+        session_divider.setFixedHeight(1)
+        session_setup.addWidget(session_divider)
+        session_setup.addSpacing(10)
         session_title_row, self.session_setup_heading = heading("", "circle-play")
         session_setup.addLayout(session_title_row)
         self.session_setup_states = QStackedWidget()
         active_session_page = QWidget()
         active_session = QVBoxLayout(active_session_page)
         active_session.setContentsMargins(0, 0, 0, 0)
-        active_session.setSpacing(8)
-        self.session_status = QLabel()
-        self.session_status.setWordWrap(True)
-        role(self.session_status, "secondary")
-        active_session.addWidget(self.session_status)
+        active_session.setSpacing(6)
+        self.session_progress = SessionProgressBar()
+        active_session.addWidget(self.session_progress)
+        self.session_verdicts = QLabel()
+        role(self.session_verdicts, "muted")
+        self.session_verdicts.setTextFormat(Qt.TextFormat.RichText)
+        active_session.addWidget(self.session_verdicts)
         existing_actions = QHBoxLayout()
         existing_actions.setSpacing(8)
         existing_actions.addWidget(button("End session", self.end_session))
@@ -1817,6 +1862,7 @@ class Window(QMainWindow):
         self.projects.clear()
         self.projects.setVisible(bool(projects))
         self.projects_empty.setVisible(not projects)
+        self.projects_toolbar.setVisible(bool(projects))
         for project in projects:
             item = QListWidgetItem(project["name"])
             if project["project_id"] == active:
@@ -1828,12 +1874,11 @@ class Window(QMainWindow):
             self.projects.addItem(item)
             if project["project_id"] == project_selection:
                 self.projects.setCurrentItem(item)
-        self.active_label.setText(
-            "Active project: "
-            + next(
-                (project["name"] for project in projects if project["project_id"] == active), "None"
-            )
+        active_name = next(
+            (project["name"] for project in projects if project["project_id"] == active), None
         )
+        self.active_project_name.setText(active_name or "")
+        self.active_row.setVisible(bool(active_name))
         self.project_filter.set_options(
             [(project["name"], project["project_id"]) for project in projects]
         )
@@ -1996,24 +2041,39 @@ class Window(QMainWindow):
             self.session_position.clear()
             return
         if session:
-            counts = Counter(clips[clip_id]["triage"] or "undefined" for clip_id in session["ids"])
+            states = []
+            decided = []
+            for clip_id in session["ids"]:
+                clip = clips[clip_id]
+                verdict = clip["triage"] or "pending"
+                states.append(
+                    verdict if Path(clip["source_path"]).is_file() else "unavailable"
+                )
+                decided.append(clip["triage"] is not None)
+            counts = Counter(states)
             total = len(session["ids"])
             self.session_position.setText(f"{session['index'] + 1} / {total}")
+            processed = sum(decided)
+            rejected = sum(clips[clip_id]["triage"] == "discard" for clip_id in session["ids"])
             self.session_counts.setText(
-                f"{counts['keep'] + counts['discard']}/{total} ({counts['discard']} rejected)"
+                f"{processed}/{total} ({rejected} rejected)"
             )
-            self.session_status.setText(
-                f"Position {session['index'] + 1} / {total}\n"
-                + "\n".join(
-                    f"{'pending' if state == 'undefined' else state}: "
-                    f"{counts[state]} ({counts[state] / total:.0%})"
-                    for state in ["keep", "discard", "undefined"]
+            last_processed = max((index + 1 for index, value in enumerate(decided) if value), default=0)
+            self.session_progress.set_states(states, processed, last_processed)
+            self.session_verdicts.setText(
+                f"{counts['keep']} Keep · {counts['discard']} Discard · "
+                f"{counts['pending']} Pending"
+                + (
+                    f' · <span style="color: {COLORS["status_warning"]}">'
+                    f'{counts["unavailable"]} Unavailable</span>'
+                    if counts["unavailable"] else ""
                 )
             )
         else:
             self.session_position.clear()
             self.session_counts.clear()
-            self.session_status.clear()
+            self.session_progress.set_states((), 0, 0)
+            self.session_verdicts.clear()
 
     def set_overview_period(self, period):
         self.overview_period = period

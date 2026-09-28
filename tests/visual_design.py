@@ -68,7 +68,7 @@ def main():
         folder.refresh_library()
         folder.show()
         folder.resize(1400, 900)
-        for theme in ("light", "dark"):
+        for theme in os.environ.get("DFSORTER_VISUAL_THEMES", "light,dark").split(","):
             target = destination / theme
             target.mkdir(parents=True, exist_ok=True)
             folder.showNormal()
@@ -90,6 +90,30 @@ def main():
                     QTest.qWait(100)
             folder.panel("Session")
             folder.grab().save(str(target / "projects-empty.png"))
+            project_id = folder.catalogue.save_project("Highlights")
+            folder.refresh_references()
+            folder.projects.setCurrentRow(0)
+            folder.activate_project()
+            for panel in ("Session", "Home", "Editing"):
+                folder.panel(panel)
+                if not folder.right.isVisible():
+                    folder.toggle_projects()
+                if panel == "Editing":
+                    folder.active_player().awaiting_frame = False
+                    folder.queue_page_reveal()
+                QTest.qWait(120)
+                folder.grab().save(str(target / f"{panel.lower()}-projects.png"))
+            for clip in clips:
+                folder.catalogue.patch(clip["clip_id"], {"triage": "keep"})
+            folder.panel("Session")
+            QTest.qWait(120)
+            folder.grab().save(str(target / "session-completed.png"))
+            for position, clip in enumerate(clips):
+                folder.catalogue.patch(
+                    clip["clip_id"], {"triage": ["keep", "discard", None][position % 3]}
+                )
+            folder.catalogue.delete_project(project_id)
+            folder.refresh_references()
             folder.panel("Browse")
             folder.unavailable_toggle.click()
             folder.clip_filter.set_selected_values({None, "keep", "discard"})

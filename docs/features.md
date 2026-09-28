@@ -1,5 +1,14 @@
 # DFSorter v1 delivery checklist
 
+## Pane layout consistency
+
+- [x] Shared 2 px structural corners for left/Projects panes and grouped containers; open Session overview/setup composition with a pinned setup divider and aligned top rows.
+- [x] Projects uses compact shared insets and a transparent empty state across applicable pages. Existing left-pane content geometry is preserved.
+- [x] Session overview heading has full vertical clearance; Home heading shares its top position. Projects now uses a compact utility-pane header, conditional active-project line, simplified empty state and divided action toolbar; Editing header title and count use a 16 px inset.
+- [x] Five focused layout, scrolling, Projects visibility and dark heading checks passed. Dark screenshots cover all pages, Settings, Session states and Projects states in `cache/verification/facelift/1/dark` and `cache/verification/layout-planning`.
+- [ ] Light-mode visual acceptance is deferred; both modes use the shared semantic styles.
+- Narrow Session windows may require horizontal overview scrolling when preserved side-pane widths leave insufficient center space. Existing broad Ruff formatting differences remain outside this change.
+
 ## Graphical game configuration editor
 
 - [x] Config lists game YAML files and provides structured Identity, Fields, and Title & review editing, including values, aliases, prefixes, links, display order, suggestions and command examples.
