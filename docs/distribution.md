@@ -10,11 +10,11 @@ The release build includes the current `configs/games/*.yaml` as defaults. It do
 
 ## Publish
 
-1. Update the version in `pyproject.toml`, then run `uv lock` and commit the change.
-2. Build locally and extract the ZIP into a fresh writable folder. Launch `DFSorter.exe`, inspect media, play a clip, and exercise Share using the bundled tools.
-3. Push a matching `vX.Y.Z` tag. The Windows release workflow builds the ZIP from the tagged commit and publishes a public GitHub Release. Only stable releases are used by the in-app update check.
+1. Finish and commit all features, fixes, tests, specifications, documentation, and release workflow changes separately from the version preparation commit.
+2. Update the version in `pyproject.toml` and run `uv lock`. On a Windows machine where local ZIP builds are permitted, build and extract the ZIP into a fresh writable folder. Launch `DFSorter.exe`, inspect media, play a clip, and exercise Share using the bundled tools.
+3. Commit only `pyproject.toml` and `uv.lock` as `Prepare vX.Y.Z release`. Verify that the commit changes only those two files, then push a matching `vX.Y.Z` tag pointing at that commit. The Windows release workflow builds the ZIP from the tagged commit and creates a draft GitHub Release. Only stable releases are used by the in-app update check.
 
-Do not publish a tag until the build is ready: the release workflow publishes its ZIP automatically. If the workflow fails, fix the build and create a new version tag rather than replacing an already published release.
+Do not publish a tag until the build is ready: the release workflow uploads its ZIP to the draft automatically. If the workflow fails, fix the build and create a new version tag rather than replacing an already published release.
 
 ## Update behavior
 

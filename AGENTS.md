@@ -16,6 +16,11 @@
 
 - Never generate `build/DFSorter-Windows-x64.zip` on this device, including for tagged releases. The release CI/CD workflow builds the ZIP and creates the release draft when a version tag is pushed.
 
+## Version Tag Commits
+
+- Keep every `Prepare vX.Y.Z release` commit standalone: it may change only the version in `pyproject.toml` and the corresponding `uv.lock` update. Commit features, fixes, tests, specifications, documentation, and release workflow changes separately before preparing the version.
+- Verify the preparation commit contains only those version files before creating the matching `vX.Y.Z` tag. Point the tag at that preparation commit.
+
 ## Application-Wide Style and Font Consistency
 
 - Treat visual consistency across all pages, panes, dialogs, and control states as a requirement for every UI change. Equivalent content and controls must use the same typography and styling unless the user explicitly requests a difference or the canonical specification defines one.
