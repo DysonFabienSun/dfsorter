@@ -240,6 +240,7 @@ def stylesheet():
         QLabel[role="sectionHeading"] { font-size: %(font_section_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: %(bg_library_toolbar)s; }
+        QWidget#configSidebarHeader { background: %(bg_library_toolbar)s; }
         QLabel#projectsActiveName { color: %(accent_default)s; font-size: %(font_sm)spx; }
         QToolButton[projectsAction="true"]:hover { background: %(surface_hover)s; border-color: %(border_subtle)s; }
         QToolButton[projectsAction="true"]:pressed { background: %(surface_pressed)s; }

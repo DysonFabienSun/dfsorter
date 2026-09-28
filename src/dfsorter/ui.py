@@ -99,6 +99,7 @@ from .widgets import (
     Rating,
     SessionProgressBar,
     VerdictBar,
+    heading,
     icon,
     refresh_icons,
     set_icon,
@@ -287,37 +288,6 @@ def page():
     layout.setContentsMargins(*([SIZES["panel_padding"]] * 4))
     layout.setSpacing(8)
     return widget, layout
-
-
-def heading(text, icon_name, heading_role="sectionHeading", row_height=None):
-    row = QHBoxLayout()
-    row.setSpacing(8)
-    section = heading_role == "sectionHeading"
-    icon_size = SIZES["icon_xl"] if section else SIZES["icon_md"]
-    box_size = SIZES["normal"] if section else icon_size + 4
-    glyph = QLabel()
-    glyph.setProperty("headingIcon", icon_name)
-    glyph.setProperty("headingIconSize", icon_size)
-    glyph.setProperty("headingIconColorRole", "heading_icon_foreground")
-    glyph.setFixedSize(box_size, min(box_size, row_height or box_size))
-    glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    glyph.setPixmap(
-        icon(
-            icon_name,
-            COLORS["heading_icon_foreground"],
-            size=icon_size,
-        ).pixmap(icon_size, icon_size)
-    )
-    label = QLabel(text)
-    role(label, heading_role)
-    label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-    label.setContentsMargins(0, 0, 0, 4)
-    if row_height is not None:
-        label.setFixedHeight(max(box_size, row_height))
-    row.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
-    row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
-    row.addStretch()
-    return row, label
 
 
 class CurrentPageStack(QStackedWidget):
@@ -1202,7 +1172,12 @@ class Window(QMainWindow):
         self.export_button = button("Export project", self.run_export)
         exporting.addWidget(self.export_button)
         self.config_editor = ConfigEditor(self)
+        self.pages["Config"][1].setContentsMargins(
+            SIZES["panel_padding"], 4, SIZES["panel_padding"], SIZES["panel_padding"]
+        )
         self.pages["Config"][1].addWidget(self.config_editor)
+        self.left.layout().insertWidget(2, self.config_editor.sidebar_header)
+        self.config_editor.sidebar_header.hide()
         self.left_layout.addWidget(self.config_editor.sidebar, 1)
         self.config_editor.sidebar.hide()
 
@@ -1826,6 +1801,7 @@ class Window(QMainWindow):
         self.library_toolbar.setVisible(name not in {"Editing", "Export", "Config"})
         self.library.setVisible(name != "Config")
         self.library_error.setVisible(name != "Config" and bool(self.library_error.text()))
+        self.config_editor.sidebar_header.setVisible(name == "Config")
         self.config_editor.sidebar.setVisible(name == "Config")
         self.update_time_sort_control()
         self.library.setSelectionMode(

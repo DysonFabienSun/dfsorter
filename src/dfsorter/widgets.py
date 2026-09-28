@@ -15,14 +15,51 @@ from PySide6.QtGui import (
     QTextLayout,
 )
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QAbstractButton, QStyle, QStyledItemDelegate, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QHBoxLayout,
+    QLabel,
+    QStyle,
+    QStyledItemDelegate,
+    QToolButton,
+    QWidget,
+)
 
 from .app_paths import ROOT
-from .theme import COLORS, FONT_SIZES, SIZES, font
+from .theme import COLORS, FONT_SIZES, SIZES, font, role
 
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+def heading(text, icon_name, heading_role="sectionHeading", row_height=None):
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    section = heading_role == "sectionHeading"
+    icon_size = SIZES["icon_xl"] if section else SIZES["icon_md"]
+    box_size = SIZES["normal"] if section else icon_size + 4
+    glyph = QLabel()
+    glyph.setProperty("headingIcon", icon_name)
+    glyph.setProperty("headingIconSize", icon_size)
+    glyph.setProperty("headingIconColorRole", "heading_icon_foreground")
+    glyph.setFixedSize(box_size, min(box_size, row_height or box_size))
+    glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    glyph.setPixmap(
+        icon(icon_name, COLORS["heading_icon_foreground"], size=icon_size).pixmap(
+            icon_size, icon_size
+        )
+    )
+    label = QLabel(text)
+    role(label, heading_role)
+    label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+    label.setContentsMargins(0, 0, 0, 4)
+    if row_height is not None:
+        label.setFixedHeight(max(box_size, row_height))
+    row.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
+    row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+    row.addStretch()
+    return row, label
 
 
 class VerdictBar(QWidget):

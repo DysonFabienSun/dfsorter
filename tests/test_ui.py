@@ -183,6 +183,54 @@ def test_library_toolbar_surface_and_alignment(window, application):
         assert window.library_toolbar.isHidden()
 
 
+def test_config_heading_matches_workspace_sections_in_dark_mode(window, application):
+    window.set_theme("dark", persist=False)
+    window.panel("Home")
+    application.processEvents()
+    home_heading = next(
+        label for label in window.findChildren(QLabel)
+        if label.text() == "Capture folders" and label.isVisible()
+    )
+    home_top = home_heading.mapTo(window, QPoint()).y()
+    home_left = home_heading.mapTo(window, QPoint()).x()
+    window.panel("Config")
+    application.processEvents()
+    config_heading = window.config_editor.config_heading
+    glyph = next(
+        label for label in window.config_editor.findChildren(QLabel)
+        if label.property("headingIcon") == "file-cog"
+    )
+    assert config_heading.property("role") == "sectionHeading"
+    assert config_heading.font().pixelSize() == home_heading.font().pixelSize() == 22
+    assert glyph.property("headingIconSize") == 24
+    assert config_heading.mapTo(window, QPoint()).y() == home_top
+    assert config_heading.mapTo(window, QPoint()).x() == home_left
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_config_sidebar_uses_continuous_surfaces(window, application, scheme):
+    window.set_theme(scheme, persist=False)
+    window.panel("Config")
+    application.processEvents()
+    header = window.config_editor.sidebar_header
+    sidebar = window.config_editor.sidebar
+    assert header.geometry().left() == 0
+    assert header.geometry().top() == 0
+    assert header.width() == window.left.width()
+    assert sidebar.mapTo(window.left, QPoint()).x() == 0
+    assert header.grab().toImage().pixelColor(2, 2) == QColor(COLORS["bg_library_toolbar"])
+    image = window.left.grab().toImage()
+    sidebar_top = sidebar.mapTo(window.left, QPoint()).y()
+    assert image.pixelColor(2, sidebar_top + 2) == QColor(COLORS["surface_sidebar"])
+    assert image.pixelColor(2, sidebar_top + sidebar.height() - 2) == QColor(
+        COLORS["surface_sidebar"]
+    )
+    games_image = window.config_editor.games.viewport().grab().toImage()
+    assert games_image.pixelColor(2, games_image.height() - 2) == QColor(
+        COLORS["surface_sidebar"]
+    )
+
+
 def test_editing_header_uses_compact_left_inset(window, application, tmp_path):
     add_clips(window, tmp_path)
     window.set_theme("dark", persist=False)

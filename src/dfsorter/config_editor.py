@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from .config import GLOBAL_FIELDS
 from .config_store import GameFile, new_game_path
 from .theme import role
+from .widgets import heading
 
 
 def action(label, callback):
@@ -114,21 +115,26 @@ class ConfigEditor(QWidget):
         self.field_key = None
         self.dirty = False
         self.loading = False
+        self.sidebar_header = QWidget(window.left)
+        self.sidebar_header.setObjectName("configSidebarHeader")
+        header_layout = QHBoxLayout(self.sidebar_header)
+        header_layout.setContentsMargins(16, 8, 8, 8)
+        games_heading = QLabel("Games")
+        role(games_heading, "paneHeading")
+        header_layout.addWidget(games_heading)
         self.sidebar = QWidget(window.left)
+        role(self.sidebar, "transparent")
         side = QVBoxLayout(self.sidebar)
-        side.setContentsMargins(8, 0, 0, 0)
-        heading = QLabel("Games")
-        role(heading, "paneHeading")
-        side.addWidget(heading)
+        side.setContentsMargins(8, 4, 8, 4)
         self.games = QListWidget()
         self.games.currentItemChanged.connect(self.select_game)
         side.addWidget(self.games, 1)
         side.addLayout(row(action("New game", self.new_game), action("Reload", self.reload)))
 
         body = QVBoxLayout(self)
-        heading = QLabel("Game configurations")
-        role(heading, "heading")
-        body.addWidget(heading)
+        body.setContentsMargins(0, 0, 0, 0)
+        heading_row, self.config_heading = heading("Game configurations", "file-cog")
+        body.addLayout(heading_row)
         description = QLabel("Edit game definitions stored in configs/games.")
         role(description, "secondary")
         body.addWidget(description)
