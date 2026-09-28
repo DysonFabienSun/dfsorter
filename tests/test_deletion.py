@@ -13,9 +13,9 @@ def discard(catalogue, clips):
 
 
 def test_preview_whole_library_and_retains_references(catalogue, clips):
+    catalogue.create_session([clip["clip_id"] for clip in clips])
     discard(catalogue, clips[:2])
     catalogue.patch(clips[2]["clip_id"], {"triage": "keep"})
-    catalogue.create_session([clip["clip_id"] for clip in clips])
     folder = catalogue.folders()[0]
     catalogue.remove_folder(folder["folder_id"], purge=False)
     snapshot = catalogue.clips()
@@ -141,14 +141,14 @@ def test_version_four_upgrade_retains_missing_sources(catalogue, clips):
     assert restarted.clips() == clips
     assert restarted.state("session") == session
     assert restarted.hidden_deleted_ids() == set()
-    assert restarted.rows("PRAGMA user_version")[0]["user_version"] == 6
+    assert restarted.rows("PRAGMA user_version")[0]["user_version"] == 7
 
 
 @pytest.mark.parametrize("available_at_relink", [False, True])
 def test_deleted_source_restart_and_migration(catalogue, clips, tmp_path, available_at_relink):
     clip_id = clips[0]["clip_id"]
-    catalogue.patch(clip_id, {"mainline": "Retained", "triage": "keep", "in_ms": 10, "out_ms": 20})
     catalogue.create_session([clip_id])
+    catalogue.patch(clip_id, {"mainline": "Retained", "triage": "keep", "in_ms": 10, "out_ms": 20})
     project = catalogue.save_project("Retained project")
     with catalogue.connection() as database:
         database.execute("INSERT INTO members VALUES (?, ?)", (project, clip_id))

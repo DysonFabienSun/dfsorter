@@ -45,7 +45,7 @@ def test_external_change_blocks_save(tmp_path):
 
 
 @pytest.fixture
-def editor_window(tmp_path):
+def editor_window(tmp_path, close_window):
     QCoreApplication.addLibraryPath(str(Path(PySide6.__file__).parent / "plugins"))
     application = QApplication.instance() or QApplication([])
     style_application(application)
@@ -55,8 +55,7 @@ def editor_window(tmp_path):
     application.processEvents()
     yield window
     window.config_editor.dirty = False
-    window.close()
-    application.processEvents()
+    close_window(window, application)
 
 
 def test_config_page_edits_game_and_refreshes_registry(editor_window):

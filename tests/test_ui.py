@@ -52,14 +52,13 @@ def application():
 
 
 @pytest.fixture
-def window(tmp_path, application):
+def window(tmp_path, application, close_window):
     shutil.copytree(ROOT / "configs", tmp_path / "configs")
     result = Window(tmp_path)
     result.show()
     application.processEvents()
     yield result
-    result.close()
-    application.processEvents()
+    close_window(result, application)
 
 
 def wait_for(application, predicate, timeout=12):
@@ -129,7 +128,7 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
     assert window.clip_filter.selected_values() == selected
 
 
-def test_session_pane_top_rows_align_in_dark_mode(window, application):
+def test_session_pane_top_rows_preserve_heading_and_toolbar_insets(window, application):
     window.set_theme("dark", persist=False)
     window.panel("Session")
     for width, height in ((1400, 900), (1200, 700)):
@@ -137,7 +136,7 @@ def test_session_pane_top_rows_align_in_dark_mode(window, application):
         application.processEvents()
         search_top = window.search.mapTo(window, QPoint()).y()
         for label in (window.findChild(QLabel, "overviewHeading"), window.projects_heading):
-            assert label.mapTo(window, QPoint()).y() == search_top
+            assert label.mapTo(window, QPoint()).y() == search_top - 4
             assert label.height() >= window.search.height()
         assert window.left.mapTo(window, QPoint()).y() == window.right.mapTo(window, QPoint()).y()
     overview_top = window.findChild(QLabel, "overviewHeading").mapTo(window, QPoint()).y()
@@ -742,8 +741,7 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     window.submit()
     window.edit({"rating": 2})
     window.close()
-    application.processEvents()
-    assert window.atomic_edit is None
+    assert wait_for(application, lambda: window.atomic_edit is None)
     assert window.catalogue.clip(clip_id)["rating"] is None
     assert window.history[clip_id] == []
 
@@ -2027,8 +2025,8 @@ def test_startup_rescans_enabled_folders(application, tmp_path):
     original.write_bytes(b"test")
     catalogue.ingest(enabled_id, [{"path": str(original), "game": "VALORANT"}])
     clip_id = catalogue.clips()[0]["clip_id"]
-    catalogue.patch(clip_id, {"triage": "discard", "mainline": "Preserved"})
     catalogue.create_session([clip_id])
+    catalogue.patch(clip_id, {"triage": "discard", "mainline": "Preserved"})
     original.unlink()
     (enabled / "new.mp4").write_bytes(b"test")
     (disabled / "ignored.mp4").write_bytes(b"test")

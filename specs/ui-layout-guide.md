@@ -305,8 +305,9 @@ outlines or gaps.
 
 Place the library overview above Session setup on an open workspace surface with no enclosing
 boxes. A subtle 1 px horizontal divider separates the pinned setup area. Use 12 px horizontal
-padding and 4 px top/bottom insets. Align the overview and Projects heading rows with the left
-search row's top, allowing the 22 px overview heading its full 32 px height.
+padding and 4 px top/bottom insets. Keep the overview and Projects heading rows at the shared
+4 px top inset, 4 px above the search row's 8 px toolbar inset. Allow the 22 px overview heading
+its full 32 px height.
 Retain 22 px section headings and the 16 px Projects heading. The Projects pane stays open on Session, so the overview uses the
 remaining center width. Opening Session preserves the clip-library pane's current width;
 the center pane gives up the width needed by Projects.

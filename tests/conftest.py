@@ -1,9 +1,30 @@
 from pathlib import Path
+from time import monotonic
 
 import pytest
 
 from dfsorter.catalogue import Catalogue
 from dfsorter.config import Registry
+
+
+@pytest.fixture
+def close_window():
+    def close(window, application):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtTest import QTest
+
+        window.close()
+        deadline = monotonic() + 12
+        while window.isVisible() and monotonic() < deadline:
+            application.processEvents()
+            QTest.qWait(20)
+        assert not window.isVisible(), "Test window did not finish closing"
+        application.processEvents()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        application.processEvents()
+
+    return close
 
 
 @pytest.fixture

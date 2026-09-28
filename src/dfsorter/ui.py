@@ -299,6 +299,7 @@ class CurrentPageStack(QStackedWidget):
 class Window(QMainWindow):
     def __init__(self, root=ROOT):
         super().__init__()
+        self.close_requested = False
         self.root = Path(root)
         self.registry = Registry(self.root / "configs/games")
         self.catalogue = Catalogue(self.root / "data/dfsorter.db")
@@ -359,7 +360,6 @@ class Window(QMainWindow):
         self.range_block_message = ""
         self.worker = None
         self.share_flash_timers = {}
-        self.close_requested = False
         self.refreshing = False
         self.positioned_clip_pages = set()
         self.prepared_clips = {}
