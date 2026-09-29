@@ -4814,7 +4814,10 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     playback_state = player.media.playbackState()
     position = player.media.position()
     browse.fullscreen_button.click()
+    assert not window.updatesEnabled()
+    assert browse.fullscreen_transition_cover.isVisible()
     application.processEvents()
+    assert not browse.fullscreen_transition_cover.isVisible()
     assert window.isFullScreen()
     assert window.navigation_strip.isHidden() and window.left.isHidden()
     assert browse.details.isHidden() and window.statusBar().isHidden()
@@ -4824,8 +4827,10 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert player.media.position() == position
     QTest.keyClick(player, Qt.Key.Key_Escape)
     assert not window.updatesEnabled()
+    assert browse.fullscreen_transition_cover.isVisible()
     application.processEvents()
     assert window.updatesEnabled()
+    assert not browse.fullscreen_transition_cover.isVisible()
     restored_layout = (window.geometry(), window.splitter.sizes(), player.geometry())
     application.processEvents()
     assert (window.geometry(), window.splitter.sizes(), player.geometry()) == restored_layout

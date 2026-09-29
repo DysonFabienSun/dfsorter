@@ -3,8 +3,9 @@
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEventLoop, Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -31,7 +32,16 @@ class BrowsePage(QWidget):
         super().__init__()
         self.window = window
         self.fullscreen_state = None
-        self.fullscreen_restore_token = None
+        self.fullscreen_transition_token = None
+        self.fullscreen_transition_cover = QLabel(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        self.fullscreen_transition_cover.setAttribute(
+            Qt.WidgetAttribute.WA_ShowWithoutActivating
+        )
         self.clip = None
         self.in_ms = self.out_ms = None
         self.initial_range = False
@@ -138,35 +148,60 @@ class BrowsePage(QWidget):
         window = self.window
         if enabled == (self.fullscreen_state is not None):
             return
-        if enabled:
-            restore_pending = self.fullscreen_restore_token is not None
-            self.fullscreen_restore_token = None
-            try:
-                self._set_fullscreen(True)
-            finally:
-                if restore_pending:
-                    window.setUpdatesEnabled(True)
+        if enabled and window.current_panel != "Browse":
             return
+        self.show_fullscreen_transition_cover()
         window.setUpdatesEnabled(False)
         try:
-            sizes = self.fullscreen_state[2]
-            self._set_fullscreen(False)
+            sizes = self.fullscreen_state[2] if not enabled else None
+            self._set_fullscreen(enabled)
         except Exception:
             window.setUpdatesEnabled(True)
+            self.fullscreen_transition_cover.hide()
+            self.fullscreen_transition_cover.clear()
             raise
         token = object()
-        self.fullscreen_restore_token = token
-        # Native window geometry settles on the next event pass; paint only afterward.
-        QTimer.singleShot(0, lambda: self.finish_fullscreen_exit(token, sizes))
+        self.fullscreen_transition_token = token
+        QTimer.singleShot(0, lambda: self.finish_fullscreen_transition(token, sizes))
 
-    def finish_fullscreen_exit(self, token, sizes):
-        if token != self.fullscreen_restore_token:
+    def show_fullscreen_transition_cover(self):
+        cover = self.fullscreen_transition_cover
+        if cover.isVisible():
             return
-        self.fullscreen_restore_token = None
-        if self.fullscreen_state is None and self.window.current_panel == "Browse":
-            self.window.splitter.setSizes(sizes)
+        screen = self.window.screen()
+        geometry = screen.geometry()
+        screenshot = screen.grabWindow(
+            0, geometry.x(), geometry.y(), geometry.width(), geometry.height()
+        )
+        if screenshot.isNull():
+            return
+        cover.setPixmap(screenshot)
+        cover.setGeometry(geometry)
+        cover.show()
+        cover.raise_()
+        # Make the captured frame visible before the native video window moves.
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+    def finish_fullscreen_transition(self, token, sizes):
+        if token != self.fullscreen_transition_token:
+            return
+        self.fullscreen_transition_token = None
+        try:
+            if (
+                sizes is not None
+                and self.fullscreen_state is None
+                and self.window.current_panel == "Browse"
+            ):
+                self.window.splitter.setSizes(sizes)
             self.window.layout().activate()
-        self.window.setUpdatesEnabled(True)
+            self.window.setUpdatesEnabled(True)
+            self.window.repaint()
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        finally:
+            if self.fullscreen_transition_token is None:
+                self.window.setUpdatesEnabled(True)
+                self.fullscreen_transition_cover.hide()
+                self.fullscreen_transition_cover.clear()
 
     def _set_fullscreen(self, enabled):
         window = self.window
