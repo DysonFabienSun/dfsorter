@@ -338,6 +338,7 @@ class Player(QWidget):
         self.status.hide()
         self.media.durationChanged.connect(self.seek.setMaximum)
         self.media.positionChanged.connect(self.position)
+        self.media.positionChanged.connect(self.invalidate_prepared_frame)
 
         self.media.playbackStateChanged.connect(
             self.update_play_icon
@@ -360,6 +361,8 @@ class Player(QWidget):
         self.native_surface_warmed = False
         self.warmed_video_geometry = None
         self.loaded_clip = None
+        self.prepared_image = None
+        self.prepared_position = None
         self.retry_load = False
         self.chrome_top = FullscreenChromePanel(self.video_container, "top")
         top_layout = QHBoxLayout(self.chrome_top.content)
@@ -518,6 +521,14 @@ class Player(QWidget):
         self.status.setText(message)
         self.status.setVisible(bool(message))
 
+    def invalidate_prepared_frame(self, position):
+        if (
+            self.prepared_position is not None
+            and abs(position - self.prepared_position) > 100
+        ):
+            self.prepared_image = None
+            self.prepared_position = None
+
     def begin_scrub(self):
         self.awaiting_frame = False
         self.scrub_playing = self.ended or (
@@ -564,6 +575,8 @@ class Player(QWidget):
 
     def load(self, clip):
         self.video_container.clear_prepared_frame()
+        self.prepared_image = None
+        self.prepared_position = None
         self.loaded_clip = clip
         self.retry_load = False
         self.initial_seek_done = False

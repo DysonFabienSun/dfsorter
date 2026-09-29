@@ -189,7 +189,13 @@ class BrowsePage(QWidget):
         )
 
     def load(self, clip, *, prepared=False):
-        if clip and self.clip and clip["clip_id"] == self.clip["clip_id"]:
+        same_source = (
+            clip is not None
+            and self.player.loaded_clip is not None
+            and self.window.clip_load_key(clip)
+            == self.window.clip_load_key(self.player.loaded_clip)
+        )
+        if clip and self.clip and clip["clip_id"] == self.clip["clip_id"] and same_source:
             return
         self.clip = deepcopy(clip)
         self.in_ms = clip["in_ms"] if clip else None
@@ -197,7 +203,7 @@ class BrowsePage(QWidget):
         self.initial_range = bool(clip)
         self.custom_title.clear()
         self.render_title()
-        if not prepared:
+        if not prepared and not same_source:
             self.player.load(clip)
         self.edit_button.setEnabled(bool(clip))
         self.refresh_range(default=True)
@@ -226,7 +232,6 @@ class BrowsePage(QWidget):
         self.clip = None
         self.in_ms = self.out_ms = None
         self.custom_title.clear()
-        self.player.load(None)
         self.render_title()
         self.refresh_range()
         self.window.update_share_controls()

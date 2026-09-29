@@ -2725,6 +2725,114 @@ def test_non_video_page_switch_skips_transition_cover(window, application):
     assert window.transition_cover.isHidden()
 
 
+def test_page_cover_keeps_outgoing_content_visible(window, application):
+    window.set_theme("dark", persist=False)
+    application.processEvents()
+    window.begin_page_transition()
+    try:
+        assert window.transition_image.isVisible()
+        assert not window.transition_image.pixmap().isNull()
+        assert window.loading_label.isHidden()
+    finally:
+        window.cancel_page_transition()
+    assert window.transition_image.isHidden()
+
+
+def test_returning_to_page_reuses_unchanged_library_items(window, tmp_path):
+    add_clips(window, tmp_path)
+    window.refresh_library()
+    first = window.library.item(0)
+    window.panel("Session")
+    window.panel("Home")
+    assert window.library.item(0) is first
+
+
+def test_clicking_active_tab_does_not_reload_media_or_library(
+    window, tmp_path, monkeypatch
+):
+    add_clips(window, tmp_path)
+    window.panel("Browse")
+    monkeypatch.setattr(window, "refresh_library", lambda **kwargs: pytest.fail("library rebuilt"))
+    monkeypatch.setattr(window.browse.player, "load", lambda clip: pytest.fail("clip reloaded"))
+    window.nav["Browse"].click()
+    assert window.current_panel == "Browse"
+
+
+def test_export_return_reuses_loaded_preview(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path, valid=True)[0]
+    project_id = window.catalogue.save_project("Navigation preview")
+    with window.catalogue.connection() as database:
+        database.execute("INSERT INTO members VALUES (?, ?)", (project_id, clip_id))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project_id))
+    window.panel("Export")
+    assert wait_for(application, lambda: not window.export_player.awaiting_frame)
+    generation = window.export_player.media.generation
+    window.panel("Home")
+    window.panel("Export")
+    assert window.export_player.media.generation == generation
+    assert not window.transition_pending
+
+
+def test_selected_export_preview_preloads_while_page_is_inactive(
+    window, tmp_path, monkeypatch
+):
+    clip_id = add_clips(window, tmp_path)[0]
+    project_id = window.catalogue.save_project("Preview project")
+    with window.catalogue.connection() as database:
+        database.execute("INSERT INTO members VALUES (?, ?)", (project_id, clip_id))
+    window.refresh_references()
+    window.export_project.setCurrentIndex(window.export_project.findData(project_id))
+    window.preload_timer.stop()
+    player = window.export_player
+    loads = []
+
+    def record_load(clip):
+        loads.append(clip["clip_id"])
+        player.loaded_clip = clip
+        player.awaiting_frame = False
+
+    monkeypatch.setattr(player, "load", record_load)
+    window.prepare_inactive_clips()
+    assert loads == [clip_id]
+    window.panel("Export")
+    assert loads == [clip_id]
+
+
+def test_navigation_waits_on_outgoing_page_and_ignores_cancelled_preview(
+    window, application, tmp_path, monkeypatch
+):
+    add_clips(window, tmp_path)
+    window.preload_timer.stop()
+    monkeypatch.setattr(window, "schedule_preload", lambda: None)
+    player = window.browse.player
+
+    def pending_load(clip):
+        player.loaded_clip = clip
+        player.awaiting_frame = True
+
+    monkeypatch.setattr(player, "load", pending_load)
+    window.nav["Browse"].click()
+    assert window.current_panel == "Home"
+    assert window.pages["Home"][0].isVisible()
+    assert window.pending_page["name"] == "Browse"
+    assert window.nav["Home"].isChecked()
+    window.nav["Session"].click()
+    assert window.current_panel == "Session"
+    assert window.pending_page is None
+    player.awaiting_frame = False
+    player.loading_finished.emit()
+    application.processEvents()
+    assert window.current_panel == "Session"
+    assert not window.nav["Browse"].isChecked()
+    player.loaded_clip = None
+    window.nav["Browse"].click()
+    assert window.current_panel == "Session"
+    player.awaiting_frame = False
+    player.loading_finished.emit()
+    assert wait_for(application, lambda: window.current_panel == "Browse")
+
+
 def test_browse_is_hidden_before_player_cleanup(window, application, tmp_path, monkeypatch):
     add_clips(window, tmp_path)
     window.panel("Browse")
@@ -4130,8 +4238,8 @@ def test_browse_entry_selects_newest(window, tmp_path, application):
     application.processEvents()
     assert window.library.count() == 2
     window.nav["Browse"].click()
-    application.processEvents()
     newest = clips[-1]["clip_id"]
+    assert wait_for(application, lambda: window.current_panel == "Browse")
     assert window.browse_id == newest
     assert window.browse_selected_id is None
     assert window.library.count() == 2

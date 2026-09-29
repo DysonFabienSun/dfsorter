@@ -345,6 +345,14 @@ class Window(QMainWindow):
         self.space_timer.setInterval(200)
         self.space_timer.timeout.connect(lambda: self.active_player().fast(True))
         self.media_info = self.catalogue.media_cache()
+        self.source_stats = {}
+        self.reference_stamp = None
+        self._panel_initialized = False
+        self._navigating = False
+        self.pending_page = None
+        self.pending_page_generation = 0
+        self.library_items_cache = {}
+        self.active_library_signature = None
         self.folder_sizes = {}
         self.folder_size_paths = ()
         self.folder_size_updated_at = 0.0
@@ -380,7 +388,7 @@ class Window(QMainWindow):
         navigation.setSpacing(0)
         self.nav = {}
         for name in ["Home", "Browse", "Session", "Editing", "Export", "Config"]:
-            self.nav[name] = button(name, lambda checked=False, name=name: self.panel(name))
+            self.nav[name] = button(name, lambda checked=False, name=name: self.navigate_panel(name))
             self.nav[name].setObjectName("navigation")
             self.nav[name].setCheckable(True)
             self.nav[name].setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -795,6 +803,10 @@ class Window(QMainWindow):
         self.transition_cover.setObjectName("pageLoading")
         cover_layout = QVBoxLayout(self.transition_cover)
         cover_layout.addStretch()
+        self.transition_image = QLabel(self.transition_cover)
+        self.transition_image.setScaledContents(True)
+        self.transition_image.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.transition_image.hide()
         self.loading_label = QLabel("Loading…")
         self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         role(self.loading_label, "secondary")
@@ -805,6 +817,10 @@ class Window(QMainWindow):
         self.loading_indicator_timer.setSingleShot(True)
         self.loading_indicator_timer.setInterval(1000)
         self.loading_indicator_timer.timeout.connect(self.loading_label.show)
+        self.pending_navigation_timer = QTimer(self)
+        self.pending_navigation_timer.setSingleShot(True)
+        self.pending_navigation_timer.setInterval(1000)
+        self.pending_navigation_timer.timeout.connect(self.show_pending_navigation_status)
         self.command_cover = QWidget(self.command_area)
         self.command_cover.setObjectName("commandCover")
         self.command_cover.hide()
@@ -1394,6 +1410,27 @@ class Window(QMainWindow):
         item = listing.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
+    def source_stat(self, path):
+        if path not in self.source_stats:
+            try:
+                self.source_stats[path] = Path(path).stat()
+            except OSError:
+                self.source_stats[path] = None
+        return self.source_stats[path]
+
+    def source_available(self, path):
+        stamp = self.source_stat(path)
+        return stamp is not None and stat.S_ISREG(stamp.st_mode)
+
+    def capture_datetime(self, clip):
+        return capture_datetime(clip, self.media_info, self.source_stat)
+
+    def catalogue_stamp(self):
+        try:
+            return self.catalogue.path.stat().st_mtime_ns
+        except OSError:
+            return None
+
     def player_loading(self, player):
         if (
             player.loaded_clip is not None
@@ -1418,6 +1455,29 @@ class Window(QMainWindow):
     def player_ready(self, player):
         if self.current_panel in {"Browse", "Editing", "Export"} and player is self.active_player():
             self.queue_page_reveal()
+        elif player.loaded_clip is not None:
+            generation = player.media.generation
+            pending = self.pending_page
+            if pending is not None and pending["player"] is player:
+                QTimer.singleShot(
+                    0,
+                    lambda: self.finish_pending_navigation(pending["generation"], generation),
+                )
+            else:
+                QTimer.singleShot(0, lambda: self.capture_inactive_frame(player, generation))
+
+    def capture_inactive_frame(self, player, generation):
+        if (
+            not player.isVisible()
+            and player.media.generation == generation
+            and not player.awaiting_frame
+            and player.media.mediaStatus() == QMediaPlayer.MediaStatus.LoadedMedia
+            and player.prepared_image is None
+        ):
+            image = player.media.frame_image()
+            if not image.isNull():
+                player.prepared_image = image
+                player.prepared_position = player.media.position()
 
     def position_transition_covers(self):
         target = self.centralWidget() if self.transition_scope == "page" else self.center
@@ -1428,9 +1488,18 @@ class Window(QMainWindow):
             target.height(),
         )
         self.command_cover.setGeometry(self.command_area.rect())
+        self.transition_image.setGeometry(self.transition_cover.rect())
 
     def begin_page_transition(self, scope="page"):
         self.cancel_prepared_video_reveal()
+        if scope == "page" and not self.transition_pending and self.isVisible():
+            self.transition_image.setPixmap(self.centralWidget().grab())
+            self.transition_image.show()
+            self.transition_image.raise_()
+            self.loading_label.raise_()
+        elif scope == "clip":
+            self.transition_image.hide()
+            self.transition_image.clear()
         if not self.transition_pending or scope == "page":
             self.transition_scope = scope
         self.transition_generation += 1
@@ -1473,6 +1542,8 @@ class Window(QMainWindow):
             player.video.show()
         self.transition_cover.hide()
         self.command_cover.hide()
+        self.transition_image.hide()
+        self.transition_image.clear()
 
     def cancel_page_transition(self):
         if not self.transition_pending:
@@ -1482,25 +1553,36 @@ class Window(QMainWindow):
         self.loading_indicator_timer.stop()
         self.transition_cover.hide()
         self.command_cover.hide()
+        self.transition_image.hide()
+        self.transition_image.clear()
         for player in (self.player, self.export_player, self.browse.player):
             player.video.clearMask()
             player.video.show()
 
-    def page_needs_cover(self, name):
+    def page_needs_cover(self, name, clip=None):
         if name not in {"Browse", "Editing", "Export"}:
             return False
-        if name == self.current_panel or name == "Export":
+        if name == self.current_panel:
             return True
+        if name == "Export":
+            clip = clip if clip is not None else self.expected_export_clip()
+            player = self.export_player
+            return clip is not None and not self.player_has_clip(player, clip)
         if name == "Browse":
-            clip = self.expected_browse_clip()
+            clip = clip if clip is not None else self.expected_browse_clip()
             player = self.browse.player
         else:
-            clip = self.expected_editing_clip()
+            clip = clip if clip is not None else self.expected_editing_clip()
             player = self.player
         if clip is None:
             return False
-        return not (
-            self.prepared_clips.get(name) == self.clip_load_key(clip)
+        return not self.player_has_clip(player, clip)
+
+    def player_has_clip(self, player, clip):
+        return (
+            clip is not None
+            and player.loaded_clip is not None
+            and self.clip_load_key(player.loaded_clip) == self.clip_load_key(clip)
             and not player.awaiting_frame
         )
 
@@ -1729,13 +1811,92 @@ class Window(QMainWindow):
         self.library.horizontalScrollBar().setValue(horizontal)
         self.library.verticalScrollBar().setValue(vertical)
 
-    def panel(self, name):
-        if (
-            name == self.current_panel
-            and name in {"Browse", "Editing"}
-            and not self.transition_pending
-            and not self.active_player().video.mask().isEmpty()
+    def navigation_target(self, name):
+        if name == "Browse":
+            return self.expected_browse_clip(), self.browse.player
+        if name == "Editing":
+            return self.expected_editing_clip(), self.player
+        if name == "Export":
+            return self.expected_export_clip(), self.export_player
+        return None, None
+
+    def cancel_pending_navigation(self):
+        if self.pending_page is None:
+            return
+        self.pending_page_generation += 1
+        self.pending_page = None
+        self.pending_navigation_timer.stop()
+        if self.statusBar().currentMessage() == "Loading…":
+            self.statusBar().clearMessage()
+        for destination, control in self.nav.items():
+            control.setChecked(destination == self.current_panel)
+
+    def show_pending_navigation_status(self):
+        if self.pending_page is not None:
+            self.statusBar().showMessage("Loading…")
+
+    def navigate_panel(self, name):
+        if name == self.current_panel:
+            self.cancel_pending_navigation()
+            self.panel(name)
+            return
+        if name not in {"Browse", "Editing", "Export"} or (
+            self.current_panel == "Config" or self.atomic_edit or self.has_pending_range()
         ):
+            self.cancel_pending_navigation()
+            self.panel(name)
+            return
+        clip, player = self.navigation_target(name)
+        if clip is None or self.player_has_clip(player, clip):
+            self.cancel_pending_navigation()
+            self.panel(name)
+            return
+        key = self.clip_load_key(clip)
+        if (
+            self.pending_page is not None
+            and self.pending_page["name"] == name
+            and self.pending_page["key"] == key
+        ):
+            return
+        self.cancel_pending_navigation()
+        self.pending_page_generation += 1
+        self.pending_page = {
+            "name": name, "key": key, "player": player,
+            "generation": self.pending_page_generation,
+        }
+        for destination, control in self.nav.items():
+            control.setChecked(destination == self.current_panel)
+        self.pending_navigation_timer.start()
+        if player.loaded_clip is None or self.clip_load_key(player.loaded_clip) != key:
+            if name in {"Browse", "Editing"}:
+                self.prepared_clips[name] = key
+            player.load(clip)
+
+    def finish_pending_navigation(self, generation, media_generation):
+        pending = self.pending_page
+        if pending is None or pending["generation"] != generation:
+            return
+        player = pending["player"]
+        if player.media.generation != media_generation or player.awaiting_frame:
+            return
+        name = pending["name"]
+        clip, _ = self.navigation_target(name)
+        if clip is None or self.clip_load_key(clip) != pending["key"]:
+            self.cancel_pending_navigation()
+            self.navigate_panel(name)
+            return
+        self.capture_inactive_frame(player, media_generation)
+        self.cancel_pending_navigation()
+        self.panel(name)
+
+    def panel(self, name):
+        self.cancel_pending_navigation()
+        stamp = self.catalogue_stamp()
+        if name == self.current_panel and self._panel_initialized:
+            if stamp != self.reference_stamp:
+                self.source_stats.clear()
+                self.refresh_references()
+                self.refresh_library()
             return
         if self.current_panel == "Config" and name != "Config":
             was_dirty = self.config_editor.dirty
@@ -1753,18 +1914,32 @@ class Window(QMainWindow):
         if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
             return
+        self._navigating = True
+        if stamp != self.reference_stamp:
+            self.source_stats.clear()
+        for player in (self.player, self.export_player, self.browse.player):
+            if player.loaded_clip is not None:
+                self.source_stats.pop(player.loaded_clip["source_path"], None)
         self.cancel_prepared_video_reveal()
-        needs_cover = self.page_needs_cover(name)
+        target_clip = (
+            self.expected_browse_clip() if name == "Browse"
+            else self.expected_editing_clip() if name == "Editing"
+            else self.expected_export_clip() if name == "Export"
+            else None
+        )
+        needs_cover = self.page_needs_cover(name, target_clip)
         if needs_cover:
             self.begin_page_transition()
         else:
             self.cancel_page_transition()
         ready_player = None
         if not needs_cover and name != self.current_panel:
-            if name == "Browse" and self.expected_browse_clip() is not None:
+            if name == "Browse" and target_clip is not None:
                 ready_player = self.browse.player
-            elif name == "Editing" and self.expected_editing_clip() is not None:
+            elif name == "Editing" and target_clip is not None:
                 ready_player = self.player
+            elif name == "Export" and target_clip is not None:
+                ready_player = self.export_player
             if (
                 ready_player is not None
                 and ready_player.media.mediaStatus() != QMediaPlayer.MediaStatus.LoadedMedia
@@ -1793,6 +1968,19 @@ class Window(QMainWindow):
         # Hiding focused filters can select an item from the outgoing page's list.
         # That automatic focus change must not become a manual Browse selection.
         library_signals_blocked = self.library.blockSignals(True)
+        if changing_panel and self._panel_initialized:
+            self._library_prior_selected = {
+                item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()
+            }
+            self._library_prior_current = self.selected_id(self.library)
+            self._library_prior_scroll = (
+                self.library.horizontalScrollBar().value(),
+                self.library.verticalScrollBar().value(),
+            )
+            self.library_items_cache[self.current_panel] = (
+                self.active_library_signature,
+                [self.library.takeItem(0) for _ in range(self.library.count())],
+            )
         self.current_panel = name
         if name == "Browse":
             self.browse_time_timer.start()
@@ -1842,7 +2030,14 @@ class Window(QMainWindow):
             else QListWidget.SelectionMode.ExtendedSelection
         )
         self.library.blockSignals(library_signals_blocked)
-        self.refresh_references()
+        if stamp != self.reference_stamp:
+            self.refresh_references()
+        else:
+            self.session_counts.setVisible(
+                bool(self.catalogue.state("session")) and name == "Editing" and not self.atomic_edit
+            )
+            if name == "Session":
+                self.refresh_session_status()
         self.library_page_switch = changing_panel
         self.refresh_library()
         QTimer.singleShot(0, lambda panel=name: self.position_clip_page_once(panel))
@@ -1855,11 +2050,14 @@ class Window(QMainWindow):
                 self.load_clip(clip_id, prepared=self.take_prepared_clip("Editing", self.catalogue.clip(clip_id)))
             self.review_mode()
         elif name == "Export":
-            self.export_selection()
+            self.export_selection(refresh_library=False)
         if ready_player is not None and not self.transition_pending:
             ready_player.video_container.layout_surface()
+            image = ready_player.prepared_image
+            if image is None:
+                image = ready_player.media.frame_image()
             ready_player.video_container.show_prepared_frame(
-                ready_player.media.frame_image()
+                image
             )
             # The splitter can resize the new page on the next event pass.
             QTimer.singleShot(
@@ -1871,8 +2069,13 @@ class Window(QMainWindow):
             )
         self.queue_page_reveal()
         self.schedule_preload()
+        self._navigating = False
+        self._panel_initialized = True
 
     def refresh_references(self):
+        if not self._navigating:
+            self.source_stats.clear()
+        self.library_items_cache.clear()
         self.update_history_controls()
         self.refreshing = True
         projects = self.catalogue.projects()
@@ -1942,10 +2145,9 @@ class Window(QMainWindow):
             for clip_id in ids:
                 if clip_id in self.opening_clip_ids:
                     continue
-                try:
-                    new_bytes += Path(clips[clip_id]["source_path"]).stat().st_size
-                except OSError:
-                    pass
+                stamp = self.source_stat(clips[clip_id]["source_path"])
+                if stamp is not None:
+                    new_bytes += stamp.st_size
             new_size_text = f" (+{storage_gb(new_bytes)} new)" if new_bytes else ""
             linked_clip_count += len(ids)
             text = f"{folder['path']}\n"
@@ -2011,6 +2213,7 @@ class Window(QMainWindow):
         self.refresh_library_overview(list(clips.values()))
         self.refresh_session_status(clips)
         self.refreshing = False
+        self.reference_stamp = self.catalogue_stamp()
         self.schedule_preload()
 
     def request_folder_sizes(self, folders=None, *, force=False):
@@ -2067,7 +2270,7 @@ class Window(QMainWindow):
                 clip = clips[clip_id]
                 verdict = clip["triage"] or "pending"
                 states.append(
-                    verdict if Path(clip["source_path"]).is_file() else "unavailable"
+                    verdict if self.source_available(clip["source_path"]) else "unavailable"
                 )
                 decided.append(clip["triage"] is not None)
             counts = Counter(states)
@@ -2103,7 +2306,9 @@ class Window(QMainWindow):
 
     def refresh_library_overview(self, clips=None):
         clips = clips if clips is not None else self.catalogue.clips()
-        total, rows, undated, sizes = library_overview(clips, self.media_info, self.overview_period)
+        total, rows, undated, sizes = library_overview(
+            clips, self.media_info, self.overview_period, stat_for=self.source_stat
+        )
         while self.overview_rows.count():
             item = self.overview_rows.takeAt(0)
             widget = item.widget()
@@ -2156,7 +2361,7 @@ class Window(QMainWindow):
     def render_card(self, item, clip):
         previous = item.data(CLIP_ROLE) or {}
         compact_card = self.current_panel in {"Home", "Session", "Editing"}
-        available = "" if Path(clip["source_path"]).is_file() else " [unavailable]"
+        available = "" if self.source_available(clip["source_path"]) else " [unavailable]"
         card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
             self.registry,
@@ -2167,12 +2372,12 @@ class Window(QMainWindow):
         compact_time = None
         captured = None
         if self.current_panel == "Browse":
-            captured = capture_datetime(clip, self.media_info)
+            captured = self.capture_datetime(clip)
             capture_label = relative_capture_time(captured)
             folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
             browse_details = f"{capture_label} · {folder_name}"
         elif self.current_panel in {"Home", "Session"}:
-            captured = capture_datetime(clip, self.media_info)
+            captured = self.capture_datetime(clip)
             compact_time = compact_capture_time(captured)
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
         folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
@@ -2292,7 +2497,7 @@ class Window(QMainWindow):
                 self.render_card(item, clip)
 
     def browse_sort_key(self, clip):
-        captured = capture_datetime(clip, self.media_info)
+        captured = self.capture_datetime(clip)
         return captured.isoformat() if captured else "", clip["source_path"]
 
     def filtered_clips(self, clips, panel):
@@ -2306,7 +2511,7 @@ class Window(QMainWindow):
                 excluded = self.catalogue.session_excluded_ids()
                 clips = [clip for clip in clips if clip["clip_id"] not in excluded]
         if not self.settings.get("show_unavailable_clips", False):
-            clips = [clip for clip in clips if Path(clip["source_path"]).is_file()]
+            clips = [clip for clip in clips if self.source_available(clip["source_path"])]
         triage = self.clip_filter.selected_values()
         clips = [clip for clip in clips if clip["triage"] in triage]
         games = self.game_filter.selected_values()
@@ -2337,12 +2542,27 @@ class Window(QMainWindow):
             return None
         return self.catalogue.clip(session["ids"][session["index"]])
 
+    def expected_export_clip(self):
+        ids = self.catalogue.member_ids(self.export_project.currentData())
+        if not ids:
+            return None
+        selected = (
+            self.selected_id(self.library) if self.current_panel == "Export"
+            else self.library_page_states.get("Export", {}).get("current")
+        )
+        clip_id = selected if selected in ids else next(
+            clip["clip_id"] for clip in self.catalogue.clips() if clip["clip_id"] in ids
+        )
+        return self.catalogue.clip(clip_id)
+
     def clip_load_key(self, clip):
         if clip is None:
             return None
         source = Path(clip["source_path"])
         try:
-            stamp = source.stat()
+            stamp = self.source_stat(str(source))
+            if stamp is None:
+                raise OSError
             identity = (stamp.st_size, stamp.st_mtime_ns)
         except OSError:
             identity = None
@@ -2360,9 +2580,13 @@ class Window(QMainWindow):
     def prepare_inactive_clips(self):
         if self.close_requested:
             return
+        for player in (self.player, self.browse.player, self.export_player):
+            if player.loaded_clip is not None:
+                self.source_stats.pop(player.loaded_clip["source_path"], None)
         for panel, player, clip in (
             ("Browse", self.browse.player, self.expected_browse_clip()),
             ("Editing", self.player, self.expected_editing_clip()),
+            ("Export", self.export_player, self.expected_export_clip()),
         ):
             if self.current_panel == panel:
                 continue
@@ -2370,6 +2594,8 @@ class Window(QMainWindow):
             if panel in self.prepared_clips and self.prepared_clips[panel] == key:
                 continue
             self.prepared_clips[panel] = key
+            if clip is not None and self.player_has_clip(player, clip):
+                continue
             if clip is not None or player.loaded_clip is not None:
                 player.load(clip)
 
@@ -2474,6 +2700,9 @@ class Window(QMainWindow):
         self.refresh_library(reset_selection=True)
 
     def refresh_library(self, *, reset_selection=False):
+        if not self._navigating:
+            self.source_stats.clear()
+            self.library_items_cache.clear()
         self.update_history_controls()
         if getattr(self, "settings_dialog", None) is not None:
             self.settings_dialog.refresh()
@@ -2497,6 +2726,19 @@ class Window(QMainWindow):
                 clips = [clip for clip in clips if clip["clip_id"] in ids]
             else:
                 clips = self.filtered_clips(clips, self.current_panel)
+            signature = tuple(
+                (
+                    clip["clip_id"], clip["catalogue_modified_at"],
+                    clip["source_path"],
+                    (stamp.st_size, stamp.st_mtime_ns) if (
+                        stamp := self.source_stat(clip["source_path"])
+                    ) else None,
+                    self.media_info.get(clip["source_path"], {}).get("created"),
+                )
+                for clip in clips
+            )
+            cached = self.library_items_cache.pop(self.current_panel, None)
+            reusable_items = cached[1] if cached and cached[0] == signature else None
             page_state = (
                 self.library_page_states.get(self.current_panel)
                 if self.library_page_switch
@@ -2505,12 +2747,17 @@ class Window(QMainWindow):
             selected = (
                 set(page_state["selected"])
                 if page_state
+                else getattr(self, "_library_prior_selected", set()) if self.library_page_switch
                 else {
                     item.data(Qt.ItemDataRole.UserRole)
                     for item in self.library.selectedItems()
                 }
             )
-            current = page_state["current"] if page_state else self.selected_id(self.library)
+            current = (
+                page_state["current"] if page_state
+                else getattr(self, "_library_prior_current", None) if self.library_page_switch
+                else self.selected_id(self.library)
+            )
             if reset_selection and self.current_panel in {"Home", "Browse", "Session"}:
                 current = clips[0]["clip_id"] if clips else None
                 selected = {current} if current else set()
@@ -2529,11 +2776,13 @@ class Window(QMainWindow):
             horizontal_scroll = (
                 page_state["scroll"][0]
                 if page_state
+                else self._library_prior_scroll[0] if self.library_page_switch
                 else self.library.horizontalScrollBar().value()
             )
             scroll = (
                 page_state["scroll"][1]
                 if page_state
+                else self._library_prior_scroll[1] if self.library_page_switch
                 else self.library.verticalScrollBar().value()
             )
             if reset_selection:
@@ -2543,9 +2792,10 @@ class Window(QMainWindow):
             anchor_offset = self.library.visualItemRect(anchor).top() if anchor else 0
             self.library.blockSignals(True)
             self.library.clear()
-            for clip in clips:
-                item = QListWidgetItem()
-                self.render_card(item, clip)
+            for index, clip in enumerate(clips):
+                item = reusable_items[index] if reusable_items is not None else QListWidgetItem()
+                if reusable_items is None:
+                    self.render_card(item, clip)
                 self.library.addItem(item)
                 if clip["clip_id"] == current:
                     self.library.setCurrentItem(item)
@@ -2566,6 +2816,7 @@ class Window(QMainWindow):
             self.schedule_thumbnails()
             self.library.blockSignals(False)
             self.library_page_switch = False
+            self.active_library_signature = signature
             if self.current_panel == "Browse":
                 self.browse_id = current
                 clip = self.catalogue.clip(current) if current else None
@@ -4261,7 +4512,7 @@ class Window(QMainWindow):
         ids = self.catalogue.member_ids(self.export_project.currentData())
         return [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
 
-    def export_selection(self):
+    def export_selection(self, *, refresh_library=True):
         if self.refreshing:
             return
         clips = self.export_clips()
@@ -4280,7 +4531,8 @@ class Window(QMainWindow):
         self.format_game.blockSignals(False)
         self.show_format()
         if self.current_panel == "Export":
-            self.refresh_library()
+            if refresh_library:
+                self.refresh_library()
             current = self.selected_id(self.library)
             clip = next((clip for clip in clips if clip["clip_id"] == current), None)
             if clip is None and clips:
@@ -4288,7 +4540,13 @@ class Window(QMainWindow):
                 self.library.blockSignals(True)
                 self.library.setCurrentRow(0)
                 self.library.blockSignals(False)
-            self.export_player.load(clip)
+            if clip is None:
+                if self.export_player.loaded_clip is not None:
+                    self.export_player.load(None)
+            elif not self.player_has_clip(self.export_player, clip):
+                self.export_player.load(clip)
+        else:
+            self.schedule_preload()
 
     def show_format(self):
         while self.format_layout.count():
@@ -4645,6 +4903,7 @@ class Window(QMainWindow):
             self.folder_size_worker.cancelled.set()
             event.ignore()
             return
+        self.cancel_pending_navigation()
         self.atomic_edit = None
         self.thumbnails.close()
         self.preload_timer.stop()

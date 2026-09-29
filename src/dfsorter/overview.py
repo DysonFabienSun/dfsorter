@@ -12,7 +12,7 @@ PERIOD_DAYS = {
 }
 
 
-def capture_datetime(clip, media_info):
+def capture_datetime(clip, media_info, stat_for=None):
     created = media_info.get(clip["source_path"], {}).get("created")
     if created:
         try:
@@ -21,7 +21,9 @@ def capture_datetime(clip, media_info):
         except (TypeError, ValueError):
             pass
     try:
-        return datetime.fromtimestamp(Path(clip["source_path"]).stat().st_ctime, timezone.utc)
+        source = clip["source_path"]
+        stamp = stat_for(source) if stat_for else Path(source).stat()
+        return datetime.fromtimestamp(stamp.st_ctime, timezone.utc) if stamp else None
     except OSError:
         return None
 
@@ -67,7 +69,7 @@ def compact_capture_time(captured, current_time=None):
     return f"{count}{suffix} ago"
 
 
-def library_overview(clips, media_info, period="All time", current_time=None):
+def library_overview(clips, media_info, period="All time", current_time=None, stat_for=None):
     current_time = current_time or datetime.now(timezone.utc)
     current_time = current_time.astimezone(timezone.utc)
     days = PERIOD_DAYS[period]
@@ -76,7 +78,7 @@ def library_overview(clips, media_info, period="All time", current_time=None):
     sizes = Counter()
     undated = 0
     for clip in clips:
-        captured = capture_datetime(clip, media_info)
+        captured = capture_datetime(clip, media_info, stat_for)
         if captured is None:
             undated += 1
             if cutoff is not None:
@@ -87,7 +89,9 @@ def library_overview(clips, media_info, period="All time", current_time=None):
         state = clip["triage"] or "pending"
         counts.setdefault(game, Counter())[state] += 1
         try:
-            sizes[game] += Path(clip["source_path"]).stat().st_size
+            source = clip["source_path"]
+            stamp = stat_for(source) if stat_for else Path(source).stat()
+            sizes[game] += stamp.st_size if stamp else 0
         except OSError:
             pass
 
