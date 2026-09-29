@@ -83,7 +83,7 @@ from .parsing import (
     preview_command_details,
     query_clips,
 )
-from .playback import Player, playback_volume, volume_step
+from .playback import Player, playback_volume
 from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -3713,7 +3713,11 @@ class Window(QMainWindow):
                     return True
                 if key in {Qt.Key.Key_Up, Qt.Key.Key_Down}:
                     volume = self.browse.player.volume
-                    volume.setValue(volume.value() + (5 if key == Qt.Key.Key_Up else -5))
+                    current = volume.value()
+                    if key == Qt.Key.Key_Up:
+                        volume.setValue(min(100, (current // 5 + 1) * 5))
+                    else:
+                        volume.setValue(max(0, (current - 1) // 5 * 5))
                     return True
             if (
                 key in {Qt.Key.Key_F, Qt.Key.Key_F11}
@@ -4590,7 +4594,6 @@ class Window(QMainWindow):
         self.schedule_preload()
 
     def set_playback_volume(self, value):
-        value = volume_step(value)
         self.settings["playback_volume"] = value
         for player in (
             getattr(self, "browse", None) and self.browse.player,

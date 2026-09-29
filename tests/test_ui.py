@@ -537,13 +537,12 @@ def test_player_volume_track_drag_updates_continuously(window, application):
     volume.setValue(0)
 
     start = QPoint(5, volume.rect().center().y())
-    middle = QPoint(volume.width() // 2, volume.rect().center().y())
+    middle = QPoint(5 + round((volume.width() - 10) * 0.37), volume.rect().center().y())
     end = QPoint(volume.width() - 5, volume.rect().center().y())
     QTest.mousePress(volume, Qt.MouseButton.LeftButton, pos=start)
     QTest.mouseMove(volume, middle)
     application.processEvents()
-    assert 45 <= volume.value() <= 55
-    assert volume.value() % 5 == 0
+    assert abs(volume.value() - 37) <= 1
     QTest.mouseMove(volume, end)
     QTest.mouseRelease(volume, Qt.MouseButton.LeftButton, pos=end)
 
@@ -554,18 +553,18 @@ def test_player_volume_is_shared_and_persists(window, application):
     import yaml
 
     window.browse.player.volume.setValue(37)
-    assert window.browse.player.volume.value() == 35
-    assert window.player.volume.value() == 35
-    assert window.export_player.volume.value() == 35
+    assert window.browse.player.volume.value() == 37
+    assert window.player.volume.value() == 37
+    assert window.export_player.volume.value() == 37
     assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
         "playback_volume"
-    ] == 35
+    ] == 37
 
     restarted = Window(window.root)
     try:
-        assert restarted.browse.player.volume.value() == 35
-        assert restarted.player.volume.value() == 35
-        assert restarted.export_player.volume.value() == 35
+        assert restarted.browse.player.volume.value() == 37
+        assert restarted.player.volume.value() == 37
+        assert restarted.export_player.volume.value() == 37
     finally:
         restarted.close()
         application.processEvents()
@@ -575,12 +574,12 @@ def test_player_volume_is_shared_and_persists(window, application):
     window.settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
     restarted = Window(window.root)
     try:
-        assert restarted.browse.player.volume.value() == 40
-        assert restarted.player.volume.value() == 40
-        assert restarted.export_player.volume.value() == 40
+        assert restarted.browse.player.volume.value() == 38
+        assert restarted.player.volume.value() == 38
+        assert restarted.export_player.volume.value() == 38
         assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
             "playback_volume"
-        ] == 40
+        ] == 38
     finally:
         restarted.close()
         application.processEvents()
@@ -4721,6 +4720,12 @@ def test_browse_fullscreen_clip_and_volume_keys(window, application, tmp_path):
     assert window.player.volume.value() == 65
     QTest.keyClick(player, Qt.Key.Key_Down)
     assert player.volume.value() == 60
+    player.volume.setValue(92)
+    QTest.keyClick(player, Qt.Key.Key_Up)
+    assert player.volume.value() == 95
+    player.volume.setValue(92)
+    QTest.keyClick(player, Qt.Key.Key_Down)
+    assert player.volume.value() == 90
     window.browse.set_fullscreen(False)
     QTest.keyClick(player, Qt.Key.Key_BracketRight)
     assert window.library.currentRow() == 1

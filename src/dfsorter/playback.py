@@ -26,11 +26,7 @@ def start_offset_seconds(settings):
 
 def playback_volume(settings):
     value = settings.get("playback_volume", 60)
-    return volume_step(value) if type(value) is int and 0 <= value <= 100 else 60
-
-
-def volume_step(value):
-    return min(100, max(0, (int(value) + 2) // 5 * 5))
+    return value if type(value) is int and 0 <= value <= 100 else 60
 
 
 class VideoSurface(QWidget):
@@ -172,7 +168,7 @@ class VolumeSlider(QSlider):
         value = round(
             self.minimum() + max(0, min(1, fraction)) * (self.maximum() - self.minimum())
         )
-        self.setValue(volume_step(value))
+        self.setValue(value)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -307,8 +303,8 @@ class Player(QWidget):
         controls.addWidget(self.mute)
         self.volume = VolumeSlider()
         self.volume.setRange(0, 100)
-        self.volume.setSingleStep(5)
-        self.volume.setPageStep(5)
+        self.volume.setSingleStep(1)
+        self.volume.setPageStep(10)
         self.volume.setValue(initial_volume)
         self.volume.setFixedHeight(18)
         self.volume.setMaximumWidth(100)
@@ -510,10 +506,6 @@ class Player(QWidget):
         return super().eventFilter(watched, event)
 
     def set_volume(self, value):
-        stepped = volume_step(value)
-        if value != stepped:
-            self.volume.setValue(stepped)
-            return
         self.audio.setVolume(value / 100)
         self.volume_changed.emit(value)
 
