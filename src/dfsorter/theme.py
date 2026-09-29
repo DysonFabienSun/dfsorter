@@ -138,7 +138,12 @@ THEMES = {
 COLORS = dict(THEMES["light"])
 ACTIVE_SCHEME = "light"
 
-FONT_SIZES = {"xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14, "library_title": 15, "lg": 16, "xl": 20, "section_heading": 22, "pane_heading": 16, "xxl": 26}
+FONT_SIZES = {
+    "xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14,
+    "library_title": 15, "lg": 16, "xl": 20, "section_heading": 22,
+    "pane_heading": 16, "xxl": 26, "fullscreen_title_small": 17,
+    "fullscreen_title": 21, "fullscreen_title_tag": 20,
+}
 WEIGHTS = {"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 SPACING = (4, 8, 12, 16, 24, 32)
 RADII = {"none": 0, "structural": 2, "sm": 3, "md": 5, "lg": 7, "control": 4}
@@ -210,8 +215,11 @@ def stylesheet():
         QMainWindow { background: %(surface_canvas)s; }
         QWidget#videoSurface { background: %(surface_video)s; }
         QWidget#videoContainer { background: %(surface_canvas)s; }
-        QWidget#fullscreenChromeContent { background: rgba(0, 0, 0, 185); }
-        QWidget#fullscreenChromeContent[chromePosition="bottom"] { background: rgba(0, 0, 0, 160); }
+        QWidget#fullscreenChromeContent { background: transparent; }
+        QWidget#fullscreenChromeContent[chromePosition="top"] {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 rgba(0, 0, 0, 160), stop:1 rgba(0, 0, 0, 0));
+        }
         QWidget#playerControlBar { background: transparent; }
         QWidget#fullscreenChromeContent QLabel { color: %(player_chrome_text)s; }
         QWidget#fullscreenChromeContent QToolButton { color: %(player_chrome_text)s; }
@@ -433,8 +441,12 @@ def apply_theme(application, mode="light"):
 
 
 def title_styles(card=False, on_video=False, library=False, compact_card=False):
-    small = FONT_SIZES["base" if library and not compact_card else "md"]
-    if compact_card:
+    small = FONT_SIZES["fullscreen_title_small"] if on_video else FONT_SIZES[
+        "base" if library and not compact_card else "md"
+    ]
+    if on_video:
+        large_role = "fullscreen_title"
+    elif compact_card:
         large_role = "card_title"
     elif library:
         large_role = "library_title"

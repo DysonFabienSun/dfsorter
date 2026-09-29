@@ -229,7 +229,7 @@ def tag_prefix(clip, rich=False, on_video=False, size_role="library_title"):
     text = f"[{value}]"
     if rich:
         color = COLORS["player_chrome_tag" if on_video else "tag"]
-        size = FONT_SIZES[size_role]
+        size = FONT_SIZES["fullscreen_title_tag" if on_video else size_role]
         return f'<b style="color:{color};font-size:{size}px">{html.escape(text)}</b> '
     return text + " "
 
