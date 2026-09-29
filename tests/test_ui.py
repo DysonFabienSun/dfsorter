@@ -4821,7 +4821,12 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert player.media.playbackState() == playback_state
     assert player.media.position() == position
     QTest.keyClick(player, Qt.Key.Key_Escape)
+    assert not window.updatesEnabled()
     application.processEvents()
+    assert window.updatesEnabled()
+    restored_layout = (window.geometry(), window.splitter.sizes(), player.geometry())
+    application.processEvents()
+    assert (window.geometry(), window.splitter.sizes(), player.geometry()) == restored_layout
     assert not window.isFullScreen()
     assert window.isMaximized() == maximized
     assert window.geometry() == geometry
@@ -4835,6 +4840,11 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert window.isFullScreen()
     QTest.keyClick(player, Qt.Key.Key_F)
     assert not window.isFullScreen()
+    browse.fullscreen_button.click()
+    application.processEvents()
+    assert window.isFullScreen() and window.updatesEnabled()
+    QTest.keyClick(player, Qt.Key.Key_Escape)
+    application.processEvents()
     browse.custom_title.setFocus()
     QTest.keyClicks(browse.custom_title, "f")
     assert browse.custom_title.text().endswith("f")

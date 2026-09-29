@@ -3,7 +3,7 @@
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -31,6 +31,7 @@ class BrowsePage(QWidget):
         super().__init__()
         self.window = window
         self.fullscreen_state = None
+        self.fullscreen_restore_token = None
         self.clip = None
         self.in_ms = self.out_ms = None
         self.initial_range = False
@@ -137,6 +138,38 @@ class BrowsePage(QWidget):
         window = self.window
         if enabled == (self.fullscreen_state is not None):
             return
+        if enabled:
+            restore_pending = self.fullscreen_restore_token is not None
+            self.fullscreen_restore_token = None
+            try:
+                self._set_fullscreen(True)
+            finally:
+                if restore_pending:
+                    window.setUpdatesEnabled(True)
+            return
+        window.setUpdatesEnabled(False)
+        try:
+            sizes = self.fullscreen_state[2]
+            self._set_fullscreen(False)
+        except Exception:
+            window.setUpdatesEnabled(True)
+            raise
+        token = object()
+        self.fullscreen_restore_token = token
+        # Native window geometry settles on the next event pass; paint only afterward.
+        QTimer.singleShot(0, lambda: self.finish_fullscreen_exit(token, sizes))
+
+    def finish_fullscreen_exit(self, token, sizes):
+        if token != self.fullscreen_restore_token:
+            return
+        self.fullscreen_restore_token = None
+        if self.fullscreen_state is None and self.window.current_panel == "Browse":
+            self.window.splitter.setSizes(sizes)
+            self.window.layout().activate()
+        self.window.setUpdatesEnabled(True)
+
+    def _set_fullscreen(self, enabled):
+        window = self.window
         if enabled:
             if window.current_panel != "Browse":
                 return

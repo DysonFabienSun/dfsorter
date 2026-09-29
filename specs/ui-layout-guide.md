@@ -348,6 +348,8 @@ Center `>>>` in middle grid column with equal stretch on side columns. Reserve i
 Status messages wrap when populated and collapse when empty. Keep transition/loading presentation consistent with main specs §9.1; never leave blank status row between transport and title.
 Page and clip loading covers use the workspace surface so the covered area blends with the surrounding page. Apply the display-corrected video geometry after the preview frame and a valid display size are ready, then warm the native surface with its visible region clipped before revealing the page. Allow at least 100 ms for each player's first native show; later clips wait two display refresh intervals. Errors and missing sources reveal without this delay.
 
+Batch visible layout and window-state changes during transitions. When native window geometry settles on a later event pass, keep intermediate arrangements from painting and reveal the final layout only after geometry, pane sizes and controls are restored. This applies to fullscreen exit as well as page and clip transitions.
+
 ## 6. Below-video information and forms
 
 ### Shared composition rules
