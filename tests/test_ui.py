@@ -4814,9 +4814,7 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     playback_state = player.media.playbackState()
     position = player.media.position()
     browse.fullscreen_button.click()
-    assert not window.updatesEnabled()
-    assert browse.fullscreen_transition_cover.isVisible()
-    application.processEvents()
+    assert window.updatesEnabled()
     assert not browse.fullscreen_transition_cover.isVisible()
     assert window.isFullScreen()
     assert window.navigation_strip.isHidden() and window.left.isHidden()
@@ -4826,9 +4824,6 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert player.media.playbackState() == playback_state
     assert player.media.position() == position
     QTest.keyClick(player, Qt.Key.Key_Escape)
-    assert not window.updatesEnabled()
-    assert browse.fullscreen_transition_cover.isVisible()
-    application.processEvents()
     assert window.updatesEnabled()
     assert not browse.fullscreen_transition_cover.isVisible()
     restored_layout = (window.geometry(), window.splitter.sizes(), player.geometry())
@@ -4838,6 +4833,8 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
     assert window.isMaximized() == maximized
     assert window.geometry() == geometry
     assert window.splitter.sizes() == sizes
+    assert player.video.geometry().bottomRight().x() <= player.video_container.width()
+    assert player.video.geometry().bottomRight().y() <= player.video_container.height()
     assert window.navigation_strip.isVisible() and window.left.isVisible()
     assert browse.details.isVisible()
     assert browse.custom_title.text() == "Share draft"

@@ -3,7 +3,7 @@
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, Qt, QTimer
+from PySide6.QtCore import QEventLoop, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -23,7 +23,7 @@ from .config import title
 from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
-from .theme import role, title_styles
+from .theme import COLORS, role, title_styles
 from .widgets import set_icon, tag_prefix, tool
 
 
@@ -32,8 +32,8 @@ class BrowsePage(QWidget):
         super().__init__()
         self.window = window
         self.fullscreen_state = None
-        self.fullscreen_transition_token = None
-        self.fullscreen_transition_cover = QLabel(
+        self.fullscreen_transitioning = False
+        self.fullscreen_transition_cover = QWidget(
             None,
             Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
@@ -146,62 +146,43 @@ class BrowsePage(QWidget):
 
     def set_fullscreen(self, enabled):
         window = self.window
+        if self.fullscreen_transitioning:
+            return
         if enabled == (self.fullscreen_state is not None):
             return
         if enabled and window.current_panel != "Browse":
             return
-        self.show_fullscreen_transition_cover()
-        window.setUpdatesEnabled(False)
+        self.fullscreen_transitioning = True
+        cover = self.fullscreen_transition_cover
         try:
+            cover.setStyleSheet(f"background: {COLORS['surface_video']};")
+            cover.setGeometry(window.screen().geometry())
+            cover.show()
+            cover.raise_()
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+            window.setUpdatesEnabled(False)
+            self.player.video_container.layout_paused = True
             sizes = self.fullscreen_state[2] if not enabled else None
             self._set_fullscreen(enabled)
-        except Exception:
-            window.setUpdatesEnabled(True)
-            self.fullscreen_transition_cover.hide()
-            self.fullscreen_transition_cover.clear()
-            raise
-        token = object()
-        self.fullscreen_transition_token = token
-        QTimer.singleShot(0, lambda: self.finish_fullscreen_transition(token, sizes))
-
-    def show_fullscreen_transition_cover(self):
-        cover = self.fullscreen_transition_cover
-        if cover.isVisible():
-            return
-        screen = self.window.screen()
-        geometry = screen.geometry()
-        screenshot = screen.grabWindow(
-            0, geometry.x(), geometry.y(), geometry.width(), geometry.height()
-        )
-        if screenshot.isNull():
-            return
-        cover.setPixmap(screenshot)
-        cover.setGeometry(geometry)
-        cover.show()
-        cover.raise_()
-        # Make the captured frame visible before the native video window moves.
-        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-
-    def finish_fullscreen_transition(self, token, sizes):
-        if token != self.fullscreen_transition_token:
-            return
-        self.fullscreen_transition_token = None
-        try:
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             if (
                 sizes is not None
                 and self.fullscreen_state is None
-                and self.window.current_panel == "Browse"
+                and window.current_panel == "Browse"
             ):
-                self.window.splitter.setSizes(sizes)
-            self.window.layout().activate()
-            self.window.setUpdatesEnabled(True)
-            self.window.repaint()
-            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+                window.splitter.setSizes(sizes)
+            window.layout().activate()
+            window.central.layout().activate()
+            window.splitter.parentWidget().layout().activate()
+            self.layout().activate()
+            self.player.layout().activate()
         finally:
-            if self.fullscreen_transition_token is None:
-                self.window.setUpdatesEnabled(True)
-                self.fullscreen_transition_cover.hide()
-                self.fullscreen_transition_cover.clear()
+            self.player.video_container.layout_paused = False
+            self.player.video_container.layout_surface()
+            window.setUpdatesEnabled(True)
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+            cover.hide()
+            self.fullscreen_transitioning = False
 
     def _set_fullscreen(self, enabled):
         window = self.window
@@ -228,12 +209,12 @@ class BrowsePage(QWidget):
             self.fullscreen_share_button.hide()
             state, geometry, sizes, widgets, layouts = self.fullscreen_state
             self.fullscreen_state = None
-            window.setWindowState(state)
-            window.restoreGeometry(geometry)
             for widget, visible in widgets:
                 widget.setVisible(visible)
             for layout, margins in layouts:
                 layout.setContentsMargins(margins)
+            window.setWindowState(state)
+            window.restoreGeometry(geometry)
             window.splitter.setSizes(sizes)
         set_icon(self.fullscreen_button, "minimize" if enabled else "maximize",
                  "player_chrome_text" if enabled else None)

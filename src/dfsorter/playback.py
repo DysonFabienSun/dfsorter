@@ -51,6 +51,7 @@ class AspectVideoContainer(QWidget):
         super().__init__()
         self.surface = surface
         self.aspect_ratio = None
+        self.layout_paused = False
         surface.setParent(self)
         self.prepared_frame = QLabel(self)
         self.prepared_frame.setScaledContents(True)
@@ -78,6 +79,8 @@ class AspectVideoContainer(QWidget):
         self.layout_surface()
 
     def layout_surface(self):
+        if self.layout_paused:
+            return
         bounds = self.rect()
         if not self.aspect_ratio or bounds.width() <= 0 or bounds.height() <= 0:
             self.surface.setGeometry(bounds)
