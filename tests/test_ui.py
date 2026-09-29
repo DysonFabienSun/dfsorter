@@ -3238,6 +3238,104 @@ def test_activities_bound_parallel_jobs_and_confirm_exit(window, application, mo
     assert wait_for(application, lambda: not window.isVisible())
 
 
+def test_share_is_single_per_clip_across_browse_and_editing(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.panel("Browse")
+    browse = window.browse
+    browse.custom_title.setText("Example")
+    browse.destination.setText(str(tmp_path / "shares"))
+    assert browse.share_button.isEnabled()
+    release = threading.Event()
+
+    def operation(cancelled, progress):
+        release.wait(5)
+        return "done"
+
+    job = window.activities.submit("Share", "Share example", operation, clip_id=clip_id)
+    try:
+        assert wait_for(application, lambda: job.state == "Running")
+        assert not browse.share_button.isEnabled()
+        assert browse.share_button.text() == "Share in progress"
+        assert not browse.share_button.icon().isNull()
+        assert not browse.fullscreen_share_button.isEnabled()
+        frame = browse.share_button.icon().cacheKey()
+        assert wait_for(application, lambda: browse.share_button.icon().cacheKey() != frame)
+        assert window.activities.submit(
+            "Share", "Duplicate", operation, clip_id=clip_id,
+        ) is job
+        assert len(window.activities.jobs) == 1
+        window.start_atomic_edit(clip_id, "Browse")
+        assert window.current_panel == "Editing"
+        assert not window.edit_share_button.isEnabled()
+        assert window.edit_share_button.toolTip().startswith("Share in progress")
+        assert not window.edit_share_button.icon().isNull()
+    finally:
+        release.set()
+        try:
+            assert wait_for(application, lambda: job.state == "Completed", timeout=6)
+            assert window.edit_share_button.isEnabled()
+        finally:
+            window.discard_atomic_edit()
+    assert wait_for(application, lambda: job.state == "Completed")
+    window.panel("Browse")
+    browse.custom_title.setText("Example again")
+    assert browse.share_button.isEnabled()
+    assert browse.share_button.text() == "Share"
+    assert browse.share_button.icon().isNull()
+
+
+def test_activities_auto_open_close_and_repeat_after_idle(window, application):
+    release = threading.Event()
+
+    def operation(cancelled, progress):
+        release.wait(5)
+        return type("Result", (), {"completed": []})()
+
+    first = window.activities.submit("Export", "First", operation)
+    try:
+        assert wait_for(application, lambda: window.activities.menu.isVisible())
+        assert window.activities.auto_close_timer.isActive()
+        assert window.activities.close_button.isVisible()
+        window.activities.auto_close_timer.timeout.emit()
+        assert not window.activities.menu.isVisible()
+        window.activities.menu.popup(
+            window.activities_button.mapToGlobal(QPoint(0, window.activities_button.height()))
+        )
+        window.activities.close_button.click()
+        assert not window.activities.menu.isVisible()
+        assert not window.activities.auto_close_timer.isActive()
+    finally:
+        release.set()
+        wait_for(application, lambda: first.state == "Completed", timeout=6)
+    assert wait_for(application, lambda: first.state == "Completed")
+
+    release.clear()
+    second = window.activities.submit("Export", "Second", operation)
+    try:
+        assert wait_for(application, lambda: window.activities.menu.isVisible())
+        assert window.activities.auto_close_timer.isActive()
+        QCoreApplication.sendEvent(
+            window.activities.close_button,
+            QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(6, 6), QPointF(6, 6), QPointF(6, 6),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        assert not window.activities.auto_close_timer.isActive()
+        window.activities.menu.hide()
+        window.activities.menu.popup(
+            window.activities_button.mapToGlobal(QPoint(0, window.activities_button.height()))
+        )
+        assert window.activities.menu.isVisible()
+        assert not window.activities.auto_close_timer.isActive()
+        window.activities.menu.hide()
+    finally:
+        release.set()
+        wait_for(application, lambda: second.state == "Completed", timeout=6)
+    assert wait_for(application, lambda: second.state == "Completed")
+
+
 def test_unfinished_export_is_offered_for_resume_after_restart(window, application, tmp_path):
     from dfsorter.output import prepare_export_manifest
 

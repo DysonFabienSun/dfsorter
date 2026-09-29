@@ -201,6 +201,7 @@ class BrowsePage(QWidget):
             self.player.load(clip)
         self.edit_button.setEnabled(bool(clip))
         self.refresh_range(default=True)
+        self.window.update_share_controls()
 
     def edit_clip(self):
         if self.clip:
@@ -228,6 +229,7 @@ class BrowsePage(QWidget):
         self.player.load(None)
         self.render_title()
         self.refresh_range()
+        self.window.update_share_controls()
 
     def valid_range(self):
         return (
@@ -277,12 +279,20 @@ class BrowsePage(QWidget):
         if not hasattr(self, "share_button"):
             return
         available = bool(self.clip and Path(self.clip["source_path"]).is_file())
+        sharing = bool(self.clip and self.window.activities.active_share(self.clip["clip_id"]))
         self.delete_button.setEnabled(available)
-        self.fullscreen_share_button.setEnabled(available)
+        self.fullscreen_share_button.setEnabled(available and not sharing)
+        share_label = "Share in progress" if sharing else "Share"
+        if self.share_button.text() != share_label:
+            self.share_button.setText(share_label)
+        hint = "Share in progress · Open Activities for progress" if sharing else "Share"
+        self.share_button.setToolTip(hint)
+        self.fullscreen_share_button.setToolTip(hint)
+        self.fullscreen_share_button.setAccessibleName(hint)
         for control in self.marker_buttons:
             control.setEnabled(available and self.player.media.duration() > 0)
         self.share_button.setEnabled(
-            available and bool(self.custom_title.text().strip())
+            available and not sharing and bool(self.custom_title.text().strip())
             and bool(self.destination.text().strip())
             and (not self.mode.currentData() or self.valid_range())
         )
@@ -347,6 +357,7 @@ class BrowsePage(QWidget):
                 selected_range=selected_range, cancelled=cancelled,
                 detailed_progress=progress,
             ),
+            clip_id=clip["clip_id"],
         )
         self.window.flash_share(self.share_button)
         if self.fullscreen_state is not None:

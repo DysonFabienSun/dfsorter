@@ -4,7 +4,7 @@ import logging
 import threading
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -60,6 +60,7 @@ class OutputJob:
     record_id: str | None = None
     forget: object = None
     menu_action: QWidgetAction | None = None
+    clip_id: str | None = None
 
 
 class Activities(QObject):
@@ -72,6 +73,32 @@ class Activities(QObject):
         self.button = button
         self.menu = QMenu(button)
         self.menu.setObjectName("activitiesMenu")
+        self._auto_opening = False
+        self.auto_close_timer = QTimer(self)
+        self.auto_close_timer.setSingleShot(True)
+        self.auto_close_timer.timeout.connect(self.menu.hide)
+        self.menu.aboutToShow.connect(self._menu_shown)
+        self.menu.aboutToHide.connect(self.auto_close_timer.stop)
+        self.menu.installEventFilter(self)
+        header = QWidget(self.menu)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 5, 7, 2)
+        heading = QLabel("Activities")
+        role(heading, "paneHeading")
+        header_layout.addWidget(heading, 1)
+        self.close_button = QToolButton(header)
+        self.close_button.setObjectName("activitiesClose")
+        self.close_button.setToolTip("Close Activities")
+        self.close_button.setAccessibleName("Close Activities")
+        set_icon(self.close_button, "x", size=16)
+        self.close_button.setFixedSize(24, 24)
+        self.close_button.installEventFilter(self)
+        self.close_button.clicked.connect(self.menu.hide)
+        header_layout.addWidget(self.close_button)
+        header.installEventFilter(self)
+        header_action = QWidgetAction(self.menu)
+        header_action.setDefaultWidget(header)
+        self.menu.addAction(header_action)
         self.empty = self.menu.addAction("No activities")
         self.empty.setEnabled(False)
         button.setMenu(self.menu)
@@ -81,9 +108,19 @@ class Activities(QObject):
     def busy(self):
         return any(job.state in {"Queued", "Running", "Cancelling"} for job in self.jobs)
 
-    def submit(self, kind, title, function, *, record_id=None, forget=None, paused=False):
+    def active_share(self, clip_id):
+        return next(
+            (job for job in self.jobs if job.kind == "Share" and job.clip_id == clip_id
+             and self._active(job)), None
+        ) if clip_id else None
+
+    def submit(self, kind, title, function, *, record_id=None, forget=None, paused=False,
+               clip_id=None):
+        if kind == "Share" and (existing := self.active_share(clip_id)):
+            return existing
+        was_busy = self.busy()
         job = OutputJob(kind, title, function, state="Paused" if paused else "Queued",
-                        record_id=record_id, forget=forget)
+                        record_id=record_id, forget=forget, clip_id=clip_id)
         if paused:
             job.detail = "Resume to continue unfinished copies"
         self.jobs.append(job)
@@ -92,7 +129,36 @@ class Activities(QObject):
         self.changed.emit()
         if not paused:
             QTimer.singleShot(0, self._schedule)
+            if not was_busy:
+                QTimer.singleShot(0, self._open_for_first_job)
         return job
+
+    def _menu_shown(self):
+        if not self._auto_opening:
+            self.auto_close_timer.stop()
+
+    def _open_for_first_job(self):
+        if not self.busy() or self.menu.isVisible() or not self.button.isVisible():
+            return
+        self._auto_opening = True
+        width = self.menu.sizeHint().width()
+        self.menu.popup(self.button.mapToGlobal(QPoint(self.button.width() - width,
+                                                       self.button.height())))
+        self.menu.windowHandle().installEventFilter(self)
+        self._auto_opening = False
+        self.auto_close_timer.start(4000)
+
+    def eventFilter(self, watched, event):
+        if self.auto_close_timer.isActive() and event.type() in {
+            QEvent.Type.Enter,
+            QEvent.Type.HoverEnter,
+            QEvent.Type.MouseMove,
+            QEvent.Type.HoverMove,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.KeyPress,
+        }:
+            self.auto_close_timer.stop()
+        return super().eventFilter(watched, event)
 
     def _add_row(self, job):
         self.empty.setVisible(False)
@@ -128,6 +194,9 @@ class Activities(QObject):
         self.menu.addAction(action)
         job.row = row
         job.menu_action = action
+        for widget in row.findChildren(QWidget):
+            widget.installEventFilter(self)
+        row.installEventFilter(self)
         self._refresh(job)
 
     @staticmethod
@@ -263,12 +332,15 @@ class Activities(QObject):
     def resume(self, job):
         if not self._resumable(job):
             return
+        was_busy = self.busy()
         job.state = "Queued"
         job.percent = 0
         job.detail = "Waiting to resume"
         self._refresh(job)
         self._update_button()
         self._schedule()
+        if not was_busy:
+            QTimer.singleShot(0, self._open_for_first_job)
 
     def dismiss(self, job):
         if self._active(job):

@@ -27,7 +27,7 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QIcon, QRegion
+from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QPixmap, QRegion
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -608,6 +608,11 @@ class Window(QMainWindow):
         self.splitter.addWidget(self.center_column)
         self.pages = {}
         self.build_pages()
+        self.share_spinner = QTimer(self)
+        self.share_spinner.setInterval(80)
+        self.share_spinner.timeout.connect(self.advance_share_spinner)
+        self.share_spinner_angle = 0
+        self.activities.changed.connect(self.update_share_controls)
         self.right, right_layout = page()
         self.right.setObjectName("projectsPane")
         right_layout.setContentsMargins(8, 4, 8, 4)
@@ -1278,6 +1283,8 @@ class Window(QMainWindow):
             self.save_settings()
         apply_theme(QApplication.instance(), mode)
         refresh_icons(self)
+        if self.share_spinner.isActive():
+            self.advance_share_spinner()
         for glyph in self.findChildren(QLabel):
             name = glyph.property("headingIcon")
             if name:
@@ -2624,6 +2631,7 @@ class Window(QMainWindow):
         self.submit_resume = False
         self.cancel_space()
         self.current_id = clip_id
+        self.update_share_controls()
         self.reject_enter_armed = False
         self.pending_in = None
         self.pending_out = None
@@ -4411,6 +4419,50 @@ class Window(QMainWindow):
             self.share_flash_timers[control] = timer
         timer.start(1200)
 
+    def update_share_controls(self):
+        self.browse.update_share()
+        sharing_browse = bool(self.browse.clip and self.activities.active_share(
+            self.browse.clip["clip_id"]
+        ))
+        sharing_edit = bool(self.activities.active_share(self.current_id))
+        self.edit_share_button.setEnabled(bool(self.current_id) and not sharing_edit)
+        hint = "Share in progress · Open Activities for progress" if sharing_edit else "Share"
+        self.edit_share_button.setToolTip(hint)
+        self.edit_share_button.setAccessibleName(hint)
+        if not sharing_browse:
+            self.browse.share_button.setIcon(QIcon())
+            set_icon(self.browse.fullscreen_share_button, "share-2")
+        if not sharing_edit:
+            set_icon(self.edit_share_button, "share-2")
+        if sharing_edit or sharing_browse:
+            if not self.share_spinner.isActive():
+                self.share_spinner.start()
+            self.advance_share_spinner()
+        else:
+            self.share_spinner.stop()
+
+    def advance_share_spinner(self):
+        self.share_spinner_angle = (self.share_spinner_angle + 30) % 360
+        for control, clip_id, size in (
+            (self.browse.share_button,
+             self.browse.clip["clip_id"] if self.browse.clip else None, 16),
+            (self.browse.fullscreen_share_button,
+             self.browse.clip["clip_id"] if self.browse.clip else None, 20),
+            (self.edit_share_button, self.current_id, 20),
+        ):
+            if not self.activities.active_share(clip_id):
+                continue
+            source = icon("loader-circle", COLORS["text_disabled"], size=size).pixmap(size, size)
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.translate(size / 2, size / 2)
+            painter.rotate(self.share_spinner_angle)
+            painter.drawPixmap(-size // 2, -size // 2, source)
+            painter.end()
+            control.setIcon(QIcon(pixmap))
+            control.setIconSize(QSize(size, size))
+
     def share(self):
         if self.current_panel == "Browse":
             self.browse.share()
@@ -4419,6 +4471,8 @@ class Window(QMainWindow):
             clip = deepcopy(self.selected_clip())
         except ValueError as error:
             self.error(error)
+            return
+        if self.activities.active_share(clip["clip_id"]):
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Share clip")
@@ -4527,6 +4581,7 @@ class Window(QMainWindow):
                 selected_range=selected_range,
                 detailed_progress=progress,
             ),
+            clip_id=clip["clip_id"],
         )
         self.flash_share(self.edit_share_button)
 

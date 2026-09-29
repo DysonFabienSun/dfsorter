@@ -840,6 +840,8 @@ Share outputs use `.mp4`. Project Export retains the source extension and origin
 
 Confirmed Shares enter the nonmodal Activities queue. The initiating Share control briefly changes to the success color when submission succeeds. The job freezes the clip, selected range, filename choices, and destination at submission. Activities reports encoding time progress, validation, and saving; it retains completion and errors until dismissed. Share jobs are not resumed across application restarts.
 
+A clip has at most one queued, running, or cancelling Share job. Its Share controls in Browse and Editing remain disabled with a spinning progress icon and an in-progress label or tooltip until the job completes, fails, or is cancelled. A new active output job automatically opens Activities when no output jobs were active immediately before submission or resume. This applies to Share and Project Export, even if earlier results remain listed. Automatically opened Activities closes after four seconds unless the menu is used; manual openings remain open until dismissed. Activities has a close control.
+
 Filesystem-invalid characters are sanitized only in the copied filename; catalogue text is not altered.
 
 Existing destination files are never overwritten. Name collisions receive a numeric suffix.
