@@ -234,6 +234,8 @@ def test_library_toolbar_surface_and_alignment(window, application):
             toolbar_color = QColor(THEMES[scheme]["bg_library_toolbar"])
             assert toolbar_image.pixelColor(2, 2) == toolbar_color
             assert toolbar_image.pixelColor(toolbar.width() - 2, toolbar.height() - 1) == toolbar_color
+            toolbar_bottom = toolbar.mapTo(window, QPoint(0, toolbar.height())).y()
+            assert window.library.viewport().mapTo(window, QPoint()).y() == toolbar_bottom
         window.panel("Config")
         application.processEvents()
         assert window.library_toolbar.isHidden()
