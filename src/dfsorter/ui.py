@@ -410,7 +410,7 @@ class Window(QMainWindow):
         navigation.addSpacing(4)
         navigation.addWidget(self.redo_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(16)
-        self.activities_button = tool("list-todo", "Activities", lambda: None)
+        self.activities_button = tool("list-todo", "Output Jobs", lambda: None)
         self.activities_button.setFixedSize(26, 26)
         self.activities_button.setObjectName("activitiesButton")
         self.activities_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -4736,7 +4736,7 @@ class Window(QMainWindow):
         self.browse.update_share()
         completed_edit = self.share_completed and context == ("Editing", self.current_id)
         self.edit_share_button.setEnabled(bool(self.current_id) and not sharing_edit and not completed_edit)
-        hint = ("Share in progress · Open Activities for progress" if sharing_edit
+        hint = ("Share in progress · Open Output Jobs for progress" if sharing_edit
                 else "Shared" if completed_edit else "Share")
         self.edit_share_button.setToolTip(hint)
         self.edit_share_button.setAccessibleName(hint)

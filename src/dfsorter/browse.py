@@ -348,7 +348,7 @@ class BrowsePage(QWidget):
         share_label = "Share in progress" if sharing else "Shared" if completed else "Share"
         if self.share_button.text() != share_label:
             self.share_button.setText(share_label)
-        hint = ("Share in progress · Open Activities for progress" if sharing
+        hint = ("Share in progress · Open Output Jobs for progress" if sharing
                 else "Shared" if completed else "Share")
         self.share_button.setToolTip(hint)
         self.fullscreen_share_button.setToolTip(hint)

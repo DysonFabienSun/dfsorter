@@ -3329,7 +3329,7 @@ def test_activities_bound_parallel_jobs_and_confirm_exit(window, application, mo
     try:
         assert wait_for(application, lambda: first.state == "Running" and export.state == "Running")
         assert second.state == "Queued"
-        assert window.activities_button.toolTip() == "Activities (3)"
+        assert window.activities_button.toolTip() == "Output Jobs (3)"
         assert window.activities_button.property("iconColorRole") == "accent_default"
         assert QApplication.activeModalWidget() is None
 
@@ -3522,7 +3522,7 @@ def test_unfinished_export_is_offered_for_resume_after_restart(window, applicati
     try:
         job = next(job for job in restarted.activities.jobs if job.record_id == "restart-job")
         assert job.state == "Paused" and job.action.text() == "Resume export"
-        assert restarted.activities_button.toolTip() == "Activities (1)"
+        assert restarted.activities_button.toolTip() == "Output Jobs (1)"
         job.action.click()
         assert wait_for(application, lambda: job.state == "Completed")
         assert len(list((tmp_path / "resumed-export").glob("*.mp4"))) == 1
