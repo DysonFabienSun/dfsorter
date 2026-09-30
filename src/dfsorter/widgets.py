@@ -691,10 +691,8 @@ class CaptureFolderDelegate(QStyledItemDelegate):
         painter.setFont(summary_font)
         painter.setPen(QColor(COLORS["text_secondary"]))
         summary_new = data.get("summary_new", "")
-        summary_new_width = min(
-            summary_metrics.horizontalAdvance(summary_new), right - left
-        )
-        summary_width = right - left - summary_new_width
+        summary_new_width = summary_metrics.horizontalAdvance(summary_new)
+        summary_width = max(0, right - left - summary_new_width)
         painter.drawText(
             QRect(left, summary_top, summary_width, summary_metrics.height()),
             Qt.AlignmentFlag.AlignVCenter,
@@ -705,11 +703,9 @@ class CaptureFolderDelegate(QStyledItemDelegate):
         if summary_new:
             painter.setPen(QColor(COLORS["accent_default"]))
             painter.drawText(
-                QRect(left + summary_width, summary_top, summary_new_width, summary_metrics.height()),
+                QRect(right - summary_new_width, summary_top, summary_new_width, summary_metrics.height()),
                 Qt.AlignmentFlag.AlignVCenter,
-                summary_metrics.elidedText(
-                    summary_new, Qt.TextElideMode.ElideRight, summary_new_width
-                ),
+                summary_new,
             )
         detail_top = summary_top + summary_metrics.height() + 2
         painter.setFont(detail_font)
