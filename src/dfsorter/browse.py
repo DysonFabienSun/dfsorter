@@ -182,6 +182,8 @@ class BrowsePage(QWidget):
             window.setUpdatesEnabled(True)
             QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             cover.hide()
+            if enabled and self.player.chrome_enabled:
+                self.player.show_chrome()
             self.fullscreen_transitioning = False
 
     def _set_fullscreen(self, enabled):

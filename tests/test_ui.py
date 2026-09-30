@@ -4812,6 +4812,8 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
     assert player.control_bar.parent() is player.chrome_bottom.content
     assert player.seek.isVisible() and player.control_bar.isVisible()
     assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.chrome_top.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert player.chrome_bottom.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
     assert player.chrome_top.y() == 0
     assert player.chrome_bottom.height() >= 60
     assert player.chrome_bottom.geometry().bottom() == player.video_container.height() - 1
@@ -4829,6 +4831,7 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
         lambda: not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible(),
         timeout=1,
     )
+    player.chrome_timer.setInterval(2500)
     player.last_cursor_position = QCursor.pos()
     target = player.video.mapToGlobal(QPoint(100, 100))
     if target == player.last_cursor_position:
@@ -4836,9 +4839,82 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
     QCursor.setPos(target)
     player.check_cursor_motion()
     assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert wait_for(application, lambda: player.chrome_top.effect.opacity() > 0.95, timeout=1)
+    assert player.chrome_top.content.grab().toImage().pixelColor(24, 8).alpha() > 0
     player.media.pause()
     application.processEvents()
-    assert not player.chrome_timer.isActive()
+    assert player.chrome_timer.isActive()
+    player.chrome_timer.setInterval(80)
+    player.chrome_timer.start()
+    assert wait_for(
+        application,
+        lambda: not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible(),
+        timeout=1,
+    )
+    QTest.mouseClick(player.video_container, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+    player.chrome_timer.setInterval(2500)
+    assert wait_for(
+        application,
+        lambda: player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState,
+    )
+    assert player.fullscreen_feedback.isVisible()
+    assert player.fullscreen_feedback.icon_name == "play"
+    feedback_image = player.fullscreen_feedback.grab().toImage()
+    assert QColor(feedback_image.pixelColor(0, 0)).alpha() == 0
+    assert QColor(feedback_image.pixelColor(20, 56)).alpha() > 0
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert wait_for(application, lambda: not player.fullscreen_feedback.isVisible(), timeout=2)
+    QTest.mouseClick(player.video, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+    assert wait_for(
+        application,
+        lambda: player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState,
+    )
+    assert player.fullscreen_feedback.icon_name == "pause"
+    QTest.keyClick(player, Qt.Key.Key_Up)
+    assert player.fullscreen_feedback.icon_name == "volume-2"
+    readout = player.fullscreen_volume_readout
+    assert readout.isVisible()
+    assert player.fullscreen_feedback.timer.interval() == 330
+    assert readout.timer.interval() == 330
+    assert player.fullscreen_feedback.animation.duration() == 150
+    assert readout.animation.duration() == 150
+    assert readout.text == f"{player.volume.value()}%"
+    assert abs(readout.geometry().center().x() - player.video_container.mapToGlobal(
+        player.video_container.rect().center()
+    ).x()) <= 1
+    assert abs(readout.geometry().center().y() - (
+        player.video_container.mapToGlobal(player.video_container.rect().topLeft()).y()
+        + player.video_container.height() // 5
+    )) <= 1
+    readout_image = readout.grab().toImage()
+    assert readout.width() == readout.height()
+    assert 0 < readout_image.pixelColor(0, 0).alpha() < 100
+    assert wait_for(application, lambda: not readout.isVisible(), timeout=2)
+    player.chrome_timer.setInterval(80)
+    player.chrome_timer.start()
+    assert wait_for(
+        application,
+        lambda: not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible(),
+        timeout=1,
+    )
+    QTest.keyClick(player, Qt.Key.Key_Down)
+    assert player.fullscreen_feedback.icon_name == "volume-1"
+    assert readout.text == f"{player.volume.value()}%"
+    assert not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible()
+    QTest.keyClick(player, Qt.Key.Key_Left)
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.fullscreen_feedback.icon_name == "rewind"
+    QTest.keyClick(player, Qt.Key.Key_Right)
+    assert player.fullscreen_feedback.icon_name == "fast-forward"
+    player.chrome_timer.setInterval(2500)
+    QTest.keyClick(player, Qt.Key.Key_Space)
+    assert wait_for(
+        application,
+        lambda: player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState,
+    )
+    assert player.fullscreen_feedback.icon_name == "play"
+    QTest.mouseClick(player.mute, Qt.MouseButton.LeftButton)
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
     window.set_theme("dark", persist=False)
     application.processEvents()
     assert player.chrome_title.text() == browse.fullscreen_title()

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from .mpv_backend import MpvBackend
 from .theme import COLORS, SIZES, font, role
-from .widgets import set_icon, tool
+from .widgets import icon, set_icon, tool
 
 
 def start_offset_seconds(settings):
@@ -224,6 +224,9 @@ class FullscreenChromePanel(QWidget):
             self.hide()
 
     def fade_to(self, opacity):
+        if (opacity == self.target_opacity and self.isVisible()
+                and self.animation.state() == QPropertyAnimation.State.Running):
+            return
         self.target_opacity = opacity
         self.animation.stop()
         if opacity:
@@ -232,6 +235,70 @@ class FullscreenChromePanel(QWidget):
         self.animation.setStartValue(self.effect.opacity())
         self.animation.setEndValue(opacity)
         self.animation.start()
+
+
+class FullscreenFeedback(QWidget):
+    def __init__(self, parent, text_only=False):
+        super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setWindowFlag(Qt.WindowType.WindowTransparentForInput)
+        self.setFixedSize(88 if text_only else 112, 88 if text_only else 112)
+        self.text_only = text_only
+        self.icon_name = "pause"
+        self.text = ""
+        self.effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.effect)
+        self.animation = QPropertyAnimation(self.effect, b"opacity", self)
+        self.animation.setDuration(150)
+        self.animation.finished.connect(self.finish_fade)
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(330)
+        self.timer.timeout.connect(self.fade_out)
+        self.hide()
+
+    def show_icon(self, name, center):
+        self.icon_name = name
+        self.show_at(center)
+
+    def show_text(self, text, center):
+        self.text = text
+        self.show_at(center)
+
+    def show_at(self, center):
+        self.move(center.x() - self.width() // 2, center.y() - self.height() // 2)
+        self.animation.stop()
+        self.effect.setOpacity(1)
+        self.show()
+        self.raise_()
+        self.update()
+        self.timer.start()
+
+    def fade_out(self):
+        self.animation.setStartValue(1)
+        self.animation.setEndValue(0)
+        self.animation.start()
+
+    def finish_fade(self):
+        if self.effect.opacity() == 0:
+            self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        if self.text_only:
+            painter.fillRect(self.rect(), QColor(0, 0, 0, 55))
+            painter.setPen(QColor(COLORS["player_chrome_text"]))
+            painter.setFont(font("xxl", "bold", base=painter.font()))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text)
+            return
+        painter.setBrush(QColor(0, 0, 0, 175))
+        painter.drawEllipse(self.rect().adjusted(2, 2, -2, -2))
+        glyph = icon(self.icon_name, COLORS["player_chrome_text"], size=52)
+        glyph.paint(painter, self.rect().adjusted(30, 30, -30, -30))
 
 
 class Player(QWidget):
@@ -379,10 +446,13 @@ class Player(QWidget):
         self.chrome_timer.setSingleShot(True)
         self.chrome_timer.setInterval(2500)
         self.chrome_timer.timeout.connect(self.hide_chrome)
+        self.fullscreen_feedback = FullscreenFeedback(self.window())
+        self.fullscreen_volume_readout = FullscreenFeedback(self.window(), text_only=True)
         self.cursor_timer = QTimer(self)
         self.cursor_timer.setInterval(80)
         self.cursor_timer.timeout.connect(self.check_cursor_motion)
         self.last_cursor_position = None
+        self.video.installEventFilter(self)
 
     def update_play_icon(self, state):
         name = "pause" if state == QMediaPlayer.PlaybackState.PlayingState else "play"
@@ -401,11 +471,18 @@ class Player(QWidget):
             return
         self.chrome_enabled = enabled
         if enabled:
+            self.fullscreen_feedback.setParent(
+                self.window(), Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+            )
+            self.fullscreen_volume_readout.setParent(
+                self.window(), Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+            )
             self.chrome_title.setText(title)
             for panel in (self.chrome_top, self.chrome_bottom):
                 panel.setParent(
                     self.window(),
-                    Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint,
+                    Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                    | Qt.WindowType.WindowStaysOnTopHint,
                 )
                 panel.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
             self.layout().removeWidget(self.seek)
@@ -423,6 +500,10 @@ class Player(QWidget):
         else:
             self.chrome_timer.stop()
             self.cursor_timer.stop()
+            for feedback in (self.fullscreen_feedback, self.fullscreen_volume_readout):
+                feedback.timer.stop()
+                feedback.animation.stop()
+                feedback.hide()
             QApplication.instance().removeEventFilter(self)
             self.chrome_top.animation.stop()
             self.chrome_bottom.animation.stop()
@@ -471,13 +552,10 @@ class Player(QWidget):
         self.update_chrome_geometry()
         self.chrome_top.fade_to(1)
         self.chrome_bottom.fade_to(1)
-        if self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.chrome_timer.start()
-        else:
-            self.chrome_timer.stop()
+        self.chrome_timer.start()
 
     def hide_chrome(self):
-        if not self.chrome_enabled or self.media.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+        if not self.chrome_enabled:
             return
         self.chrome_top.fade_to(0)
         self.chrome_bottom.fade_to(0)
@@ -487,16 +565,32 @@ class Player(QWidget):
         if position == self.last_cursor_position:
             return
         self.last_cursor_position = position
-        if self.video_container.rect().contains(self.video_container.mapFromGlobal(position)):
-            self.show_chrome()
+        self.show_chrome()
 
     def eventFilter(self, watched: QObject, event):
         if watched is self.video_container and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self.update_chrome_geometry)
+        if (
+            self.chrome_enabled
+            and watched in (
+                self, self.video, self.video_container, self.chrome_top,
+                self.chrome_top.content, self.chrome_title, self.chrome_bottom,
+                self.chrome_bottom.content,
+            )
+            and event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            self.toggle()
+            return True
         if self.chrome_enabled and event.type() in {
             QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
             QEvent.Type.Wheel, QEvent.Type.KeyPress,
-        }:
+        } and not (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() in {Qt.Key.Key_Up, Qt.Key.Key_Down}
+        ):
+            if event.type() == QEvent.Type.KeyPress:
+                return super().eventFilter(watched, event)
             if watched is self or (
                 isinstance(watched, QWidget)
                 and (
@@ -511,6 +605,21 @@ class Player(QWidget):
     def set_volume(self, value):
         self.audio.setVolume(value / 100)
         self.volume_changed.emit(value)
+
+    def show_fullscreen_feedback(self, name, volume=None):
+        if self.chrome_enabled:
+            self.fullscreen_feedback.show_icon(
+                name, self.video_container.mapToGlobal(self.video_container.rect().center())
+            )
+            if volume is not None:
+                readout_center = self.video_container.mapToGlobal(
+                    self.video_container.rect().center()
+                )
+                readout_center.setY(
+                    self.video_container.mapToGlobal(self.video_container.rect().topLeft()).y()
+                    + self.video_container.height() // 5
+                )
+                self.fullscreen_volume_readout.show_text(f"{volume}%", readout_center)
 
     def set_status(self, message):
         self.status.setText(message)
@@ -565,6 +674,8 @@ class Player(QWidget):
             self.media.pause()
             self.ended = False
         self.media.setPosition(position)
+        if self.chrome_enabled and not preview:
+            self.show_chrome()
         if recover and not preview:
             self.media.play()
 
@@ -697,8 +808,10 @@ class Player(QWidget):
             return
         if self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.media.pause()
+            self.show_fullscreen_feedback("pause")
         else:
             self.media.play()
+            self.show_fullscreen_feedback("play")
 
     def animate_fast_indicator(self):
         colors = [COLORS["focus"], COLORS["accent_default"], COLORS["text_disabled"]]

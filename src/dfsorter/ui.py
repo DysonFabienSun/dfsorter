@@ -3729,6 +3729,10 @@ class Window(QMainWindow):
                         volume.setValue(min(100, (current // 5 + 1) * 5))
                     else:
                         volume.setValue(max(0, (current - 1) // 5 * 5))
+                    self.browse.player.show_fullscreen_feedback(
+                        "volume-2" if key == Qt.Key.Key_Up else "volume-1",
+                        volume.value(),
+                    )
                     return True
             if (
                 key in {Qt.Key.Key_F, Qt.Key.Key_F11}
@@ -3834,6 +3838,10 @@ class Window(QMainWindow):
                     ),
                 )
             )
+            if player is self.browse.player and self.browse.fullscreen_state is not None:
+                player.show_fullscreen_feedback(
+                    "fast-forward" if key == Qt.Key.Key_Right else "rewind"
+                )
             return True
         if self.current_panel == "Editing" and key == Qt.Key.Key_Question:
             self.show_shortcuts()
