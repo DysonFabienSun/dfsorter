@@ -104,6 +104,7 @@ from .widgets import (
     icon,
     refresh_icons,
     set_icon,
+    success_check_icon,
     tag_prefix,
     tool,
 )
@@ -369,6 +370,10 @@ class Window(QMainWindow):
         self.range_block_message = ""
         self.worker = None
         self.share_flash_timers = {}
+        self.share_context = None
+        self.share_watched_job = None
+        self.share_completed = False
+        self.share_ignored_jobs = set()
         self.refreshing = False
         self.positioned_clip_pages = set()
         self.prepared_clips = {}
@@ -1301,6 +1306,7 @@ class Window(QMainWindow):
         refresh_icons(self)
         if self.share_spinner.isActive():
             self.advance_share_spinner()
+        self.update_share_controls()
         for glyph in self.findChildren(QLabel):
             name = glyph.property("headingIcon")
             if name:
@@ -1960,6 +1966,11 @@ class Window(QMainWindow):
             self.thumbnails.retain(set())
         changing_panel = name != self.current_panel
         if changing_panel:
+            if self.share_watched_job is not None:
+                self.share_ignored_jobs.add(id(self.share_watched_job))
+            self.share_context = None
+            self.share_watched_job = None
+            self.share_completed = False
             self.remember_library_page(self.current_panel)
         entering_browse = name == "Browse" and self.current_panel != "Browse"
         if entering_browse:
@@ -4681,20 +4692,55 @@ class Window(QMainWindow):
         timer.start(1200)
 
     def update_share_controls(self):
-        self.browse.update_share()
+        context = (
+            ("Browse", self.browse.clip["clip_id"]) if self.current_panel == "Browse" and self.browse.clip
+            else ("Editing", self.current_id) if self.current_panel == "Editing" and self.current_id
+            else None
+        )
+        if context != self.share_context:
+            if (
+                self.share_watched_job is not None
+                and self.share_context is not None
+                and (context is None or context[1] != self.share_context[1])
+            ):
+                self.share_ignored_jobs.add(id(self.share_watched_job))
+            self.share_context = context
+            self.share_watched_job = None
+            self.share_completed = False
+        active_job = self.activities.active_share(context[1]) if context else None
+        if active_job and id(active_job) not in self.share_ignored_jobs:
+            self.share_watched_job = active_job
+            self.share_completed = False
+        elif self.share_watched_job:
+            self.share_completed = self.share_watched_job.state == "Completed"
+            self.share_watched_job = None
+        self.share_ignored_jobs.intersection_update(
+            id(job) for job in self.activities.jobs
+            if job.kind == "Share" and job.state in {"Queued", "Running", "Cancelling"}
+        )
         sharing_browse = bool(self.browse.clip and self.activities.active_share(
             self.browse.clip["clip_id"]
         ))
         sharing_edit = bool(self.activities.active_share(self.current_id))
-        self.edit_share_button.setEnabled(bool(self.current_id) and not sharing_edit)
-        hint = "Share in progress · Open Activities for progress" if sharing_edit else "Share"
-        self.edit_share_button.setToolTip(hint)
-        self.edit_share_button.setAccessibleName(hint)
         if not sharing_browse:
             self.browse.share_button.setIcon(QIcon())
             set_icon(self.browse.fullscreen_share_button, "share-2")
+        self.browse.update_share()
+        completed_edit = self.share_completed and context == ("Editing", self.current_id)
+        self.edit_share_button.setEnabled(bool(self.current_id) and not sharing_edit and not completed_edit)
+        hint = ("Share in progress · Open Activities for progress" if sharing_edit
+                else "Shared" if completed_edit else "Share")
+        self.edit_share_button.setToolTip(hint)
+        self.edit_share_button.setAccessibleName(hint)
+        if self.edit_share_button.property("shareCompleted") != completed_edit:
+            self.edit_share_button.setProperty("shareCompleted", completed_edit)
+            self.edit_share_button.style().unpolish(self.edit_share_button)
+            self.edit_share_button.style().polish(self.edit_share_button)
         if not sharing_edit:
-            set_icon(self.edit_share_button, "share-2")
+            if completed_edit:
+                self.edit_share_button.setIcon(success_check_icon(20))
+            else:
+                set_icon(self.edit_share_button, "share-2")
         if sharing_edit or sharing_browse:
             if not self.share_spinner.isActive():
                 self.share_spinner.start()
@@ -4734,6 +4780,8 @@ class Window(QMainWindow):
             self.error(error)
             return
         if self.activities.active_share(clip["clip_id"]):
+            return
+        if self.share_completed and self.share_context == ("Editing", clip["clip_id"]):
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Share clip")

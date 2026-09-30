@@ -24,7 +24,7 @@ from .deletion import delete_reviewed, preview
 from .output import share_clip
 from .playback import Player
 from .theme import COLORS, role, title_styles
-from .widgets import set_icon, tag_prefix, tool
+from .widgets import set_icon, success_check_icon, tag_prefix, tool
 
 
 class BrowsePage(QWidget):
@@ -334,19 +334,35 @@ class BrowsePage(QWidget):
             return
         available = bool(self.clip and Path(self.clip["source_path"]).is_file())
         sharing = bool(self.clip and self.window.activities.active_share(self.clip["clip_id"]))
+        completed = bool(
+            self.clip and self.window.share_completed
+            and self.window.share_context == ("Browse", self.clip["clip_id"])
+        )
         self.delete_button.setEnabled(available)
-        self.fullscreen_share_button.setEnabled(available and not sharing)
-        share_label = "Share in progress" if sharing else "Share"
+        self.fullscreen_share_button.setEnabled(available and not sharing and not completed)
+        share_label = "Share in progress" if sharing else "Shared" if completed else "Share"
         if self.share_button.text() != share_label:
             self.share_button.setText(share_label)
-        hint = "Share in progress · Open Activities for progress" if sharing else "Share"
+        hint = ("Share in progress · Open Activities for progress" if sharing
+                else "Shared" if completed else "Share")
         self.share_button.setToolTip(hint)
         self.fullscreen_share_button.setToolTip(hint)
         self.fullscreen_share_button.setAccessibleName(hint)
+        for control in (self.share_button, self.fullscreen_share_button):
+            if control.property("shareCompleted") != completed:
+                control.setProperty("shareCompleted", completed)
+                control.style().unpolish(control)
+                control.style().polish(control)
+        self.share_button.setLayoutDirection(
+            Qt.LayoutDirection.RightToLeft if completed else Qt.LayoutDirection.LeftToRight
+        )
+        if completed:
+            self.share_button.setIcon(success_check_icon(16))
+            self.fullscreen_share_button.setIcon(success_check_icon(20))
         for control in self.marker_buttons:
             control.setEnabled(available and self.player.media.duration() > 0)
         self.share_button.setEnabled(
-            available and not sharing and bool(self.custom_title.text().strip())
+            available and not sharing and not completed and bool(self.custom_title.text().strip())
             and bool(self.destination.text().strip())
             and (not self.mode.currentData() or self.valid_range())
         )

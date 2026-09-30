@@ -262,6 +262,14 @@ def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0):
     return result
 
 
+def success_check_icon(size=20):
+    check = icon("check", COLORS["status_success"], size=size).pixmap(size, size)
+    result = QIcon()
+    result.addPixmap(check, QIcon.Mode.Normal)
+    result.addPixmap(check, QIcon.Mode.Disabled)
+    return result
+
+
 def set_icon(control, name, color_role=None, *, size=24, y_offset=0, right_padding=0):
     control.setProperty("iconName", name)
     control.setProperty("iconColorRole", color_role)

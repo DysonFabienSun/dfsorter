@@ -234,7 +234,7 @@ Center receives extra space as window grows. Splitters separate panes without de
 
 Activities sits between Redo and Theme as an icon-only 26 px navigation utility with no menu arrow. Its icon and outline share a vertical center; the icon turns cyan while output jobs are active, and its tooltip gives the outstanding count. Its compact dropdown shows each job's name, phase, progress bar and Cancel, Resume or Dismiss action. Failures use danger text. A successfully submitted Share briefly uses the shared success palette on its initiating control.
 
-The dropdown has a compact heading and a top-right Close icon. On an automatic opening it closes after four seconds unless the menu receives pointer or keyboard input; manual openings do not start this timer. While the current clip has a queued, running, or cancelling Share, its Browse button reads **Share in progress** with a spinning disabled icon, and icon-only Share controls show the same status in their tooltip and accessible name.
+The dropdown has a compact heading and a top-right Close icon. On an automatic opening it closes after four seconds unless the menu receives pointer or keyboard input; manual openings do not start this timer. While the current clip has a queued, running, or cancelling Share, its Browse button reads **Share in progress** with a spinning disabled icon, and icon-only Share controls show the same status in their tooltip and accessible name. After a visible Share completes successfully, the Browse button reads **Shared** with a checkmark on the right; Browse fullscreen and Editing icon controls show a green checkmark with a **Shared** tooltip. These controls use the shared success palette and stay disabled until the clip or pane changes.
 
 ### Left pane
 

@@ -3383,6 +3383,8 @@ def test_share_is_single_per_clip_across_browse_and_editing(window, application,
         try:
             assert wait_for(application, lambda: job.state == "Completed", timeout=6)
             assert window.edit_share_button.isEnabled()
+            assert window.edit_share_button.toolTip() == "Share"
+            assert window.edit_share_button.property("shareCompleted") is False
         finally:
             window.discard_atomic_edit()
     assert wait_for(application, lambda: job.state == "Completed")
@@ -3391,6 +3393,63 @@ def test_share_is_single_per_clip_across_browse_and_editing(window, application,
     assert browse.share_button.isEnabled()
     assert browse.share_button.text() == "Share"
     assert browse.share_button.icon().isNull()
+
+
+def test_completed_share_clears_after_browse_clip_change(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.panel("Browse")
+    browse = window.browse
+    browse.custom_title.setText("Example")
+    browse.destination.setText(str(tmp_path / "shares"))
+    job = window.activities.submit(
+        "Share", "Share example", lambda cancelled, progress: "done", clip_id=clip_id,
+    )
+    assert wait_for(application, lambda: job.state == "Completed")
+    assert browse.share_button.text() == "Shared"
+    assert not browse.share_button.isEnabled()
+    assert browse.share_button.property("shareCompleted") is True
+    assert browse.share_button.icon().isNull() is False
+    assert browse.fullscreen_share_button.property("shareCompleted") is True
+    assert not browse.fullscreen_share_button.isEnabled()
+    browse.load(None)
+    browse.load(window.catalogue.clip(clip_id))
+    browse.custom_title.setText("Example")
+    assert browse.share_button.text() == "Share"
+    assert browse.share_button.isEnabled()
+    assert browse.share_button.property("shareCompleted") is False
+
+
+def test_failed_share_restores_share_control(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.panel("Browse")
+    browse = window.browse
+    browse.custom_title.setText("Example")
+    browse.destination.setText(str(tmp_path / "shares"))
+
+    def fail(cancelled, progress):
+        raise ValueError("failed")
+
+    job = window.activities.submit("Share", "Share example", fail, clip_id=clip_id)
+    assert wait_for(application, lambda: job.state == "Failed")
+    assert browse.share_button.text() == "Share"
+    assert browse.share_button.isEnabled()
+
+
+def test_editing_share_completion_clears_on_pane_change(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    window.start_atomic_edit(clip_id, "Home")
+    job = window.activities.submit(
+        "Share", "Share example", lambda cancelled, progress: "done", clip_id=clip_id,
+    )
+    assert wait_for(application, lambda: job.state == "Completed")
+    assert not window.edit_share_button.isEnabled()
+    assert window.edit_share_button.toolTip() == "Shared"
+    assert window.edit_share_button.property("shareCompleted") is True
+    window.discard_atomic_edit()
+    window.panel("Home")
+    window.start_atomic_edit(clip_id, "Home")
+    assert window.edit_share_button.isEnabled()
+    assert window.edit_share_button.toolTip() == "Share"
 
 
 def test_activities_auto_open_close_and_repeat_after_idle(window, application):
