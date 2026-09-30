@@ -180,6 +180,9 @@ class BrowsePage(QWidget):
             self.player.video_container.layout_paused = False
             self.player.video_container.layout_surface()
             window.setUpdatesEnabled(True)
+            if enabled and self.player.chrome_enabled:
+                self.player.chrome_top.setUpdatesEnabled(True)
+                self.player.chrome_bottom.setUpdatesEnabled(True)
             QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             cover.hide()
             if enabled and self.player.chrome_enabled:

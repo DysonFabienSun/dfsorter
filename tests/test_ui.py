@@ -4812,11 +4812,19 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
     assert player.control_bar.parent() is player.chrome_bottom.content
     assert player.seek.isVisible() and player.control_bar.isVisible()
     assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
-    assert player.chrome_top.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
-    assert player.chrome_bottom.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert player.chrome_timer.interval() == 1700
+    assert not player.chrome_top.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert not player.chrome_bottom.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    assert player.chrome_top.updatesEnabled() and player.chrome_bottom.updatesEnabled()
     assert player.chrome_top.y() == 0
     assert player.chrome_bottom.height() >= 60
     assert player.chrome_bottom.geometry().bottom() == player.video_container.height() - 1
+    QCoreApplication.sendEvent(application, QEvent(QEvent.Type.ApplicationDeactivate))
+    assert not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible()
+    QCoreApplication.sendEvent(application, QEvent(QEvent.Type.ApplicationActivate))
+    assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.chrome_top.animation.duration() == 60
+    assert player.chrome_bottom.animation.duration() == 60
     assert player.previous_button.x() < player.play.x() < player.next_button.x()
     assert browse.fullscreen_share_button.isVisible()
 
@@ -4831,7 +4839,9 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
         lambda: not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible(),
         timeout=1,
     )
-    player.chrome_timer.setInterval(2500)
+    assert player.chrome_top.animation.duration() == 180
+    assert player.chrome_bottom.animation.duration() == 180
+    player.chrome_timer.setInterval(1700)
     player.last_cursor_position = QCursor.pos()
     target = player.video.mapToGlobal(QPoint(100, 100))
     if target == player.last_cursor_position:
@@ -4839,6 +4849,8 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
     QCursor.setPos(target)
     player.check_cursor_motion()
     assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.chrome_top.animation.duration() == 60
+    assert player.chrome_bottom.animation.duration() == 60
     assert wait_for(application, lambda: player.chrome_top.effect.opacity() > 0.95, timeout=1)
     assert player.chrome_top.content.grab().toImage().pixelColor(24, 8).alpha() > 0
     player.media.pause()
@@ -4852,7 +4864,7 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
         timeout=1,
     )
     QTest.mouseClick(player.video_container, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
-    player.chrome_timer.setInterval(2500)
+    player.chrome_timer.setInterval(1700)
     assert wait_for(
         application,
         lambda: player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState,
@@ -4903,10 +4915,12 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
     assert not player.chrome_top.isVisible() and not player.chrome_bottom.isVisible()
     QTest.keyClick(player, Qt.Key.Key_Left)
     assert player.chrome_top.isVisible() and player.chrome_bottom.isVisible()
+    assert player.chrome_top.animation.duration() == 60
+    assert player.chrome_bottom.animation.duration() == 60
     assert player.fullscreen_feedback.icon_name == "rewind"
     QTest.keyClick(player, Qt.Key.Key_Right)
     assert player.fullscreen_feedback.icon_name == "fast-forward"
-    player.chrome_timer.setInterval(2500)
+    player.chrome_timer.setInterval(1700)
     QTest.keyClick(player, Qt.Key.Key_Space)
     assert wait_for(
         application,

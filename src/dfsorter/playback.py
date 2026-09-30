@@ -230,8 +230,11 @@ class FullscreenChromePanel(QWidget):
         self.target_opacity = opacity
         self.animation.stop()
         if opacity:
+            if not self.isVisible():
+                self.effect.setOpacity(0)
             self.show()
             self.raise_()
+        self.animation.setDuration(60 if opacity else 180)
         self.animation.setStartValue(self.effect.opacity())
         self.animation.setEndValue(opacity)
         self.animation.start()
@@ -444,7 +447,7 @@ class Player(QWidget):
         self.chrome_bottom_layout.setSpacing(2)
         self.chrome_timer = QTimer(self)
         self.chrome_timer.setSingleShot(True)
-        self.chrome_timer.setInterval(2500)
+        self.chrome_timer.setInterval(1700)
         self.chrome_timer.timeout.connect(self.hide_chrome)
         self.fullscreen_feedback = FullscreenFeedback(self.window())
         self.fullscreen_volume_readout = FullscreenFeedback(self.window(), text_only=True)
@@ -481,8 +484,7 @@ class Player(QWidget):
             for panel in (self.chrome_top, self.chrome_bottom):
                 panel.setParent(
                     self.window(),
-                    Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
-                    | Qt.WindowType.WindowStaysOnTopHint,
+                    Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint,
                 )
                 panel.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
             self.layout().removeWidget(self.seek)
@@ -547,7 +549,7 @@ class Player(QWidget):
         self.chrome_bottom.raise_()
 
     def show_chrome(self):
-        if not self.chrome_enabled:
+        if not self.chrome_enabled or QApplication.applicationState() != Qt.ApplicationState.ApplicationActive:
             return
         self.update_chrome_geometry()
         self.chrome_top.fade_to(1)
@@ -568,6 +570,14 @@ class Player(QWidget):
         self.show_chrome()
 
     def eventFilter(self, watched: QObject, event):
+        if self.chrome_enabled and watched is QApplication.instance():
+            if event.type() == QEvent.Type.ApplicationDeactivate:
+                self.chrome_timer.stop()
+                for panel in (self.chrome_top, self.chrome_bottom):
+                    panel.animation.stop()
+                    panel.hide()
+            elif event.type() == QEvent.Type.ApplicationActivate:
+                self.show_chrome()
         if watched is self.video_container and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self.update_chrome_geometry)
         if (
