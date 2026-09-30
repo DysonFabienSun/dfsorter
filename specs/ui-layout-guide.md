@@ -153,7 +153,10 @@ General playback settings use the existing grouped controls. Separate start posi
 outlined group with aligned Browse, Editing and Export enable and seconds controls; the unified
 enable and seconds controls are hidden while that group is shown.
 Use 8 px between controls within Settings groups and 12 px between groups. The playback seconds
-fields use a compact spin-box height so checkbox rows remain evenly spaced.
+fields are 52 px wide, with compact arrows, and fit the full `999 s` value. Use a compact
+spin-box height with a 1 px top and 3 px bottom margin so each complete frame sits slightly
+above its checkbox text. Shift the value text 1 px upward within the frame for even vertical
+padding. Keep this styling consistent in unified and separate Browse, Editing and Export rows.
 
 System resolves through Qt's operating-system color-scheme API and updates while DFSorter is
 running when the system scheme changes. DFSorter still uses the palettes above; System does

@@ -268,8 +268,8 @@ def stylesheet():
             selection-color: %(text_primary)s;
         }
         QLineEdit, QComboBox, QSpinBox { min-height: 18px; }
-        QSpinBox[playbackOffset="true"] { min-height: 16px; padding: 2px 8px; }
-        QSpinBox[playbackOffset="true"]:focus { padding: 1px 7px; }
+        QSpinBox[playbackOffset="true"] { min-height: 15px; padding: 0px 2px; margin-top: 1px; margin-bottom: 3px; }
+        QSpinBox[playbackOffset="true"]:focus { padding: 1px 1px; }
         QComboBox { padding: 4px 28px 4px 8px; }
         QComboBox#browseShareMode { padding-right: 20px; }
         QComboBox::drop-down {
@@ -280,6 +280,8 @@ def stylesheet():
         QSpinBox::up-button, QSpinBox::down-button {
             subcontrol-origin: border; width: 20px; border: none; background: transparent;
         }
+        QSpinBox[playbackOffset="true"]::up-button,
+        QSpinBox[playbackOffset="true"]::down-button { width: 12px; }
         QSpinBox::up-button { subcontrol-position: top right; }
         QSpinBox::down-button { subcontrol-position: bottom right; }
         QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: %(surface_hover)s; }

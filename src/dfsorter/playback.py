@@ -21,7 +21,7 @@ from .widgets import icon, set_icon, tool
 
 def start_offset_seconds(settings):
     value = settings.get("start_near_end_seconds", 40)
-    return value if type(value) is int and 1 <= value <= 86400 else 40
+    return min(value, 999) if type(value) is int and value >= 1 else 40
 
 
 def playback_start_settings(settings, pane):
@@ -30,7 +30,7 @@ def playback_start_settings(settings, pane):
     if settings.get("start_near_end_separate", False):
         enabled = settings.get(f"start_near_end_{pane.lower()}_enabled", enabled)
         value = settings.get(f"start_near_end_{pane.lower()}_seconds", seconds)
-        seconds = value if type(value) is int and 1 <= value <= 86400 else seconds
+        seconds = min(value, 999) if type(value) is int and value >= 1 else seconds
     return enabled, seconds
 
 

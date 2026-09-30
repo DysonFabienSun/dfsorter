@@ -1452,12 +1452,22 @@ def test_playback_preferences_persist(window, application):
 
 
 def test_separate_playback_preferences_persist(window, application):
-    from dfsorter.playback import playback_start_settings
+    from dfsorter.playback import playback_start_settings, start_offset_seconds
 
     settings = SettingsDialog(window)
     assert settings.start_offset.property("playbackOffset") is True
-    assert settings.start_offset.sizeHint().height() <= 28
-    assert settings.start_offset.width() == 104
+    assert settings.start_offset.sizeHint().height() <= 29
+    assert settings.start_offset.width() == 52
+    assert settings.start_offset.maximum() == 999
+    assert settings.start_offset.lineEdit().textMargins().bottom() == 1
+    assert start_offset_seconds({"start_near_end_seconds": 86400}) == 999
+    assert playback_start_settings(
+        {
+            "start_near_end_separate": True,
+            "start_near_end_browse_seconds": 86400,
+        },
+        "Browse",
+    ) == (True, 999)
     settings.start_offset.setValue(17)
     settings.separate_start.setChecked(True)
     assert settings.start_near_end.isHidden()
@@ -1466,7 +1476,9 @@ def test_separate_playback_preferences_persist(window, application):
     for check, offset in settings.pane_start_controls.values():
         assert check.isChecked()
         assert offset.value() == 17
-        assert offset.width() == 104
+        assert offset.width() == 52
+        assert offset.maximum() == 999
+        assert offset.lineEdit().textMargins().bottom() == 1
         assert offset.sizeHint().height() == settings.start_offset.sizeHint().height()
     browse_check, browse_offset = settings.pane_start_controls["Browse"]
     editing_check, editing_offset = settings.pane_start_controls["Editing"]
