@@ -208,6 +208,7 @@ def stylesheet():
         "spin_up_chevron": (
             ROOT / "resources/icons/chevron-up.svg"
         ).as_posix(),
+        "check_icon": (ROOT / "resources/icons/check.svg").as_posix(),
     }
     return (
         """
@@ -228,6 +229,9 @@ def stylesheet():
         QWidget#fullscreenChromeContent QToolButton:disabled { background: transparent; border-color: transparent; color: rgba(241, 244, 246, 110); }
         QWidget#pageLoading, QWidget#commandCover { background: %(surface_workspace)s; }
         QLabel { background: transparent; }
+        QCheckBox { background: transparent; }
+        QCheckBox::indicator { background: %(surface_control)s; border: 1px solid %(border_default)s; border-radius: 3px; width: 14px; height: 14px; }
+        QCheckBox::indicator:checked { background: %(accent_default)s; border-color: %(accent_default)s; image: url("%(check_icon)s"); }
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
@@ -264,6 +268,8 @@ def stylesheet():
             selection-color: %(text_primary)s;
         }
         QLineEdit, QComboBox, QSpinBox { min-height: 18px; }
+        QSpinBox[playbackOffset="true"] { min-height: 16px; padding: 2px 8px; }
+        QSpinBox[playbackOffset="true"]:focus { padding: 1px 7px; }
         QComboBox { padding: 4px 28px 4px 8px; }
         QComboBox#browseShareMode { padding-right: 20px; }
         QComboBox::drop-down {

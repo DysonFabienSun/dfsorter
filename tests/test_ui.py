@@ -1422,6 +1422,7 @@ def test_playback_preferences_persist(window, application):
     }
     assert group_headings == {"Browse · Editing · Export", "Editing"}
     assert settings.start_near_end.isChecked()
+    assert not settings.separate_start.isChecked()
     assert settings.start_offset.value() == 40
     assert settings.start_offset.singleStep() == 5
     settings.start_offset.stepUp()
@@ -1443,10 +1444,126 @@ def test_playback_preferences_persist(window, application):
         assert restarted.player.settings["start_near_end_seconds"] == 17
         assert restarted.browse.player.settings["start_near_end_seconds"] == 17
         assert restarted.export_player.settings["start_near_end_enabled"] is False
+        assert not restored.separate_start.isChecked()
         restored.close()
     finally:
         restarted.close()
         application.processEvents()
+
+
+def test_separate_playback_preferences_persist(window, application):
+    from dfsorter.playback import playback_start_settings
+
+    settings = SettingsDialog(window)
+    assert settings.start_offset.property("playbackOffset") is True
+    assert settings.start_offset.sizeHint().height() <= 28
+    assert settings.start_offset.width() == 104
+    settings.start_offset.setValue(17)
+    settings.separate_start.setChecked(True)
+    assert settings.start_near_end.isHidden()
+    assert settings.start_offset.isHidden()
+    assert not settings.separate_start_group.isHidden()
+    for check, offset in settings.pane_start_controls.values():
+        assert check.isChecked()
+        assert offset.value() == 17
+        assert offset.width() == 104
+        assert offset.sizeHint().height() == settings.start_offset.sizeHint().height()
+    browse_check, browse_offset = settings.pane_start_controls["Browse"]
+    editing_check, editing_offset = settings.pane_start_controls["Editing"]
+    export_check, export_offset = settings.pane_start_controls["Export"]
+    browse_check.setChecked(False)
+    editing_offset.setValue(23)
+    export_offset.setValue(31)
+    settings.separate_start.setChecked(False)
+    assert settings.start_offset.value() == 17
+    settings.start_offset.setValue(19)
+    settings.separate_start.setChecked(True)
+    assert not browse_check.isChecked()
+    assert browse_offset.value() == 17
+    assert editing_check.isChecked() and editing_offset.value() == 23
+    assert export_check.isChecked() and export_offset.value() == 31
+    assert not browse_offset.isEnabled()
+    assert (window.browse.player.pane, window.player.pane, window.export_player.pane) == (
+        "Browse", "Editing", "Export"
+    )
+    assert playback_start_settings(window.settings, "Browse") == (False, 17)
+    assert playback_start_settings(window.settings, "Editing") == (True, 23)
+    assert playback_start_settings(window.settings, "Export") == (True, 31)
+    settings.close()
+    restarted = Window(window.root)
+    try:
+        restored = SettingsDialog(restarted)
+        assert restored.separate_start.isChecked()
+        assert restored.start_offset.value() == 19
+        assert not restored.pane_start_controls["Browse"][0].isChecked()
+        assert restored.pane_start_controls["Editing"][1].value() == 23
+        assert restored.pane_start_controls["Export"][1].value() == 31
+        assert playback_start_settings(restarted.settings, "Browse") == (False, 17)
+        restored.close()
+    finally:
+        restarted.close()
+        application.processEvents()
+
+
+def test_settings_empty_space_clears_checkbox_focus(window, application):
+    settings = SettingsDialog(window)
+    settings.show()
+    application.processEvents()
+    settings.separate_start.setChecked(True)
+    settings.separate_start.setFocus()
+    assert settings.separate_start.hasFocus()
+    tabs = settings.findChild(QTabWidget)
+    general = tabs.widget(0)
+    assert general.focusPolicy() == Qt.FocusPolicy.NoFocus
+    QTest.mouseClick(general, Qt.MouseButton.LeftButton, pos=QPoint(general.width() - 8, 8))
+    assert not settings.separate_start.hasFocus()
+    settings.separate_start.setFocus()
+    QTest.mouseClick(settings, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+    assert not settings.separate_start.hasFocus()
+    settings.close()
+
+
+def test_main_window_close_ends_open_settings_dialog(window, application):
+    import yaml
+    window.open_settings()
+    dialog = window.settings_dialog
+    dialog.start_offset.setValue(27)
+    assert window.close()
+    assert not dialog.isVisible()
+    assert not window.isVisible()
+    assert window.settings_dialog is None
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
+        "start_near_end_seconds"
+    ] == 27
+
+
+def test_settings_dialog_blocks_main_window_controls(window, application):
+    window.open_settings()
+    dialog = window.settings_dialog
+    assert dialog.isVisible()
+    QTest.mouseClick(window.nav["Browse"], Qt.MouseButton.LeftButton)
+    assert window.current_panel == "Home"
+    dialog.start_offset.setValue(26)
+    assert window.settings["start_near_end_seconds"] == 26
+    dialog.close()
+    application.processEvents()
+    assert window.settings_dialog is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows taskbar close behavior")
+def test_windows_close_message_ends_open_settings_dialog(window, application):
+    import ctypes
+
+    import yaml
+    window.open_settings()
+    window.settings_dialog.start_offset.setValue(29)
+    assert ctypes.windll.user32.PostMessageW(int(window.winId()), 0x0112, 0xF060, 0)
+    assert wait_for(application, lambda: not window.isVisible())
+    assert not window.isVisible()
+    assert window.settings_dialog is None
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))[
+        "start_near_end_seconds"
+    ] == 29
 
 
 def test_theme_switching_and_persistence(window, application):

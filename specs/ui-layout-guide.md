@@ -149,6 +149,12 @@ default when no preference exists. The selection is saved in `data/settings.yaml
 immediately to all application-owned windows, menus, dialogs, custom-painted controls, rich
 text and icons.
 
+General playback settings use the existing grouped controls. Separate start positions show an
+outlined group with aligned Browse, Editing and Export enable and seconds controls; the unified
+enable and seconds controls are hidden while that group is shown.
+Use 8 px between controls within Settings groups and 12 px between groups. The playback seconds
+fields use a compact spin-box height so checkbox rows remain evenly spaced.
+
 System resolves through Qt's operating-system color-scheme API and updates while DFSorter is
 running when the system scheme changes. DFSorter still uses the palettes above; System does
 not delegate its component design to the platform. A sun/moon icon button appears between
@@ -178,6 +184,8 @@ Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallbac
 Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; card metadata uses 12 px. Editing working titles use 13 px regular metadata in `text.secondary`, 13 px regular game codes and separators in `text.muted`, and 16 px bold mainline in `text.primary`. Separate metadata and mainline with ` | ` only when both are present. Retain wrapping. When no populated field contributes to the configured title display order, show the original filename followed by a smaller, secondary-colored “— Working title not set” hint. Section headings use 22 px semibold text with a centered 24 px leading icon. Heading icons have no backing fill and use pure black in Light mode and pure white in Dark mode. Apply this shared style to Home, Session, and future section headings. Compact pane headings use 16 px semibold primary text; Projects has a centered 16 px leading icon with the same theme-dependent color and no backing fill. Raise icon-bearing heading text optically so its painted center aligns with the icon. The Session clips header uses the shared flat library toolbar surface, shows the numeric session position as secondary text beside its title, and keeps its right action near the pane edge. Avoid excessive bold text and bordered metadata boxes. Format multi-value metadata as readable comma-separated text, never Python list syntax.
 
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; structural panels and grouped containers use at most 2 px. Avoid simultaneously visible nested rounded container contours within 16 logical pixels: remove redundant framing or square the inner container. This rule excludes ordinary controls, menus, tooltips and transient row highlights. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
+
+Checkbox label areas remain transparent so their text sits on the actual parent surface in every theme and container, including subtle and outlined groups. The indicator itself retains a visible square border when unchecked and a filled, marked square when checked. Keep the focus state without painting a separate background behind the label. Check new checkbox controls on their intended parent surface in both themes.
 
 ### Surface and border hierarchy
 

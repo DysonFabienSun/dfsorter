@@ -24,6 +24,16 @@ def start_offset_seconds(settings):
     return value if type(value) is int and 1 <= value <= 86400 else 40
 
 
+def playback_start_settings(settings, pane):
+    enabled = settings.get("start_near_end_enabled", True)
+    seconds = start_offset_seconds(settings)
+    if settings.get("start_near_end_separate", False):
+        enabled = settings.get(f"start_near_end_{pane.lower()}_enabled", enabled)
+        value = settings.get(f"start_near_end_{pane.lower()}_seconds", seconds)
+        seconds = value if type(value) is int and 1 <= value <= 86400 else seconds
+    return enabled, seconds
+
+
 def playback_volume(settings):
     value = settings.get("playback_volume", 60)
     return value if type(value) is int and 0 <= value <= 100 else 60
@@ -313,9 +323,10 @@ class Player(QWidget):
     next = Signal()
     volume_changed = Signal(int)
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, pane="Editing"):
         super().__init__()
         self.settings = settings if settings is not None else {}
+        self.pane = pane
         self.chrome_enabled = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         layout = QVBoxLayout(self)
@@ -690,6 +701,7 @@ class Player(QWidget):
             self.media.play()
 
     def load(self, clip):
+        self.loaded_start_settings = playback_start_settings(self.settings, self.pane)
         self.video_container.clear_prepared_frame()
         self.prepared_image = None
         self.prepared_position = None
@@ -736,9 +748,10 @@ class Player(QWidget):
                 and 0 <= start < end <= self.media.duration()
             )
             fallback = 0
-            if self.settings.get("start_near_end_enabled", True):
+            enabled, seconds = playback_start_settings(self.settings, self.pane)
+            if enabled:
                 fallback = max(
-                    0, self.media.duration() - start_offset_seconds(self.settings) * 1000
+                    0, self.media.duration() - seconds * 1000
                 )
             self.media.setPosition(start if valid_range else fallback)
         elif self.awaiting_frame:

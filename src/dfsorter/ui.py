@@ -83,7 +83,7 @@ from .parsing import (
     preview_command_details,
     query_clips,
 )
-from .playback import Player, playback_volume
+from .playback import Player, playback_start_settings, playback_volume
 from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -1183,7 +1183,7 @@ class Window(QMainWindow):
         self.export_project = QComboBox()
         self.export_project.currentIndexChanged.connect(self.export_selection)
         exporting.addWidget(self.export_project)
-        self.export_player = Player(self.settings)
+        self.export_player = Player(self.settings, pane="Export")
         self.export_player.volume_changed.connect(self.set_playback_volume)
         self.export_player.previous_button.hide()
         self.export_player.next_button.hide()
@@ -1272,10 +1272,18 @@ class Window(QMainWindow):
     def open_settings(self):
         if self.atomic_edit:
             return
+        if getattr(self, "settings_dialog", None) is not None:
+            self.settings_dialog.raise_()
+            self.settings_dialog.activateWindow()
+            return
         dialog = SettingsDialog(self)
         self.settings_dialog = dialog
-        dialog.exec()
-        self.settings_dialog = None
+        dialog.finished.connect(lambda: self.close_settings_dialog(dialog))
+        dialog.show()
+
+    def close_settings_dialog(self, dialog):
+        if self.settings_dialog is dialog:
+            self.settings_dialog = None
         dialog.deleteLater()
 
     def check_for_updates(self, *, quiet=False):
@@ -1588,7 +1596,10 @@ class Window(QMainWindow):
         return (
             clip is not None
             and player.loaded_clip is not None
-            and self.clip_load_key(player.loaded_clip) == self.clip_load_key(clip)
+            and getattr(player, "loaded_start_settings", None)
+            == playback_start_settings(self.settings, player.pane)
+            and self.clip_load_key(player.loaded_clip, player.pane)
+            == self.clip_load_key(clip, player.pane)
             and not player.awaiting_frame
         )
 
@@ -1857,7 +1868,7 @@ class Window(QMainWindow):
             self.cancel_pending_navigation()
             self.panel(name)
             return
-        key = self.clip_load_key(clip)
+        key = self.clip_load_key(clip, name)
         if (
             self.pending_page is not None
             and self.pending_page["name"] == name
@@ -1873,7 +1884,7 @@ class Window(QMainWindow):
         for destination, control in self.nav.items():
             control.setChecked(destination == self.current_panel)
         self.pending_navigation_timer.start()
-        if player.loaded_clip is None or self.clip_load_key(player.loaded_clip) != key:
+        if player.loaded_clip is None or self.clip_load_key(player.loaded_clip, name) != key:
             if name in {"Browse", "Editing"}:
                 self.prepared_clips[name] = key
             player.load(clip)
@@ -1887,7 +1898,7 @@ class Window(QMainWindow):
             return
         name = pending["name"]
         clip, _ = self.navigation_target(name)
-        if clip is None or self.clip_load_key(clip) != pending["key"]:
+        if clip is None or self.clip_load_key(clip, name) != pending["key"]:
             self.cancel_pending_navigation()
             self.navigate_panel(name)
             return
@@ -2566,7 +2577,7 @@ class Window(QMainWindow):
         )
         return self.catalogue.clip(clip_id)
 
-    def clip_load_key(self, clip):
+    def clip_load_key(self, clip, pane="Editing"):
         if clip is None:
             return None
         source = Path(clip["source_path"])
@@ -2580,8 +2591,7 @@ class Window(QMainWindow):
         return (
             clip["clip_id"], clip["source_path"], identity,
             clip["in_ms"], clip["out_ms"],
-            self.settings.get("start_near_end_enabled", True),
-            self.settings.get("start_near_end_seconds", 40),
+            playback_start_settings(self.settings, pane),
         )
 
     def schedule_preload(self):
@@ -2601,7 +2611,7 @@ class Window(QMainWindow):
         ):
             if self.current_panel == panel:
                 continue
-            key = self.clip_load_key(clip)
+            key = self.clip_load_key(clip, panel)
             if panel in self.prepared_clips and self.prepared_clips[panel] == key:
                 continue
             self.prepared_clips[panel] = key
@@ -2612,7 +2622,7 @@ class Window(QMainWindow):
 
     def take_prepared_clip(self, panel, clip):
         key = self.prepared_clips.pop(panel, None)
-        return key is not None and key == self.clip_load_key(clip)
+        return key is not None and key == self.clip_load_key(clip, panel)
 
     def update_time_sort_control(self):
         newest = self.browse_newest if self.current_panel == "Browse" else self.library_newest
@@ -3592,6 +3602,20 @@ class Window(QMainWindow):
                 self.library.viewport().update(self.library.visualItemRect(item))
 
     def eventFilter(self, watched: QObject, event):
+        if (
+            getattr(self, "settings_dialog", None) is not None
+            and self.settings_dialog.isVisible()
+            and isinstance(watched, QWidget)
+            and (watched is self or self.isAncestorOf(watched))
+            and watched is not self.settings_dialog
+            and not self.settings_dialog.isAncestorOf(watched)
+            and event.type() in {
+                QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel,
+                QEvent.Type.KeyPress, QEvent.Type.KeyRelease, QEvent.Type.Shortcut,
+            }
+        ):
+            return True
         if watched == self.library.viewport() and event.type() in {
             QEvent.Type.Leave, QEvent.Type.HoverLeave,
         }:
@@ -4964,6 +4988,9 @@ class Window(QMainWindow):
             return
         self.cancel_pending_navigation()
         self.atomic_edit = None
+        if getattr(self, "settings_dialog", None) is not None:
+            self.save_settings()
+            self.settings_dialog.reject()
         self.thumbnails.close()
         self.preload_timer.stop()
         self.browse_time_timer.stop()

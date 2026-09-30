@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .playback import start_offset_seconds
+from .playback import playback_start_settings, start_offset_seconds
 from .theme import font, role
 
 
@@ -30,23 +30,58 @@ class SettingsDialog(QDialog):
         layout.addWidget(tabs)
         general = QWidget()
         preferences = QVBoxLayout(general)
+        preferences.setSpacing(12)
         playback_group, playback = self.preference_group("Browse · Editing · Export")
-        self.start_near_end = QCheckBox("Start videos without a valid I/O range near the end")
+        self.start_near_end = QCheckBox("Start this many seconds from the end:")
+        self.start_near_end.setToolTip(
+            "Applies to videos without a valid I/O range. Saved ranges start at the In point."
+        )
         self.start_near_end.setChecked(window.settings.get("start_near_end_enabled", True))
-        playback.addWidget(self.start_near_end)
         offset_row = QHBoxLayout()
-        offset_label = QLabel("Start before the end:")
         self.start_offset = QSpinBox()
+        self.start_offset.setProperty("playbackOffset", True)
         self.start_offset.setRange(1, 86400)
         self.start_offset.setSingleStep(5)
         self.start_offset.setSuffix(" s")
         self.start_offset.setValue(start_offset_seconds(window.settings))
+        self.start_offset.setFixedWidth(104)
         self.start_offset.setEnabled(self.start_near_end.isChecked())
-        offset_label.setBuddy(self.start_offset)
-        offset_row.addWidget(offset_label)
-        offset_row.addWidget(self.start_offset)
+        offset_row.addWidget(self.start_near_end, alignment=Qt.AlignmentFlag.AlignBaseline)
+        offset_row.addWidget(self.start_offset, alignment=Qt.AlignmentFlag.AlignBaseline)
         offset_row.addStretch()
         playback.addLayout(offset_row)
+        self.separate_start = QCheckBox("Use separate settings for Browse, Editing, and Export")
+        self.separate_start.setChecked(window.settings.get("start_near_end_separate", False))
+        playback.addWidget(self.separate_start)
+        self.separate_start_group = QWidget()
+        role(self.separate_start_group, "outlinedGroup")
+        separate_layout = QVBoxLayout(self.separate_start_group)
+        separate_layout.setSpacing(8)
+        self.pane_start_controls = {}
+        for pane in ("Browse", "Editing", "Export"):
+            enabled, seconds = playback_start_settings(window.settings, pane)
+            row = QHBoxLayout()
+            check = QCheckBox(f"{pane}: start this many seconds from the end:")
+            check.setToolTip(self.start_near_end.toolTip())
+            check.setChecked(enabled)
+            offset = QSpinBox()
+            offset.setProperty("playbackOffset", True)
+            offset.setRange(1, 86400)
+            offset.setSingleStep(5)
+            offset.setSuffix(" s")
+            offset.setValue(seconds)
+            offset.setFixedWidth(104)
+            offset.setEnabled(enabled)
+            row.addWidget(check, alignment=Qt.AlignmentFlag.AlignBaseline)
+            row.addWidget(offset, alignment=Qt.AlignmentFlag.AlignBaseline)
+            row.addStretch()
+            separate_layout.addLayout(row)
+            self.pane_start_controls[pane] = (check, offset)
+            check.toggled.connect(self.save_playback_preferences)
+            offset.valueChanged.connect(self.save_playback_preferences)
+        playback.addWidget(self.separate_start_group)
+        self.unified_start_row = offset_row
+        self.update_playback_controls()
         preferences.addWidget(playback_group)
         editing_group, editing = self.preference_group("Editing")
         self.paused_typing = QCheckBox("Type to enter commands while video is paused")
@@ -67,6 +102,7 @@ class SettingsDialog(QDialog):
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
+        self.separate_start.toggled.connect(self.save_playback_preferences)
         tabs.addTab(general, "General")
         appearance = QWidget()
         appearance_layout = QVBoxLayout(appearance)
@@ -134,16 +170,29 @@ class SettingsDialog(QDialog):
         close.rejected.connect(self.reject)
         layout.addWidget(close)
         self.refresh()
+        self.installEventFilter(self)
+        for widget in self.findChildren(QWidget):
+            if widget.focusPolicy() == Qt.FocusPolicy.NoFocus:
+                widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            focused = self.focusWidget()
+            if focused is not None and self.isAncestorOf(focused):
+                focused.clearFocus()
+        return super().eventFilter(watched, event)
 
     def preference_group(self, title):
         group = QWidget()
         role(group, "group")
         layout = QVBoxLayout(group)
+        layout.setSpacing(8)
         heading = QLabel(title)
         heading.setFont(font("sm", "bold"))
         role(heading, "secondary")
         heading.setProperty("settingsGroupHeading", True)
         layout.addWidget(heading)
+        layout.addSpacing(4)
         return group, layout
 
     def save_title_preferences(self):
@@ -155,10 +204,42 @@ class SettingsDialog(QDialog):
         self.window.set_theme(self.theme.currentData())
 
     def save_playback_preferences(self):
-        self.start_offset.setEnabled(self.start_near_end.isChecked())
+        if not any(
+            f"start_near_end_{pane.lower()}_seconds" in self.window.settings
+            for pane in self.pane_start_controls
+        ):
+            for check, offset in self.pane_start_controls.values():
+                check.blockSignals(True)
+                offset.blockSignals(True)
+                check.setChecked(self.start_near_end.isChecked())
+                offset.setValue(self.start_offset.value())
+                check.blockSignals(False)
+                offset.blockSignals(False)
+        self.update_playback_controls()
         self.window.settings["start_near_end_enabled"] = self.start_near_end.isChecked()
         self.window.settings["start_near_end_seconds"] = self.start_offset.value()
+        self.window.settings["start_near_end_separate"] = self.separate_start.isChecked()
+        if self.separate_start.isChecked() or any(
+            f"start_near_end_{pane.lower()}_seconds" in self.window.settings
+            for pane in self.pane_start_controls
+        ):
+            for pane, (check, offset) in self.pane_start_controls.items():
+                prefix = f"start_near_end_{pane.lower()}"
+                self.window.settings[f"{prefix}_enabled"] = check.isChecked()
+                self.window.settings[f"{prefix}_seconds"] = offset.value()
         self.window.save_settings()
+
+    def update_playback_controls(self):
+        separate = self.separate_start.isChecked()
+        self.start_near_end.setVisible(not separate)
+        for index in range(self.unified_start_row.count()):
+            widget = self.unified_start_row.itemAt(index).widget()
+            if widget is not None:
+                widget.setVisible(not separate)
+        self.separate_start_group.setVisible(separate)
+        self.start_offset.setEnabled(self.start_near_end.isChecked())
+        for check, offset in self.pane_start_controls.values():
+            offset.setEnabled(check.isChecked())
 
     def save_command_preferences(self):
         self.window.settings["paused_typing_enabled"] = self.paused_typing.isChecked()

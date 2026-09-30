@@ -47,7 +47,7 @@ class BrowsePage(QWidget):
         self.initial_range = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.player = Player(window.settings)
+        self.player = Player(window.settings, pane="Browse")
         self.player.volume_changed.connect(window.set_playback_volume)
         self.player.previous.connect(lambda: window.navigate(-1))
         self.player.next.connect(lambda: window.navigate(1))
