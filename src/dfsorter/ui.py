@@ -70,6 +70,7 @@ from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
+from .folder_preview_dialog import FolderPreviewDialog
 from .output import prepare_export_manifest, run_export_manifest, safe_stem, share_clip, validate
 from .overview import (
     PERIOD_DAYS,
@@ -892,11 +893,16 @@ class Window(QMainWindow):
         role(self.folder_summary, "secondary")
         home.addWidget(self.folder_summary)
         folder_controls = QHBoxLayout()
-        self.add_folder_button = button("Add folder…", self.add_folder)
+        self.add_folder_button = button("Add folder…", lambda: self.add_folder())
         role(self.add_folder_button, "prominentNeutral")
-        set_icon(self.add_folder_button, "folder-plus")
+        self.add_folder_button.setProperty("captureFolderAction", True)
+        set_icon(self.add_folder_button, "folder-plus", "accent_default")
         folder_controls.addWidget(self.add_folder_button)
+        self.game_configs_button = button("Game configs…", lambda: self.navigate_panel("Config"))
+        self.game_configs_button.setProperty("captureFolderAction", True)
+        folder_controls.addWidget(self.game_configs_button)
         self.rescan_button = button("Rescan", self.rescan)
+        self.rescan_button.setProperty("captureFolderAction", True)
         set_icon(self.rescan_button, "refresh-cw")
         self.rescan_button.setToolTip(
             "Find new files in all enabled folders. Reuse cached media information for unchanged files."
@@ -904,9 +910,11 @@ class Window(QMainWindow):
         folder_controls.addWidget(self.rescan_button)
         self.folder_more = QToolButton()
         self.folder_more.setObjectName("captureFolderMenuButton")
+        self.folder_more.setProperty("captureFolderAction", True)
         self.folder_more.setText("More…")
-        set_icon(self.folder_more, "ellipsis")
-        self.folder_more.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.folder_more.setToolTip("More capture folder actions")
+        self.folder_more.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.folder_more.setFixedHeight(SIZES["large"])
         self.folder_menu = QMenu(self.folder_more)
         self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
         self.folder_toggle_action.setToolTip(
@@ -4296,37 +4304,37 @@ class Window(QMainWindow):
         progress.repaint()
         QTimer.singleShot(0, self.worker.start)
 
-    def add_folder(self):
+    def add_folder(self, directory=None):
         if self.current_panel == "Browse":
             return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
-        directory = QFileDialog.getExistingDirectory(self, "Capture folder")
+        directory = directory or QFileDialog.getExistingDirectory(self, "Capture folder")
         if not directory:
             return
-        forced, accepted = QInputDialog.getItem(
-            self,
-            "Folder classification",
-            "Game assignment",
-            ["Automatic (nearest recognized ancestor)", *self.registry.games],
-            editable=False,
-        )
-        if not accepted:
-            return
-        forced_game = None if forced.startswith("Automatic (") else forced
 
         def done(found):
-            counts = Counter(item["game"] or "Unknown" for item in found)
-            errors = sum(bool(item["error"]) for item in found)
-            if self.confirm(
-                f"Found {len(found)} MP4 files:\n{dict(counts)}\n{errors} media inspection warnings.\nAdd this folder?"
-            ):
+            dialog = FolderPreviewDialog(
+                directory, found, self.registry.games, self,
+                game_folder=bool(self.registry.resolve(Path(directory).name)),
+            )
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+            forced_game = dialog.forced_game
+            edit_directory = dialog.edit_directory
+            dialog.deleteLater()
+            if edit_directory:
+                return lambda: self.add_folder(edit_directory)
+            if accepted:
+                if forced_game:
+                    found = [
+                        {**item, "game": item["game"] or forced_game} for item in found
+                    ]
 
                 def ingest(cancelled, progress):
                     if cancelled():
                         raise InterruptedError("Import cancelled")
-                    folder_id = self.catalogue.add_folder(directory, forced_game)
+                    folder_id = self.catalogue.add_folder(directory)
                     try:
                         self.catalogue.ingest(folder_id, found, cancelled)
                     except Exception:
@@ -4343,7 +4351,7 @@ class Window(QMainWindow):
 
         def inspect_folder(cancelled, progress):
             coordinator = ScanCoordinator(self.catalogue, self.registry, cancelled, progress)
-            found = coordinator.folder({"path": directory, "forced_game": forced_game})
+            found = coordinator.folder({"path": directory})
             if not coordinator.executable:
                 for item in found:
                     if item.get("duration") is None:

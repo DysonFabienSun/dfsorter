@@ -39,6 +39,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `surface.sidebar` | `#F8F9FA` | Left/right panes and top chrome |
 | `surface.panel` | `#FFFFFF` | Dialogs and important contained surfaces |
 | `surface.subtle` | `#F6F8FA` | Secondary panels and neutral button fill |
+| `surface.prominentNeutral` | `#FFFFFF` | Brighter neutral fill for the leading Capture folders action |
 | `surface.control` | `#FFFFFF` | Inputs and neutral controls |
 | `surface.hover` | `#EDF1F3` | Ordinary hover state |
 | `surface.pressed` | `#E4E9ED` | Pressed and neutral checked state |
@@ -89,6 +90,7 @@ unambiguous form such as `surface_canvas`; do not maintain a second legacy vocab
 | `surface.sidebar` | `#1B2026` | Left/right panes and top chrome |
 | `surface.panel` | `#1F242B` | Dialogs and important contained surfaces |
 | `surface.subtle` | `#252B33` | Quiet grouped regions and alternating surfaces |
+| `surface.prominentNeutral` | `#2C333B` | Brighter neutral fill for the leading Capture folders action |
 | `surface.control` | `#20262D` | Inputs and neutral controls |
 | `surface.hover` | `#2A313A` | Ordinary hover state |
 | `surface.pressed` | `#303842` | Pressed and neutral checked state |
@@ -189,6 +191,49 @@ Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; ca
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; structural panels and grouped containers use at most 2 px. Avoid simultaneously visible nested rounded container contours within 16 logical pixels: remove redundant framing or square the inner container. This rule excludes ordinary controls, menus, tooltips and transient row highlights. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
 
 Checkbox label areas remain transparent so their text sits on the actual parent surface in every theme and container, including subtle and outlined groups. The indicator itself retains a visible square border when unchecked and a filled, marked square when checked. Keep the focus state without painting a separate background behind the label. Check new checkbox controls on their intended parent surface in both themes.
+Keyboard focus on checkboxes strengthens the indicator border with `focus`; it never draws a rectangle around the label text.
+
+Informational tips in dialogs use a quiet `accent.soft` surface with a 2 px `accent.default` left edge, a 16 px Lucide info icon in `accent.default`, and wrapping ordinary body text. Keep the icon and text in one horizontal row with layout-managed padding; do not use a warning color for optional guidance. In the capture-folder preview, show this tip only when the selected folder name resolves to a known game. Its message suggests selecting the parent recordings folder to include sibling game folders, while allowing the selected game folder to be added as-is. Verify the tip in Light and Dark modes and with long paths or translated text.
+### Add capture folder dialog
+
+Use 16 px outer padding and a 550 px minimum width. Anchor the content to the top. Keep the
+dialog height driven by its contents rather than a fixed target. Put the Folder label, a compact
+noneditable path field, and Edit folder… on one row. The path field expands between the label and
+button and uses a 16 px folder icon, a subtle surface, and a border. Middle-elide long paths so
+the drive and final folder name remain visible; show the complete path in a tooltip and offer a
+Copy full path context action. A completed folder selection restarts inspection and preview,
+including when the same path is chosen. Cancelling the picker leaves the preview open.
+
+After a 12 px gap, show the emphasized video total with a 16 px video icon, then the detected
+game counts and an Unclassified count when present. Keep these original scan counts unchanged
+when an import assignment is selected. Use aligned secondary labels and right-aligned semibold
+values, with subtle row separators. Rows and their containing area share the dialog surface;
+avoid bordered result cards and contrasting row backgrounds. Show at most six game/count rows
+before the results area scrolls; allow it to grow when the dialog grows. Show a short, muted
+explanation that game names come from the selected folder and its subfolders. Show inspection
+warnings when present.
+
+Only when unclassified videos exist, show one row with an Unclassified videos label and a
+selector. Its first, default option is Keep unclassified; configured games follow. Selecting a
+game assigns only unidentified videos from this import. Show a short muted confirmation with
+the count and selected game, or state that the unidentified videos will remain unclassified.
+Keep the Game configs… on Home guidance nearby. If no games are configured, leave the selector
+on Keep unclassified. Hide the entire assignment group when every video is classified. Keep
+the detected counts separate from the proposed assignment so their meaning does not shift.
+
+Show the existing parent-folder tip only when the selected folder name resolves to a known game.
+Its message should suggest using Edit folder… to select the parent recordings folder while
+allowing the current folder to be added as-is. Use the shared quiet informational-tip styling.
+Keep 4–8 px within groups and 12–16 px between groups. The footer has a subtle top divider,
+12 px top padding, and right-aligned Add folder and Cancel actions with an 8 px gap. Keep the
+footer visible when content needs to scroll on a small screen. Avoid shadows, gradients,
+unnecessary framed blocks, and fixed heights that clip text.
+
+For other compact read-only result forms, align the first data label with its section heading.
+Use two columns: left-aligned secondary labels and right-aligned semibold values. Keep each
+label/value pair in one row, with a subtle divider beneath each row. Place the rows on their
+containing surface; do not offset a separate row background from the heading or leave the data
+as one prose label.
 
 ### Surface and border hierarchy
 
@@ -295,6 +340,14 @@ Show newly discovered clip size in the same cyan accent as new clip counts. Alig
 values consistently and use spacing before introducing containers.
 A quiet surface group is acceptable when multiple folders need stronger separation, but do not
 turn every statistic into a card. The explanatory sentence remains tertiary and wraps.
+Place Game configs… immediately after Add folder… in the capture-folder control row. Give all
+four controls the same outer height and padding. Add folder… has a slightly brighter neutral
+surface (`surface.prominentNeutral`), a 1 px `border.default` outline, semibold primary text,
+and an `accent.default` folder-plus icon. Its hover uses a soft accent fill and cyan border;
+keyboard focus uses the focus-colored border. At rest it must not resemble a selected control.
+Game configs… and Rescan retain the ordinary neutral button treatment. More… is a text-only
+ghost action with secondary text, a transparent resting border, and a quiet neutral hover.
+Keep its menu indicator hidden and its accessible tooltip describing folder actions.
 
 ### Session
 

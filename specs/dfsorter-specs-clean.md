@@ -416,7 +416,7 @@ Rating remains an editorial reference and optional export-grouping value; rating
 
 Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
 
-Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Rescan**, and **More…**. More contains selected-folder **Pause scanning / Resume scanning** and the advanced global **Rebuild media information…** action. **Relink folder…** and **Remove folder…** are available from the selected folder's context menu. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
+Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Game configs…**, **Rescan**, and a text-only **More…** menu, in that order. Game configs… opens the Config panel. More contains selected-folder **Pause scanning / Resume scanning** and the advanced global **Rebuild media information…** action. **Relink folder…** and **Remove folder…** are available from the selected folder's context menu. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
 
 Legacy clips whose folders were previously unregistered appear as an **Unlinked catalogue clips** row with a count and source-directory tooltip. Its More menu offers **Remove saved entries…**, with the same explicit confirmation and backup as folder removal. Revalidate that reviewed clips are still unlinked before removing them.
 
@@ -505,9 +505,9 @@ Home shows:
 - Remove folder… from the folder context menu;
 - Relink folder… from the folder context menu.
 
-Adding a folder should allow a preview before confirmation, including at least the number of recognized videos per game.
-
-When first onboarding a folder, the user may optionally force every discovered video in that folder to one game.
+After inspecting a selected folder, show a preview before confirmation with the number of videos per detected game, unclassified videos, and media inspection warnings. Explain that game names are detected from the selected folder and its subfolders. Only when the scan contains unclassified videos, show an optional assignment of those unidentified videos to one game during import. Keep recognized game assignments; later scans use nearest-ancestor classification. The preview also points to Game configs… on Home for adding more games.
+The preview permits changing the selected folder with Edit folder…. A completed selection restarts inspection and the preview, including when the same folder is chosen.
+When the selected folder's name resolves to a game, show a highlighted tip suggesting the parent recordings folder for including sibling game folders.
 
 ### 11.3 Missing Files and Folder Migration
 

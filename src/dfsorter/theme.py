@@ -1,7 +1,7 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PySide6.QtWidgets import QProxyStyle, QStyle
+from PySide6.QtWidgets import QCheckBox, QProxyStyle, QStyle
 
 from .app_paths import ROOT
 
@@ -14,6 +14,7 @@ THEMES = {
         "bg_library_search": "#F8F9FA",
         "surface_panel": "#FFFFFF",
         "surface_subtle": "#F6F8FA",
+        "surface_prominent_neutral": "#FFFFFF",
         "surface_control": "#FFFFFF",
         "surface_hover": "#EDF1F3",
         "surface_pressed": "#E4E9ED",
@@ -77,6 +78,7 @@ THEMES = {
         "bg_library_search": "#1D2329",
         "surface_panel": "#1F242B",
         "surface_subtle": "#252B33",
+        "surface_prominent_neutral": "#2C333B",
         "surface_control": "#20262D",
         "surface_hover": "#2A313A",
         "surface_pressed": "#303842",
@@ -232,6 +234,8 @@ def stylesheet():
         QCheckBox { background: transparent; }
         QCheckBox::indicator { background: %(surface_control)s; border: 1px solid %(border_default)s; border-radius: 3px; width: 14px; height: 14px; }
         QCheckBox::indicator:checked { background: %(accent_default)s; border-color: %(accent_default)s; image: url("%(check_icon)s"); }
+        QCheckBox:focus { border: none; }
+        QCheckBox::indicator:focus { border: 2px solid %(focus)s; }
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
@@ -244,6 +248,9 @@ def stylesheet():
         QWidget[role="transparent"] { background: transparent; }
         QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: %(radius_structural)spx; }
         QWidget[role="outlinedGroup"] { background: %(surface_workspace)s; border: 1px solid %(border_default)s; border-radius: %(radius_structural)spx; }
+        QWidget#folderPreviewTip { background: %(accent_soft)s; border-left: 2px solid %(accent_default)s; }
+        QWidget#folderPreviewPath { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: 4px; }
+        QWidget#folderPreviewResultRow { background: transparent; border-bottom: 1px solid %(border_subtle)s; }
         QWidget[role="divider"] { background: %(border_subtle)s; }
         QLabel#muted, QLabel[role="secondary"] { color: %(text_secondary)s; font-size: %(font_sm)spx; }
         QLabel[role="muted"] { color: %(text_muted)s; font-size: %(font_sm)spx; }
@@ -311,9 +318,18 @@ def stylesheet():
         QPushButton[role="keep"]:checked { background: %(status_success_soft)s; color: %(status_success)s; border-color: %(status_success)s; }
         QPushButton[role="discard"]:checked { background: %(status_danger_soft)s; color: %(status_danger)s; border-color: %(status_danger)s; }
         QPushButton[role="undefined"]:checked { background: %(surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
-        QPushButton:focus, QToolButton:focus, QCheckBox:focus { border: 2px solid %(focus)s; }
+        QPushButton:focus, QToolButton:focus { border: 2px solid %(focus)s; }
         QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator, QToolButton#activitiesButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
+        QPushButton[captureFolderAction="true"], QToolButton[captureFolderAction="true"] { min-height: 24px; }
+        QPushButton[role="prominentNeutral"][captureFolderAction="true"] { background: %(surface_prominent_neutral)s; color: %(text_primary)s; border: 1px solid %(border_default)s; }
+        QPushButton[role="prominentNeutral"][captureFolderAction="true"]:hover { background: %(accent_soft)s; border-color: %(accent_default)s; }
+        QPushButton[role="prominentNeutral"][captureFolderAction="true"]:focus { border: 1px solid %(focus)s; }
+        QPushButton[role="prominentNeutral"][captureFolderAction="true"]:pressed { background: %(accent_soft_hover)s; }
+        QToolButton#captureFolderMenuButton { background: transparent; color: %(text_secondary)s; border: 1px solid transparent; border-radius: 4px; padding: 5px 9px; }
+        QToolButton#captureFolderMenuButton:hover { background: %(surface_hover)s; border-color: %(border_subtle)s; }
+        QToolButton#captureFolderMenuButton:focus { border-color: %(focus)s; }
+        QToolButton#captureFolderMenuButton:pressed { background: %(surface_pressed)s; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
         QPushButton#projectsDrawerTab { background: %(surface_sidebar)s; border: 1px solid %(border_subtle)s; border-top: none; border-top-left-radius: 0px; border-top-right-radius: 0px; border-bottom-left-radius: 9px; border-bottom-right-radius: 0px; padding: 3px 11px 5px 6px; }
         QPushButton#projectsDrawerTab:hover { background: %(surface_hover)s; border-color: %(border_default)s; border-top-color: transparent; }
@@ -416,6 +432,11 @@ def stylesheet():
 
 
 class ApplicationStyle(QProxyStyle):
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PrimitiveElement.PE_FrameFocusRect and isinstance(widget, QCheckBox):
+            return
+        super().drawPrimitive(element, option, painter, widget)
+
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
             return 200

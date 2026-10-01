@@ -78,6 +78,12 @@ def test_status_bar_exists_before_deferred_startup_work(window):
     assert window.status_bar.currentMessage() == ""
 
 
+def test_home_game_configs_button_opens_config(window):
+    window.game_configs_button.click()
+    assert window.current_panel == "Config"
+    assert window.nav["Config"].isChecked()
+
+
 def test_update_check_is_in_settings_menu(window):
     assert "Check for updates…" in [action.text() for action in window.settings_menu.actions()]
 
@@ -1310,7 +1316,27 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
 
     assert isinstance(window.folders.itemDelegate(), CaptureFolderDelegate)
     assert window.folder_summary.text() == "2 folders · 4 clips"
-    assert window.folder_more.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    assert window.folder_more.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextOnly
+    assert window.folder_more.text() == "More…"
+    assert window.folder_more.icon().isNull()
+    assert window.add_folder_button.property("role") == "prominentNeutral"
+    assert window.add_folder_button.property("iconColorRole") == "accent_default"
+    assert all(
+        control.property("captureFolderAction")
+        for control in (window.add_folder_button, window.game_configs_button,
+                        window.rescan_button, window.folder_more)
+    )
+    assert len({control.height() for control in (
+        window.add_folder_button, window.game_configs_button,
+        window.rescan_button, window.folder_more,
+    )}) == 1
+    home_layout = window.add_folder_button.parentWidget().layout()
+    controls = next(
+        item.layout() for index in range(home_layout.count())
+        if (item := home_layout.itemAt(index)).layout()
+        and item.layout().indexOf(window.add_folder_button) >= 0
+    )
+    assert controls.itemAt(controls.indexOf(window.add_folder_button) + 1).widget() is window.game_configs_button
     items = {
         window.folders.item(row).data(Qt.ItemDataRole.UserRole): window.folders.item(row)
         for row in range(window.folders.count())
@@ -3739,38 +3765,202 @@ def test_game_change_confirmation_and_undo(window, application, tmp_path, monkey
     assert window.catalogue.clip(ids[0])["metadata"] == {"agent": "Jett"}
 
 
-@pytest.mark.parametrize("folder_name, game", [("VALORANT", "VALORANT"), ("NVIDIA", None)])
+@pytest.mark.parametrize(
+    "folder_name, forced_game, game",
+    [("VALORANT", None, "VALORANT"), ("NVIDIA", None, None),
+     ("NVIDIA", "Battlefield 6", "Battlefield 6")],
+)
 def test_folder_dialogs_and_background_scan(
-    window, application, tmp_path, monkeypatch, folder_name, game
+    window, application, tmp_path, monkeypatch, folder_name, forced_game, game
 ):
     from PySide6.QtWidgets import QFileDialog
+
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
 
     captures = tmp_path / folder_name
     captures.mkdir()
     (captures / "clip.mp4").write_bytes(b"test")
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(captures))
-    monkeypatch.setattr(
-        QInputDialog,
-        "getItem",
-        lambda *args, **kwargs: ("Automatic (nearest recognized ancestor)", True),
-    )
-
-    def confirm(message):
+    def preview(dialog):
+        assert "1 video found" in dialog.summary.text()
+        assert ("VALORANT" if folder_name == "VALORANT" else "Unclassified") in [
+            label.text() for label in dialog.composition.findChildren(QLabel)
+        ]
+        assert dialog.parent_folder_tip.isHidden() == (folder_name != "VALORANT")
+        assert dialog.override_section.isHidden() == (folder_name == "VALORANT")
+        if forced_game:
+            dialog.game.setCurrentText(forced_game)
+            assert dialog.forced_game == forced_game
+            assert "Unclassified" in [
+                label.text() for label in dialog.composition.findChildren(QLabel)
+            ]
         # Reproduce a modal dialog processing worker-finished events.
         QTest.qWait(100)
         application.processEvents()
-        return True
+        return QDialog.DialogCode.Accepted
 
-    monkeypatch.setattr(window, "confirm", confirm)
+    monkeypatch.setattr(FolderPreviewDialog, "exec", preview)
     window.panel("Home")
     window.add_folder()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1
     assert window.catalogue.clips()[0]["game"] == game
     assert Path(window.catalogue.folders()[0]["path"]) == captures
+    assert window.catalogue.folders()[0]["forced_game"] is None
     window.rescan()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1
+
+
+def test_folder_preview_groups_mixed_scan_and_optional_assignment(window, application, tmp_path):
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
+
+    found = [
+        {"game": "VALORANT", "error": None},
+        {"game": None, "error": None},
+    ]
+    dialog = FolderPreviewDialog(str(tmp_path), found, window.registry.games, window)
+    dialog.show()
+    application.processEvents()
+    try:
+        assert dialog.summary.text() == "2 videos found"
+        assert dialog.findChild(QWidget, "folderPreviewPath") is not None
+        assert dialog.folder_path.toolTip() == str(tmp_path)
+        assert [
+            tuple(label.text() for label in row.findChildren(QLabel))
+            for row in dialog.composition.findChildren(QWidget, "folderPreviewResultRow")
+        ] == [("VALORANT", "1"), ("Unclassified", "1")]
+        labels = [label.text() for label in dialog.findChildren(QLabel)]
+        assert "Additional games can be added from Game configs… on Home." in labels
+        assert dialog.game.currentText() == "Keep unclassified"
+        assert dialog.forced_game is None
+        assert dialog.assignment_note.text() == "1 unidentified video will remain unclassified."
+        assert len([
+            widget for widget in dialog.findChildren(QWidget)
+            if widget.property("role") == "divider"
+        ]) == 1
+        folder_heading = next(label for label in dialog.findChildren(QLabel) if label.text() == "Folder")
+        override_heading = next(label for label in dialog.findChildren(QLabel) if label.text() == "Unclassified videos")
+        assert folder_heading.font().pixelSize() == dialog.summary.font().pixelSize()
+        assert override_heading.font().pixelSize() == dialog.summary.font().pixelSize()
+        assert dialog.override_section.isVisible()
+        assert dialog.game.isEnabled()
+        dialog.game.setCurrentText("Battlefield 6")
+        assert dialog.forced_game == dialog.game.currentText()
+        assert "Unclassified" in {
+            label.text() for label in dialog.composition.findChildren(QLabel)
+        }
+        assert dialog.assignment_note.text() == (
+            "1 unidentified video will be assigned to Battlefield 6 during import."
+        )
+        assert [
+            tuple(label.text() for label in row.findChildren(QLabel))
+            for row in dialog.composition.findChildren(QWidget, "folderPreviewResultRow")
+        ] == [("VALORANT", "1"), ("Unclassified", "1")]
+    finally:
+        dialog.close()
+
+
+def test_folder_preview_handles_empty_games_and_long_results(window, application, tmp_path):
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
+
+    directory = str(tmp_path / "A long recordings folder name")
+    found = [{"game": f"Game {index}", "error": None} for index in range(12)]
+    found.append({"game": None, "error": "inspection failed"})
+    dialog = FolderPreviewDialog(directory, found, [], window)
+    dialog.show()
+    application.processEvents()
+    try:
+        assert dialog.folder_path.toolTip() == directory
+        assert dialog.folder_path.text() != directory
+        assert dialog.folder_path.text().endswith("name")
+        assert dialog.game.count() == 1
+        assert dialog.forced_game is None
+        assert dialog.results_scroll.verticalScrollBar().maximum() > 0
+        assert dialog.results_scroll.height() < dialog.composition.sizeHint().height()
+        assert any(
+            label.text() == "1 media inspection warning"
+            for label in dialog.findChildren(QLabel)
+        )
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize("same_folder", [False, True])
+def test_edit_folder_restarts_preview_after_inspection(
+    window, application, tmp_path, monkeypatch, same_folder
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "first.mp4").write_bytes(b"test")
+    (second / "second.mp4").write_bytes(b"test")
+    initial_picks = []
+    selection = str(first if same_folder else second)
+
+    def pick(parent, title, start=""):
+        initial_picks.append(start)
+        return str(first) if len(initial_picks) == 1 else selection
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", pick)
+    previews = []
+
+    def preview(dialog):
+        previews.append(dialog.directory)
+        if len(previews) == 1:
+            dialog.choose_folder()
+            return QDialog.DialogCode.Rejected
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(FolderPreviewDialog, "exec", preview)
+    window.add_folder_button.click()
+    assert wait_for(application, lambda: window.worker is None and len(previews) == 2)
+    assert previews == [str(first), selection]
+    assert initial_picks == ["", str(first)]
+    assert Path(window.catalogue.folders()[0]["path"]) == Path(selection)
+    assert Path(window.catalogue.clips()[0]["source_path"]).parent == Path(selection)
+
+
+def test_folder_assignment_only_changes_unidentified_videos_on_import(
+    window, application, tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
+
+    captures = tmp_path / "captures"
+    recognized = captures / "VALORANT"
+    unidentified = captures / "unknown"
+    recognized.mkdir(parents=True)
+    unidentified.mkdir()
+    (recognized / "known.mp4").write_bytes(b"test")
+    (unidentified / "unknown.mp4").write_bytes(b"test")
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(captures))
+
+    def preview(dialog):
+        dialog.game.setCurrentText("Battlefield 6")
+        assert {label.text() for label in dialog.composition.findChildren(QLabel)} >= {
+            "VALORANT", "Unclassified", "1"
+        }
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(FolderPreviewDialog, "exec", preview)
+    window.add_folder()
+    assert wait_for(application, lambda: window.worker is None)
+    clips = {Path(clip["source_path"]).name: clip for clip in window.catalogue.clips()}
+    assert clips["known.mp4"]["game"] == "VALORANT"
+    assert clips["unknown.mp4"]["game"] == "Battlefield 6"
+    assert window.catalogue.folders()[0]["forced_game"] is None
+    (unidentified / "later.mp4").write_bytes(b"test")
+    window.rescan()
+    assert wait_for(application, lambda: window.worker is None)
+    clips = {Path(clip["source_path"]).name: clip for clip in window.catalogue.clips()}
+    assert clips["later.mp4"]["game"] is None
 
 
 def test_rescan_modal_cache_restart(window, application, tmp_path, monkeypatch):
