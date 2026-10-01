@@ -4,7 +4,7 @@ import logging
 import threading
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from .theme import role
-from .widgets import set_icon
+from .theme import COLORS, role
+from .widgets import icon, set_icon
 
 
 class OutputWorker(QThread):
@@ -47,6 +47,7 @@ class OutputJob:
     kind: str
     title: str
     function: object
+    subtitle: str = ""
     state: str = "Queued"
     percent: int = 0
     detail: str = "Waiting to start"
@@ -54,6 +55,8 @@ class OutputJob:
     result: object = None
     row: QWidget | None = None
     status: QLabel | None = None
+    status_dot: QLabel | None = None
+    phase: QLabel | None = None
     bar: QProgressBar | None = None
     action: QPushButton | None = None
     dismiss_button: QPushButton | None = None
@@ -81,11 +84,14 @@ class Activities(QObject):
         self.menu.aboutToHide.connect(self.auto_close_timer.stop)
         self.menu.installEventFilter(self)
         header = QWidget(self.menu)
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 5, 7, 2)
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(10, 5, 10, 0)
+        header_layout.setSpacing(0)
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 5)
         heading = QLabel("Output Jobs")
         role(heading, "paneHeading")
-        header_layout.addWidget(heading, 1)
+        heading_row.addWidget(heading, 1)
         self.close_button = QToolButton(header)
         self.close_button.setObjectName("activitiesClose")
         self.close_button.setToolTip("Close Output Jobs")
@@ -94,13 +100,41 @@ class Activities(QObject):
         self.close_button.setFixedSize(24, 24)
         self.close_button.installEventFilter(self)
         self.close_button.clicked.connect(self.menu.hide)
-        header_layout.addWidget(self.close_button)
+        heading_row.addWidget(self.close_button)
+        header_layout.addLayout(heading_row)
+        self.header_divider = QWidget(header)
+        role(self.header_divider, "divider")
+        self.header_divider.setFixedHeight(1)
+        header_layout.addWidget(self.header_divider)
         header.installEventFilter(self)
         header_action = QWidgetAction(self.menu)
         header_action.setDefaultWidget(header)
         self.menu.addAction(header_action)
-        self.empty = self.menu.addAction("No output jobs")
-        self.empty.setEnabled(False)
+        empty = QWidget(self.menu)
+        empty.setFixedWidth(370)
+        empty.setMinimumHeight(156)
+        empty_layout = QVBoxLayout(empty)
+        empty_layout.setContentsMargins(16, 24, 16, 24)
+        empty_layout.setSpacing(6)
+        empty_layout.addStretch()
+        empty_icon = QLabel(empty)
+        empty_icon.setProperty("headingIcon", "inbox")
+        empty_icon.setProperty("headingIconSize", 20)
+        empty_icon.setProperty("headingIconColorRole", "text_muted")
+        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_icon.setFixedSize(24, 24)
+        empty_icon.setPixmap(icon("inbox", COLORS["text_muted"], size=20).pixmap(20, 20))
+        empty_layout.addWidget(empty_icon, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_title = QLabel("No active jobs")
+        role(empty_title, "paneHeading")
+        empty_layout.addWidget(empty_title, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_hint = QLabel("Exports and shared clips will appear here.")
+        role(empty_hint, "secondary")
+        empty_layout.addWidget(empty_hint, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_layout.addStretch()
+        self.empty = QWidgetAction(self.menu)
+        self.empty.setDefaultWidget(empty)
+        self.menu.addAction(self.empty)
         button.setMenu(self.menu)
         button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._update_button()
@@ -115,11 +149,12 @@ class Activities(QObject):
         ) if clip_id else None
 
     def submit(self, kind, title, function, *, record_id=None, forget=None, paused=False,
-               clip_id=None):
+               clip_id=None, subtitle=""):
         if kind == "Share" and (existing := self.active_share(clip_id)):
             return existing
         was_busy = self.busy()
-        job = OutputJob(kind, title, function, state="Paused" if paused else "Queued",
+        job = OutputJob(kind, title, function, subtitle=subtitle,
+                        state="Paused" if paused else "Queued",
                         record_id=record_id, forget=forget, clip_id=clip_id)
         if paused:
             job.detail = "Resume to continue unfinished copies"
@@ -162,32 +197,64 @@ class Activities(QObject):
 
     def _add_row(self, job):
         self.empty.setVisible(False)
+        self.header_divider.setVisible(False)
         row = QWidget(self.menu)
+        row.setObjectName("outputJobRow")
         row.setFixedWidth(370)
-        layout = QVBoxLayout(row)
-        layout.setContentsMargins(10, 7, 10, 7)
-        layout.setSpacing(4)
-        heading = QLabel(job.title)
+        outer = QVBoxLayout(row)
+        outer.setContentsMargins(8, 5, 8, 5)
+        card = QWidget(row)
+        card.setObjectName("outputJobCard")
+        outer.addWidget(card)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 9, 10, 9)
+        layout.setSpacing(6)
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        metadata = QVBoxLayout()
+        metadata.setSpacing(2)
+        heading = QLabel(job.title, card)
+        heading.setObjectName("outputJobTitle")
         heading.setWordWrap(True)
-        layout.addWidget(heading)
-        middle = QHBoxLayout()
+        metadata.addWidget(heading)
+        subtitle = QLabel(job.subtitle, card)
+        subtitle.setObjectName("outputJobSubtitle")
+        subtitle.setWordWrap(True)
+        metadata.addWidget(subtitle)
+        subtitle.setVisible(bool(job.subtitle))
+        top.addLayout(metadata, 1)
+        actions = QVBoxLayout()
+        actions.setSpacing(4)
         job.status = QLabel()
-        job.status.setWordWrap(True)
-        job.status.setMinimumWidth(0)
-        role(job.status, "secondary")
-        middle.addWidget(job.status, 1)
+        job.status.setObjectName("outputJobStatus")
+        job.status_dot = QLabel("●", card)
+        job.status_dot.setObjectName("outputJobStatusDot")
         job.action = QPushButton("Cancel")
+        job.action.setObjectName("outputJobAction")
         job.action.clicked.connect(lambda: self.cancel(job) if self._active(job)
                                    else self.resume(job) if self._resumable(job)
                                    else self.dismiss(job))
-        middle.addWidget(job.action)
+        actions.addWidget(job.action)
         job.dismiss_button = QPushButton("Forget")
         job.dismiss_button.clicked.connect(lambda: self.dismiss(job))
-        middle.addWidget(job.dismiss_button)
-        layout.addLayout(middle)
+        actions.addWidget(job.dismiss_button)
+        actions.addStretch()
+        top.addLayout(actions)
+        layout.addLayout(top)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(5)
+        status_row.addWidget(job.status_dot)
+        status_row.addWidget(job.status)
+        status_row.addStretch()
+        layout.addLayout(status_row)
+        job.phase = QLabel(card)
+        job.phase.setObjectName("outputJobPhase")
+        job.phase.setWordWrap(True)
+        layout.addWidget(job.phase)
         job.bar = QProgressBar()
+        job.bar.setObjectName("outputJobProgress")
         job.bar.setRange(0, 100)
-        job.bar.setTextVisible(True)
+        job.bar.setTextVisible(False)
         layout.addWidget(job.bar)
         action = QWidgetAction(self.menu)
         action.setDefaultWidget(row)
@@ -208,17 +275,32 @@ class Activities(QObject):
         return bool(job.record_id and job.state in {"Paused", "Failed", "Cancelled"})
 
     def _refresh(self, job):
-        role(job.status, "error" if job.state == "Failed" else "secondary")
-        job.status.setText(f"{job.state} · {job.detail}" if job.detail else job.state)
-        job.status.setToolTip(job.status.text())
+        color = {
+            "Running": "accent_default", "Completed": "status_success",
+            "Failed": "status_danger",
+        }.get(job.state, "text_muted")
+        for widget in (job.status, job.status_dot):
+            widget.setProperty("statusColor", color)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        job.status.setText(f"{job.state} · {job.percent}%")
+        job.phase.setText(job.detail)
+        job.phase.setVisible(bool(job.detail))
+        job.phase.setToolTip(job.detail)
+        job.phase.setProperty("failed", job.state == "Failed")
+        job.phase.style().unpolish(job.phase)
+        job.phase.style().polish(job.phase)
         job.bar.setValue(job.percent)
+        job.bar.setProperty("statusColor", color)
+        job.bar.style().unpolish(job.bar)
+        job.bar.style().polish(job.bar)
         job.action.setText(
             "Cancel" if self._active(job) else "Resume export" if self._resumable(job) else "Dismiss"
         )
         job.action.setEnabled(job.state != "Cancelling")
         job.dismiss_button.setVisible(bool(job.record_id) and not self._active(job))
         job.dismiss_button.setText("Dismiss" if job.state == "Completed" else "Forget")
-        job.bar.setVisible(self._active(job) or job.state == "Completed")
+        job.bar.setVisible(True)
 
     def _update_button(self):
         active = sum(self._active(job) for job in self.jobs)
@@ -288,9 +370,9 @@ class Activities(QObject):
             count = len(worker.result.completed)
             job.detail = f"{count} copied · {worker.result.error}"
         elif job.kind == "Export" and worker.result is not None:
-            job.detail = f"{len(worker.result.completed)} clips copied"
+            job.detail = "Export complete"
         elif job.state == "Completed":
-            job.detail = str(worker.result)
+            job.detail = "Shared clip saved" if job.kind == "Share" else str(worker.result)
         else:
             job.detail = "Stopped"
         if job.state == "Completed" and job.forget:
@@ -359,5 +441,6 @@ class Activities(QObject):
         job.menu_action.deleteLater()
         self.jobs.remove(job)
         self.empty.setVisible(not self.jobs)
+        self.header_divider.setVisible(not self.jobs)
         self._update_button()
         self.changed.emit()

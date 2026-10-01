@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from .config import title
 from .deletion import delete_reviewed, preview
-from .output import share_clip
+from .output import safe_stem, share_clip
 from .playback import Player
 from .theme import COLORS, role, title_styles
 from .widgets import set_icon, success_check_icon, tag_prefix, tool
@@ -426,13 +426,14 @@ class BrowsePage(QWidget):
         self.window.settings["share_folder"] = destination
         self.window.save_settings()
         self.window.activities.submit(
-            "Share", f"Share · {Path(clip['source_path']).name}",
+            "Share", f"Share · {clip['game'] or 'Unassigned'}",
             lambda cancelled, progress: share_clip(
                 clip, self.window.registry, destination, folders, custom=custom,
                 selected_range=selected_range, cancelled=cancelled,
                 detailed_progress=progress,
             ),
             clip_id=clip["clip_id"],
+            subtitle=f"{safe_stem(custom)}.mp4",
         )
         self.window.flash_share(self.share_button)
         if self.fullscreen_state is not None:

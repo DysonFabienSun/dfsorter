@@ -339,6 +339,20 @@ def stylesheet():
         QToolButton#activitiesButton[activityAttention="true"] { background: %(status_warning_soft)s; color: %(status_warning)s; border: 1px solid %(status_warning)s; }
         QProgressBar { background: %(surface_subtle)s; color: %(text_primary)s; border: 1px solid %(border_subtle)s; border-radius: 4px; text-align: center; min-height: 13px; }
         QProgressBar::chunk { background: %(accent_default)s; border-radius: 3px; }
+        QWidget#outputJobCard { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: %(radius_md)spx; }
+        QLabel#outputJobTitle { color: %(text_primary)s; font-weight: 600; }
+        QLabel#outputJobSubtitle, QLabel#outputJobPhase { color: %(text_secondary)s; font-size: %(font_sm)spx; }
+        QLabel#outputJobPhase[failed="true"] { color: %(status_danger)s; }
+        QLabel#outputJobStatusDot, QLabel#outputJobStatus { font-size: %(font_sm)spx; }
+        QLabel#outputJobStatusDot[statusColor="accent_default"], QLabel#outputJobStatus[statusColor="accent_default"] { color: %(accent_default)s; }
+        QLabel#outputJobStatusDot[statusColor="status_success"], QLabel#outputJobStatus[statusColor="status_success"] { color: %(status_success)s; }
+        QLabel#outputJobStatusDot[statusColor="status_danger"], QLabel#outputJobStatus[statusColor="status_danger"] { color: %(status_danger)s; }
+        QLabel#outputJobStatusDot[statusColor="text_muted"], QLabel#outputJobStatus[statusColor="text_muted"] { color: %(text_muted)s; }
+        QProgressBar#outputJobProgress { min-height: 6px; max-height: 6px; border-radius: 3px; }
+        QProgressBar#outputJobProgress::chunk { border-radius: 2px; }
+        QProgressBar#outputJobProgress[statusColor="status_success"]::chunk { background: %(status_success)s; }
+        QProgressBar#outputJobProgress[statusColor="status_danger"]::chunk { background: %(status_danger)s; }
+        QProgressBar#outputJobProgress[statusColor="text_muted"]::chunk { background: %(text_muted)s; }
         QPushButton#navigation { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: %(text_secondary)s; font-size: %(font_base)spx; font-weight: 500; padding: 0px 16px; min-height: 32px; }
         QPushButton#navigation:hover { color: %(text_primary)s; background: %(surface_hover)s; }
         QPushButton#navigation:checked { background: transparent; color: %(text_primary)s; font-weight: 600; border-bottom-color: %(accent_default)s; }

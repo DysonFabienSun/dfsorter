@@ -3633,6 +3633,68 @@ def test_activities_auto_open_close_and_repeat_after_idle(window, application):
     assert wait_for(application, lambda: second.state == "Completed")
 
 
+def test_output_jobs_empty_state_and_theme(window, application):
+    activities = window.activities
+    empty_widget = activities.empty.defaultWidget()
+    labels = [label.text() for label in empty_widget.findChildren(QLabel)]
+    assert labels == ["", "No active jobs", "Exports and shared clips will appear here."]
+    assert activities.empty.isVisible()
+    assert not activities.header_divider.isHidden()
+    assert empty_widget.minimumHeight() >= 156
+    empty_icon = empty_widget.findChildren(QLabel)[0]
+    assert empty_icon.property("headingIcon") == "inbox"
+    assert empty_widget.findChildren(QLabel)[1].property("role") == "paneHeading"
+    assert empty_widget.findChildren(QLabel)[2].property("role") == "secondary"
+    assert any(widget.property("role") == "divider" for widget in
+               activities.menu.actions()[0].defaultWidget().findChildren(QWidget))
+
+    window.set_theme("dark")
+    dark_icon = empty_icon.pixmap().cacheKey()
+    window.set_theme("light")
+    assert empty_icon.property("headingIconColorRole") == "text_muted"
+    assert not empty_icon.pixmap().isNull()
+    assert empty_icon.pixmap().cacheKey() != dark_icon
+
+    job = activities.submit("Export", "Example", lambda cancelled, progress: "done", paused=True)
+    assert not activities.empty.isVisible()
+    assert activities.header_divider.isHidden()
+    activities.dismiss(job)
+    assert activities.empty.isVisible()
+    assert not activities.header_divider.isHidden()
+
+
+def test_output_job_cards_stack_and_show_state(window, application):
+    activities = window.activities
+    first = activities.submit("Share", "Share · Escape From Tarkov", lambda cancelled, progress: "done",
+                              subtitle="raid.mp4", paused=True)
+    second = activities.submit("Export", "Export · Highlights", lambda cancelled, progress: "done",
+                               subtitle="3 clips", paused=True)
+    assert not activities.empty.isVisible()
+    assert [job.title for job in activities.jobs] == ["Share · Escape From Tarkov",
+                                                      "Export · Highlights"]
+    assert [job.menu_action for job in activities.jobs] == activities.menu.actions()[2:]
+    assert first.row.findChild(QLabel, "outputJobSubtitle").text() == "raid.mp4"
+    assert second.row.findChild(QLabel, "outputJobSubtitle").text() == "3 clips"
+    assert first.row.findChild(QWidget, "outputJobCard") is not None
+    assert first.bar.objectName() == "outputJobProgress"
+    assert not first.bar.isTextVisible()
+
+    for state, color in (("Running", "accent_default"), ("Completed", "status_success"),
+                         ("Failed", "status_danger"), ("Queued", "text_muted"),
+                         ("Cancelled", "text_muted")):
+        first.state = state
+        first.percent = 42
+        first.detail = "Validating output"
+        activities._refresh(first)
+        assert first.status.text() == f"{state} · 42%"
+        assert first.status_dot.property("statusColor") == color
+        assert first.phase.text() == "Validating output"
+
+    activities.dismiss(first)
+    activities.dismiss(second)
+    assert activities.empty.isVisible()
+
+
 def test_unfinished_export_is_offered_for_resume_after_restart(window, application, tmp_path):
     from dfsorter.output import prepare_export_manifest
 

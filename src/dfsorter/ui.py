@@ -70,7 +70,7 @@ from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
-from .output import prepare_export_manifest, run_export_manifest, share_clip, validate
+from .output import prepare_export_manifest, run_export_manifest, safe_stem, share_clip, validate
 from .overview import (
     PERIOD_DAYS,
     capture_datetime,
@@ -4688,12 +4688,16 @@ class Window(QMainWindow):
         self.add_export_job(job_id, f"Export · {self.export_project.currentText()}")
 
     def add_export_job(self, job_id, label, *, paused=False):
+        record = next(record for record in self.catalogue.export_jobs()
+                      if record["job_id"] == job_id)
+        count = len(record["manifest"]["items"])
         return self.activities.submit(
             "Export", label,
             lambda cancelled, progress: run_export_manifest(
                 self.catalogue, job_id, cancelled, progress,
             ),
             record_id=job_id, forget=self.catalogue.delete_export_job, paused=paused,
+            subtitle=f"{count} {'clip' if count == 1 else 'clips'}",
         )
 
     def restore_export_jobs(self):
@@ -4909,7 +4913,7 @@ class Window(QMainWindow):
         lowercase = self.settings.get("lowercase_generated_titles", True)
         stem = custom_name or title(clip, self.registry, fields, include_prefix, lowercase=lowercase)
         self.activities.submit(
-            "Share", f"Share · {Path(clip['source_path']).name}",
+            "Share", f"Share · {clip['game'] or 'Unassigned'}",
             lambda cancelled, progress: share_clip(
                 clip,
                 self.registry,
@@ -4922,7 +4926,7 @@ class Window(QMainWindow):
                 selected_range=selected_range,
                 detailed_progress=progress,
             ),
-            clip_id=clip["clip_id"],
+            clip_id=clip["clip_id"], subtitle=f"{safe_stem(stem)}.mp4",
         )
         self.flash_share(self.edit_share_button)
 
