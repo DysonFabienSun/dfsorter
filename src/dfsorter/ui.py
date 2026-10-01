@@ -299,6 +299,59 @@ class CurrentPageStack(QStackedWidget):
         return page.minimumSizeHint() if page else super().minimumSizeHint()
 
 
+class BlockedCloseBell:
+    def __init__(self, window):
+        self.window = window
+        if sys.platform != "win32":
+            return
+        import ctypes
+
+        self.handle = int(window.winId())
+        self.subclass_id = id(self)
+        self.comctl32 = ctypes.windll.comctl32
+        self.comctl32.SetWindowSubclass.argtypes = (
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t
+        )
+        self.comctl32.SetWindowSubclass.restype = ctypes.c_int
+        self.comctl32.DefSubclassProc.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t
+        )
+        self.comctl32.DefSubclassProc.restype = ctypes.c_ssize_t
+        self.comctl32.RemoveWindowSubclass.argtypes = (
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t
+        )
+        self.user32 = ctypes.windll.user32
+        self.user32.IsWindowEnabled.argtypes = (ctypes.c_void_p,)
+        self.user32.IsWindowEnabled.restype = ctypes.c_int
+        self.callback = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t, ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t,
+            ctypes.c_ssize_t, ctypes.c_size_t, ctypes.c_size_t,
+        )(self.window_proc)
+        if not self.comctl32.SetWindowSubclass(self.handle, self.callback, self.subclass_id, 0):
+            raise ctypes.WinError()
+
+    def window_proc(self, handle, message, wparam, lparam, subclass_id, reference):
+        close_requested = message == 0x0010 or (
+            message == 0x0112 and wparam & 0xFFF0 == 0xF060
+        )
+        if close_requested and getattr(self.window, "settings_dialog", None) is None:
+            modal = QApplication.activeModalWidget()
+            if not self.user32.IsWindowEnabled(handle) or (
+                modal is not None
+                and (modal is self.window or self.window.isAncestorOf(modal))
+            ):
+                self.user32.MessageBeep(0xFFFFFFFF)
+                if modal is not None:
+                    modal.raise_()
+                    modal.activateWindow()
+                return 0
+        return self.comctl32.DefSubclassProc(handle, message, wparam, lparam)
+
+    def remove(self):
+        if sys.platform == "win32":
+            self.comctl32.RemoveWindowSubclass(self.handle, self.callback, self.subclass_id)
+
+
 class Window(QMainWindow):
     def __init__(self, root=ROOT):
         super().__init__()
@@ -854,6 +907,7 @@ class Window(QMainWindow):
         self.library_time_timer.setInterval(60_000)
         self.library_time_timer.timeout.connect(self.refresh_library_times)
         QApplication.instance().installEventFilter(self)
+        self.blocked_close_bell = BlockedCloseBell(self)
         QApplication.instance().focusChanged.connect(self.command_focus_changed)
         self.player.media.playbackStateChanged.connect(self.command_playback_changed)
         self.player.loading_finished.connect(self.update_command_state)
@@ -5013,6 +5067,7 @@ class Window(QMainWindow):
         self.scan_timer.stop()
         self.scan_retry_timer.stop()
         QApplication.instance().removeEventFilter(self)
+        self.blocked_close_bell.remove()
         try:
             QApplication.instance().styleHints().colorSchemeChanged.disconnect(
                 self.system_theme_changed
