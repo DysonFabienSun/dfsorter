@@ -803,6 +803,7 @@ class Window(QMainWindow):
         self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("Enter clip metadata…")
         self.command_separator_range = None
+        self.command_separator_space_pending = False
         self.command_submitted_error = False
         self.command_saved_timer = QTimer(self)
         self.command_saved_timer.setSingleShot(True)
@@ -3863,21 +3864,47 @@ class Window(QMainWindow):
                     if self.command.hasSelectedText()
                     else self.command.cursorPosition()
                 )
+                restore_space = False
+                text = self.command.text()
+                if (
+                    "--" not in text
+                    and start == len(text)
+                    and not self.command.hasSelectedText()
+                ):
+                    trimmed_end = len(text.rstrip(" "))
+                    restore_space = trimmed_end < start
+                    if restore_space:
+                        self.command.setSelection(trimmed_end, start - trimmed_end)
+                        start = trimmed_end
                 self.command.insert(" -- ")
-                self.command_separator_range = (start, start + 4)
+                self.command_separator_range = (start, start + 4, restore_space)
+                self.command_separator_space_pending = True
                 return True
             separator_range = self.command_separator_range
+            suppress_space = self.command_separator_space_pending
             self.command_separator_range = None
-            if key == Qt.Key.Key_Backspace and separator_range is not None:
-                start, end = separator_range
+            self.command_separator_space_pending = False
+            if separator_range is not None:
+                start, end, restore_space = separator_range
                 if (
                     self.command.cursorPosition() == end
                     and self.command.text()[start:end] == " -- "
                     and not self.command.hasSelectedText()
                 ):
-                    self.command.setSelection(start, end - start)
-                    self.command.del_()
-                    return True
+                    if (
+                        key == Qt.Key.Key_Space
+                        and modifiers == Qt.KeyboardModifier.NoModifier
+                        and suppress_space
+                    ):
+                        self.command_separator_range = separator_range
+                        return True
+                    if key == Qt.Key.Key_Backspace:
+                        self.command.setSelection(start, end - start)
+                        if restore_space:
+                            self.command.insert(" ")
+                        else:
+                            self.command.del_()
+                        return True
             if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
                 if modifiers == Qt.KeyboardModifier.NoModifier:
                     self.submit()

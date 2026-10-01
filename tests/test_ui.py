@@ -1745,6 +1745,39 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     QTest.keyClick(window.command, Qt.Key.Key_Right)
     QTest.keyClick(window.command, Qt.Key.Key_Backspace)
     assert window.command.text() == "jett --vandal"
+    for original, inserted, restored in (
+        ("jett", "jett -- ", "jett"),
+        ("jett ", "jett -- ", "jett "),
+        ("jett   ", "jett -- ", "jett "),
+        ("jett -- title ", "jett -- title  -- ", "jett -- title "),
+    ):
+        window.command.setText(original)
+        QTest.keyClick(window.command, Qt.Key.Key_Equal)
+        assert window.command.text() == inserted
+        assert window.command.cursorPosition() == len(inserted)
+        QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+        assert window.command.text() == restored
+        assert window.command.cursorPosition() == len(restored)
+        QTest.keyClick(window.command, Qt.Key.Key_Space)
+        assert window.command.text() == restored + " "
+    window.command.setText("jett ")
+    QTest.keyClick(window.command, Qt.Key.Key_Equal)
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == "jett -- "
+    QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.command.text() == "jett "
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == "jett  "
+    QTest.keyClick(window.command, Qt.Key.Key_Equal)
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == "jett --  "
+    QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.command.text() == "jett -- "
+    window.command.setText("jett")
+    QTest.keyClick(window.command, Qt.Key.Key_Equal)
+    QTest.keyClicks(window.command, "title ")
+    assert window.command.text() == "jett -- title "
     window.command.clear()
     QTest.keyClick(window.command, Qt.Key.Key_Backspace)
     assert window.catalogue.clip(ids[0])["triage"] is None
