@@ -90,6 +90,10 @@ class SettingsDialog(QDialog):
         self.paused_typing.setChecked(window.settings.get("paused_typing_enabled", True))
         self.paused_typing.toggled.connect(self.save_command_preferences)
         editing.addWidget(self.paused_typing)
+        self.ghost_autocomplete = QCheckBox("Show ghost expansions for command aliases")
+        self.ghost_autocomplete.setChecked(window.settings.get("ghost_autocomplete_enabled", True))
+        self.ghost_autocomplete.toggled.connect(self.save_command_preferences)
+        editing.addWidget(self.ghost_autocomplete)
         preferences.addWidget(editing_group)
         titles_group, titles = self.preference_group("Browse · Editing · Export")
         self.lowercase_titles = QCheckBox("Lowercase working titles and generated filenames")
@@ -245,6 +249,7 @@ class SettingsDialog(QDialog):
 
     def save_command_preferences(self):
         self.window.settings["paused_typing_enabled"] = self.paused_typing.isChecked()
+        self.window.settings["ghost_autocomplete_enabled"] = self.ghost_autocomplete.isChecked()
         self.window.save_settings()
         self.window.update_command_state()
 

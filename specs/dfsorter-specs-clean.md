@@ -645,6 +645,8 @@ Use native Qt video presentation and prefer hardware decoding, allowing logged s
 
 The command bar receives one complete string.
 
+Settings → General → Editing offers **Show ghost expansions for command aliases**, on by default and saved immediately. In the Editing command bar, exact unquoted configured enum aliases, including field-prefixed values, appear as lowercase canonical values when the caret is not touching their raw token. Alias letters matched in order within the canonical value retain the normal input color; inserted letters use muted text. If no complete ordered match exists, the whole expansion is muted. Clicking an expansion moves the caret to the nearest raw alias boundary and collapses it. The editable text, selection, clipboard, undo, draft, history, validation, and submission always use the original typed command. Freeform values and mainline or description text do not expand; recognized aliases may expand even when another token is invalid.
+
 The field checklist beneath it previews saved metadata merged with the current valid command as text changes. Enter is still required to save. Empty commands show saved fields. Incomplete or invalid commands retain a preview of the longest fully parseable prefix merged with saved fields; checklist tooltips distinguish partial previews from complete drafts. Hovering a field shows every configured enum value with its accepted aliases, or the accepted syntax for fields without a fixed list. No incomplete token contributes a value. Previewing must not modify catalogue data, history, titles or the Session list.
 
 Fields inferred by YAML links use a cyan `◇` marker while previewing. After submission they use the

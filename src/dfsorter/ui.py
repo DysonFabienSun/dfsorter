@@ -66,6 +66,7 @@ from .activities import Activities
 from .app_paths import ROOT, prepare_game_configs
 from .browse import BrowsePage
 from .catalogue import Catalogue
+from .command_input import CommandInput
 from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
@@ -798,7 +799,7 @@ class Window(QMainWindow):
         role(self.shortcut_hint, "helper")
         self.shortcut_hint.setWordWrap(True)
         command_layout.addWidget(self.shortcut_hint)
-        self.command = QLineEdit()
+        self.command = CommandInput()
         self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
         self.command.setPlaceholderText("Enter clip metadata…")
@@ -1398,6 +1399,7 @@ class Window(QMainWindow):
         self.refresh_title_presentation()
         self.refresh_shortcut_hint()
         self.update_command_state()
+        self.command.update()
         clip = self.effective_clip() if self.current_id else None
         if clip:
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
@@ -3459,6 +3461,11 @@ class Window(QMainWindow):
         self.update_command_state()
 
     def update_command_state(self):
+        clip = self.effective_clip() if self.current_id else None
+        self.command.set_ghost_context(
+            self.settings.get("ghost_autocomplete_enabled", True),
+            self.registry.game(clip["game"]) if clip else None,
+        )
         focus = QApplication.focusWidget()
         state = "review"
         if self.current_panel == "Editing":

@@ -10,6 +10,7 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import PySide6
 import pytest
+import yaml
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
 from PySide6.QtGui import QColor, QCursor, QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from dfsorter.catalogue import Catalogue
+from dfsorter.command_input import CommandInput, command_expansions
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
@@ -70,6 +72,98 @@ def wait_for(application, predicate, timeout=12):
             return True
         QTest.qWait(20)
     return False
+
+
+def test_command_ghost_expansions_use_configured_aliases(registry):
+    game = registry.game("VALORANT")
+    expansions = command_expansions("hh weapon:tdf -- hh", game)
+    assert [(item.start, item.end, item.display, item.matched) for item in expansions] == [
+        (0, 2, "headhunter", frozenset({0, 4})),
+        (10, 13, "tour de force", frozenset({0, 5, 8})),
+    ]
+    assert command_expansions('"hh" weapon:hh', game)[0].start == 12
+    assert command_expansions("hh nonsense", game)[0].display == "headhunter"
+    assert command_expansions("hh", registry.game("Overwatch")) == []
+
+
+def test_command_ghost_expansion_keeps_raw_text(registry, application):
+    command = CommandInput()
+    game = registry.game("VALORANT")
+    command.show()
+    command.set_ghost_context(True, game)
+    command.setText("hh tdf")
+    command.setFocus()
+    command.setCursorPosition(6)
+    application.processEvents()
+    assert [item.display for item in command.visible_expansions()] == ["headhunter"]
+    assert command._display()[0] == "headhunter tdf"
+    assert not command.grab().isNull()
+    command.setCursorPosition(1)
+    assert [item.display for item in command.visible_expansions()] == ["tour de force"]
+    assert command.text() == "hh tdf"
+    command.selectAll()
+    command.copy()
+    assert application.clipboard().text() == "hh tdf"
+    command.set_ghost_context(False, game)
+    assert command.visible_expansions() == []
+    command.close()
+
+
+def test_command_ghost_click_collapses_to_raw_boundary(registry, application):
+    command = CommandInput()
+    command.resize(360, 30)
+    command.show()
+    command.set_ghost_context(True, registry.game("VALORANT"))
+    command.setText("hh ")
+    command.setCursorPosition(3)
+    application.processEvents()
+    assert command.visible_expansions()
+    display, _, _, _, _, positions, rect, _ = command._geometry()
+    assert display == "headhunter "
+    QTest.mouseClick(command, Qt.MouseButton.LeftButton, pos=QPoint(rect.x() + positions[1], rect.center().y()))
+    assert command.cursorPosition() in (0, 2)
+    assert command.visible_expansions() == []
+    assert command.text() == "hh "
+    command.close()
+
+
+def test_command_ghost_text_keeps_native_baseline(registry, application):
+    command = CommandInput()
+    command.resize(360, 38)
+    command.show()
+    command.setFocus()
+    command.set_ghost_context(True, registry.game("VALORANT"))
+    command.setText("hh ")
+
+    def first_letter_top():
+        application.processEvents()
+        image = command.grab().toImage()
+        rect = command._text_rect()
+        return min(
+            vertical
+            for vertical in range(rect.top(), rect.bottom())
+            for horizontal in range(rect.left() + 1, rect.left() + 8)
+            if (color := image.pixelColor(horizontal, vertical)).red() < 135
+            and color.green() < 145
+            and color.blue() < 155
+        )
+
+    command.setCursorPosition(0)
+    native_top = first_letter_top()
+    command.setCursorPosition(3)
+    assert command.visible_expansions()
+    assert first_letter_top() == native_top
+    command.close()
+
+
+def test_command_ghost_setting_persists(window, application):
+    dialog = SettingsDialog(window)
+    assert dialog.ghost_autocomplete.isChecked()
+    dialog.ghost_autocomplete.setChecked(False)
+    assert window.settings["ghost_autocomplete_enabled"] is False
+    assert window.settings_path.exists()
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["ghost_autocomplete_enabled"] is False
+    dialog.close()
 
 
 def test_status_bar_exists_before_deferred_startup_work(window):
