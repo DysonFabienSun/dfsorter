@@ -677,6 +677,8 @@ def test_copy_collision_cancel_and_share(catalogue, clips, registry, tmp_path):
     assert not list(output.glob("cancelled*"))
     with pytest.raises(ValueError, match="outside"):
         share_clip(clip, registry, Path(clip["source_path"]).parent, catalogue.folders())
+    with pytest.raises(ValueError, match="outside"):
+        share_clip(clip, registry, Path(clip["source_path"]).parent / "shares", catalogue.folders())
     assert safe_stem("CON") == "_CON"
     assert safe_stem("bad:name.") == "bad_name"
 
@@ -750,6 +752,25 @@ def test_resumable_export_verifies_completed_files_and_preserves_snapshot(
     assert resumed.error is None and len(resumed.completed) == len(frozen)
     assert resumed.completed[0] == str(completed_path)
     assert len(list(destination.glob("*.mp4"))) == len(frozen)
+
+
+def test_export_resume_rejects_new_capture_folder(catalogue, clips, registry, tmp_path):
+    clip = clips[0]
+    catalogue.patch(clip["clip_id"], {
+        "triage": "keep", "metadata": {"agent": "Jett"},
+    })
+    destination = tmp_path / "exports" / "project"
+    manifest = prepare_export_manifest(
+        [catalogue.clip(clip["clip_id"])], registry, destination, catalogue.folders(),
+    )
+    catalogue.save_export_job("nested-output", manifest, "Queued")
+    (tmp_path / "exports").mkdir()
+    catalogue.add_folder(tmp_path / "exports")
+
+    result = run_export_manifest(catalogue, "nested-output")
+
+    assert result.error == "Output must be outside all configured capture folders"
+    assert not destination.exists()
 
 
 def test_parallel_export_jobs_never_overwrite_each_other(catalogue, clips, registry, tmp_path):

@@ -242,6 +242,7 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
     total = sum(item["source_size"] for item in manifest["items"])
     done_bytes = 0
     try:
+        check_destination(manifest["destination"], catalogue.folders())
         recovered = set()
         for item in manifest["items"]:
             pending = item.get("pending")
