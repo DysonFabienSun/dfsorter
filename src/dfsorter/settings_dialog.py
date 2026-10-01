@@ -1,5 +1,6 @@
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -94,6 +95,30 @@ class SettingsDialog(QDialog):
         self.ghost_autocomplete.setChecked(window.settings.get("ghost_autocomplete_enabled", True))
         self.ghost_autocomplete.toggled.connect(self.save_command_preferences)
         editing.addWidget(self.ghost_autocomplete)
+        self.editing_tips = QCheckBox("Show rotating Editing tips")
+        self.editing_tips.setChecked(window.settings.get("editing_tips_enabled", True))
+        self.editing_tips.toggled.connect(self.save_command_preferences)
+        editing.addWidget(self.editing_tips)
+        size_row = QHBoxLayout()
+        size_row.addWidget(QLabel("Field markers and tips size:"))
+        self.editing_bottom_size = QButtonGroup(self)
+        size_choices = QHBoxLayout()
+        size_choices.setSpacing(0)
+        for index, size in enumerate((11, 12, 13)):
+            control = QPushButton(f"{size} px")
+            control.setCheckable(True)
+            control.setChecked(size == window.editing_bottom_size())
+            control.setProperty("periodSegment", True)
+            control.setProperty("editingSizeChoice", True)
+            control.setProperty(
+                "periodPosition", "first" if index == 0 else "last" if index == 2 else "middle"
+            )
+            self.editing_bottom_size.addButton(control, size)
+            size_choices.addWidget(control)
+        self.editing_bottom_size.idClicked.connect(self.save_command_preferences)
+        size_row.addLayout(size_choices)
+        size_row.addStretch()
+        editing.addLayout(size_row)
         preferences.addWidget(editing_group)
         titles_group, titles = self.preference_group("Browse · Editing · Export")
         self.lowercase_titles = QCheckBox("Lowercase working titles and generated filenames")
@@ -248,10 +273,16 @@ class SettingsDialog(QDialog):
             offset.setEnabled(check.isChecked())
 
     def save_command_preferences(self):
+        tips_were_enabled = self.window.settings.get("editing_tips_enabled", True)
         self.window.settings["paused_typing_enabled"] = self.paused_typing.isChecked()
         self.window.settings["ghost_autocomplete_enabled"] = self.ghost_autocomplete.isChecked()
+        self.window.settings["editing_tips_enabled"] = self.editing_tips.isChecked()
+        self.window.settings["editing_bottom_size"] = self.editing_bottom_size.checkedId()
         self.window.save_settings()
         self.window.update_command_state()
+        if tips_were_enabled != self.editing_tips.isChecked():
+            self.window.update_tips_enabled()
+        self.window.update_editing_bottom_size()
 
     def refresh(self):
         for listing, source in [

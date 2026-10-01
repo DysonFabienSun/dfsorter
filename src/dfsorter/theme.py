@@ -319,6 +319,15 @@ def stylesheet():
         QPushButton[role="discard"]:checked { background: %(status_danger_soft)s; color: %(status_danger)s; border-color: %(status_danger)s; }
         QPushButton[role="undefined"]:checked { background: %(surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
         QPushButton:focus, QToolButton:focus { border: 2px solid %(focus)s; }
+        QPushButton[editingSizeChoice="true"]:focus,
+        QPushButton[editingSizeChoice="true"]:pressed {
+            background: %(surface_subtle)s; border: 1px solid %(border_subtle)s;
+        }
+        QPushButton[editingSizeChoice="true"]:checked,
+        QPushButton[editingSizeChoice="true"]:checked:focus,
+        QPushButton[editingSizeChoice="true"]:checked:pressed {
+            background: %(accent_soft)s; border: 1px solid %(accent_default)s;
+        }
         QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator, QToolButton#activitiesButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QPushButton[captureFolderAction="true"], QToolButton[captureFolderAction="true"] { min-height: 24px; }

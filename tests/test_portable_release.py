@@ -66,6 +66,24 @@ def test_packaged_game_defaults_preserve_local_edits(tmp_path, monkeypatch):
     ) == "version: 2"
 
 
+def test_packaged_tip_defaults_preserve_local_edits(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/tips"
+    defaults.mkdir(parents=True)
+    (defaults / "default.yaml").write_text("tips: [First]", encoding="utf-8")
+    app_paths.prepare_tip_configs()
+    active = tmp_path / "configs/tips/default.yaml"
+    assert active.read_text(encoding="utf-8") == "tips: [First]"
+    active.write_text("tips: [Local]", encoding="utf-8")
+    (defaults / "default.yaml").write_text("tips: [Second]", encoding="utf-8")
+    app_paths.prepare_tip_configs()
+    assert active.read_text(encoding="utf-8") == "tips: [Local]"
+    assert (tmp_path / "configs/default-updates/tips/default.yaml").read_text(
+        encoding="utf-8"
+    ) == "tips: [Second]"
+
+
 def release_archive(tmp_path, version):
     package = tmp_path / "package/DFSorter"
     package.mkdir(parents=True)

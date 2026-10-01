@@ -58,10 +58,11 @@ try {
     Copy-Item (Join-Path $root 'runtime/mpv/libmpv-2.dll') (Join-Path $portable 'runtime/mpv')
     Copy-Item (Join-Path $root 'runtime/mpv/Copyright') (Join-Path $portable 'runtime/mpv')
     Copy-Item (Join-Path $root 'runtime/mpv/LICENSE.*') (Join-Path $portable 'runtime/mpv')
-    New-Item -ItemType Directory -Force (Join-Path $portable 'bin'), (Join-Path $portable 'defaults/games'), (Join-Path $portable 'licenses/ffmpeg'), (Join-Path $portable 'licenses/python-packages') | Out-Null
+    New-Item -ItemType Directory -Force (Join-Path $portable 'bin'), (Join-Path $portable 'defaults/games'), (Join-Path $portable 'defaults/tips'), (Join-Path $portable 'licenses/ffmpeg'), (Join-Path $portable 'licenses/python-packages') | Out-Null
     Copy-Item $ffmpeg.FullName (Join-Path $portable 'bin/ffmpeg.exe')
     Copy-Item $ffprobe.FullName (Join-Path $portable 'bin/ffprobe.exe')
     Copy-Item (Join-Path $root 'configs/games/*.yaml') (Join-Path $portable 'defaults/games')
+    Copy-Item (Join-Path $root 'configs/tips/*.yaml') (Join-Path $portable 'defaults/tips')
     Copy-Item (Join-Path $root 'LICENSE') $portable
     Copy-Item (Join-Path $root 'packaging/THIRD-PARTY-NOTICES.txt') $portable
     Get-ChildItem -LiteralPath $extracted -Recurse -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|COPYRIGHT)' } | ForEach-Object {

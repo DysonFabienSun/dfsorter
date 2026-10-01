@@ -27,7 +27,15 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QPixmap, QRegion
+from PySide6.QtGui import (
+    QAction,
+    QDesktopServices,
+    QIcon,
+    QPainter,
+    QPixmap,
+    QRegion,
+    QTextDocument,
+)
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
@@ -63,7 +71,7 @@ from PySide6.QtWidgets import (
 )
 
 from .activities import Activities
-from .app_paths import ROOT, prepare_game_configs
+from .app_paths import ROOT, prepare_game_configs, prepare_tip_configs
 from .browse import BrowsePage
 from .catalogue import Catalogue
 from .command_input import CommandInput
@@ -91,6 +99,7 @@ from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
 from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
 from .thumbnails import ThumbnailCache
+from .tips import TipLibrary, TipWidget
 from .update_ui import UpdateController
 from .widgets import (
     CLIP_ROLE,
@@ -140,6 +149,18 @@ class Worker(QThread):
         except Exception as error:
             logging.exception("Background operation failed")
             self.failed.emit(str(error))
+
+
+class FieldReminder(QLabel):
+    def sizeHint(self):
+        result = super().sizeHint()
+        if self.text():
+            document = QTextDocument()
+            document.setDefaultFont(self.font())
+            document.setHtml(self.text())
+            document.setTextWidth(-1)
+            result.setWidth(round(document.idealWidth() + 1))
+        return result
 
 
 def storage_gb(size):
@@ -359,6 +380,8 @@ class Window(QMainWindow):
         self.close_requested = False
         self.root = Path(root)
         self.registry = Registry(self.root / "configs/games")
+        self.tips = TipLibrary(self.root / "configs/tips")
+        self.registry.errors.extend(self.tips.errors)
         self.catalogue = Catalogue(self.root / "data/dfsorter.db")
         self.settings_path = self.root / "data/settings.yaml"
         self.settings = {}
@@ -817,9 +840,12 @@ class Window(QMainWindow):
         self.command_feedback.setWordWrap(True)
         self.command_feedback.setMinimumHeight(self.command_feedback.fontMetrics().height())
         command_layout.addWidget(self.command_feedback)
-        self.field_reminder = QLabel()
+        self.field_reminder = FieldReminder()
         self.field_reminder.setTextFormat(Qt.TextFormat.RichText)
         self.field_reminder.setWordWrap(True)
+        self.field_reminder.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
+        )
         # Keep the command baseline stable when checklist glyphs change font metrics.
         self.field_reminder.setMinimumHeight(self.field_reminder.fontMetrics().height())
         self.field_reminder.setAccessibleName("Metadata field checklist with command preview")
@@ -831,7 +857,13 @@ class Window(QMainWindow):
         self.field_reminder_default_tooltip = ""
         self.field_reminder.hide()
         fields_row = QHBoxLayout()
-        fields_row.addWidget(self.field_reminder, 1)
+        fields_row.setSpacing(12)
+        fields_row.addWidget(self.field_reminder)
+        self.editing_tip = TipWidget(size=self.editing_bottom_size())
+        fields_row.addWidget(self.editing_tip, 1)
+        self.tip_timer = QTimer(self)
+        self.tip_timer.setInterval(30_000)
+        self.tip_timer.timeout.connect(self.rotate_tip)
         self.range_warning_icon = QLabel()
         self.range_warning_icon.setPixmap(
             icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
@@ -1394,6 +1426,7 @@ class Window(QMainWindow):
         self.range_warning_icon.setPixmap(
             icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
         )
+        self.editing_tip.refresh_theme()
         self.update_theme_button()
         self.refresh_references()
         self.refresh_title_presentation()
@@ -2069,6 +2102,8 @@ class Window(QMainWindow):
                 [self.library.takeItem(0) for _ in range(self.library.count())],
             )
         self.current_panel = name
+        if name != "Editing":
+            self.tip_timer.stop()
         if name == "Browse":
             self.browse_time_timer.start()
         else:
@@ -2093,6 +2128,8 @@ class Window(QMainWindow):
         self.shortcut_hint.setVisible(name == "Editing")
         self.refresh_shortcut_hint()
         self.field_reminder.hide()
+        self.editing_tip.setVisible(name == "Editing" and bool(self.editing_tip.message)
+                                    and self.settings.get("editing_tips_enabled", True))
         self.session_header.setVisible(name == "Editing")
         self.session_heading.setText("Single clip" if self.atomic_edit else "Session clips")
         self.next_undefined_button.setVisible(not self.atomic_edit)
@@ -2136,6 +2173,8 @@ class Window(QMainWindow):
                 clip_id = session["ids"][session["index"]]
                 self.load_clip(clip_id, prepared=self.take_prepared_clip("Editing", self.catalogue.clip(clip_id)))
             self.review_mode()
+            if changing_panel:
+                self.rotate_tip()
         elif name == "Export":
             self.export_selection(refresh_library=False)
         if ready_player is not None and not self.transition_pending:
@@ -3230,7 +3269,10 @@ class Window(QMainWindow):
             if not valid:
                 mark, color = "x", "status_danger"
             elif key in inferred_fields:
-                mark, color = '<span style="font-size:9px">◇</span>', "accent_default"
+                mark, color = (
+                    f'<span style="font-size:{self.editing_bottom_size()}px">◇</span>',
+                    "accent_default",
+                )
             elif not missing:
                 mark, color = "✓", "status_success"
             elif key in game.suggested_fields:
@@ -3242,7 +3284,8 @@ class Window(QMainWindow):
                 f"{mark}&nbsp;{html.escape(key)}</a>"
             )
         self.field_reminder.setText(
-            '<span style="font-size:11px">' + " &nbsp; ".join(entries) + "</span>"
+            f'<span style="font-size:{self.editing_bottom_size()}px">'
+            + " &nbsp; ".join(entries) + "</span>"
         )
         self.field_reminder.setToolTip(
             self.field_reminder_tooltips.get(
@@ -4732,6 +4775,37 @@ class Window(QMainWindow):
         temporary.replace(self.settings_path)
         self.schedule_preload()
 
+    def rotate_tip(self):
+        if self.current_panel != "Editing" or not self.settings.get("editing_tips_enabled", True):
+            self.tip_timer.stop()
+            self.editing_tip.hide()
+            return
+        clip = self.effective_clip() if self.current_id else None
+        message = self.tips.next(clip["game"] if clip else None)
+        self.editing_tip.set_message(message)
+        self.editing_tip.setVisible(bool(message))
+        if message:
+            self.tip_timer.start()
+        else:
+            self.tip_timer.stop()
+
+    def update_tips_enabled(self):
+        if self.settings.get("editing_tips_enabled", True):
+            self.rotate_tip()
+        else:
+            self.tip_timer.stop()
+            self.editing_tip.hide()
+
+    def editing_bottom_size(self):
+        size = self.settings.get("editing_bottom_size", 12)
+        return size if type(size) is int and size in (11, 12, 13) else 12
+
+    def update_editing_bottom_size(self):
+        self.editing_tip.set_tip_size(self.editing_bottom_size())
+        if self.current_panel == "Editing" and self.current_id:
+            clip = self.effective_clip()
+            self.render_field_reminder(clip, self.registry.game(clip["game"]))
+
     def set_playback_volume(self, value):
         self.settings["playback_volume"] = value
         for player in (
@@ -5122,6 +5196,7 @@ def main():
 
     (ROOT / "data").mkdir(exist_ok=True)
     prepare_game_configs()
+    prepare_tip_configs()
     logging.basicConfig(
         level=logging.INFO,
         handlers=[

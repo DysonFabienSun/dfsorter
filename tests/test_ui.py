@@ -166,6 +166,90 @@ def test_command_ghost_setting_persists(window, application):
     dialog.close()
 
 
+def test_editing_tips_setting_persists(window, application):
+    dialog = SettingsDialog(window)
+    assert dialog.editing_tips.isChecked()
+    dialog.editing_tips.setChecked(False)
+    assert window.settings["editing_tips_enabled"] is False
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["editing_tips_enabled"] is False
+    assert not window.tip_timer.isActive()
+    dialog.close()
+
+
+def test_editing_bottom_size_setting_updates_row_without_rotating(window, tmp_path):
+    add_clips(window, tmp_path)
+    window.panel("Editing")
+    current_tip = window.editing_tip.message
+    shown = set(window.tips.shown)
+    dialog = SettingsDialog(window)
+    assert [dialog.editing_bottom_size.button(size).text() for size in (11, 12, 13)] == [
+        "11 px", "12 px", "13 px"
+    ]
+    assert dialog.editing_bottom_size.checkedId() == 12
+    assert window.editing_tip.font().pixelSize() == 12
+    assert 'font-size:12px' in window.field_reminder.text()
+    dialog.editing_bottom_size.button(11).click()
+    assert window.settings["editing_bottom_size"] == 11
+    assert window.editing_tip.font().pixelSize() == 11
+    assert 'font-size:11px' in window.field_reminder.text()
+    dialog.editing_bottom_size.button(13).click()
+    assert window.settings["editing_bottom_size"] == 13
+    assert window.editing_tip.font().pixelSize() == 13
+    assert 'font-size:13px' in window.field_reminder.text()
+    assert window.editing_tip.message == current_tip
+    assert window.tips.shown == shown
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["editing_bottom_size"] == 13
+    dialog.close()
+
+
+def test_editing_bottom_size_shows_every_option_without_popup(window, application):
+    dialog = SettingsDialog(window)
+    dialog.show()
+    application.processEvents()
+    assert all(dialog.editing_bottom_size.button(size).isVisible() for size in (11, 12, 13))
+    assert dialog.editing_bottom_size.checkedId() == 12
+    dialog.close()
+
+
+def test_editing_bottom_size_changes_on_mouse_release(window, application):
+    dialog = SettingsDialog(window)
+    dialog.show()
+    application.processEvents()
+    button = dialog.editing_bottom_size.button(13)
+    QTest.mousePress(button, Qt.MouseButton.LeftButton)
+    assert dialog.editing_bottom_size.checkedId() == 12
+    assert window.editing_bottom_size() == 12
+    QTest.mouseRelease(button, Qt.MouseButton.LeftButton)
+    assert dialog.editing_bottom_size.checkedId() == 13
+    assert window.editing_bottom_size() == 13
+    dialog.close()
+
+
+def test_editing_tips_rotate_on_pane_return_but_not_clip_change(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    application.processEvents()
+    assert window.editing_tip.message
+    assert window.editing_tip.font().pixelSize() == 12
+    assert 'font-size:12px' in window.field_reminder.text()
+    assert window.editing_tip.isVisible()
+    assert not window.editing_tip.grab().isNull()
+    assert window.editing_tip.x() - window.field_reminder.geometry().right() >= 12
+    assert window.field_reminder.width() >= window.field_reminder.sizeHint().width()
+    assert window.editing_tip.width() > 0
+    assert window.tip_timer.isActive()
+    shown = set(window.tips.shown)
+    message = window.editing_tip.message
+    window.load_clip(ids[-1])
+    assert window.editing_tip.message == message
+    assert window.tips.shown == shown
+    window.panel("Home")
+    assert not window.tip_timer.isActive()
+    window.panel("Editing")
+    assert window.tips.shown != shown
+    assert window.tip_timer.isActive()
+
+
 def test_status_bar_exists_before_deferred_startup_work(window):
     assert window.status_bar is window.statusBar()
     assert not window.status_bar.isHidden()
@@ -2091,7 +2175,7 @@ def test_inferred_field_preview_and_history(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
     window.command.setText("hh")
-    assert '<span style="font-size:9px">◇</span>&nbsp;agent' in window.field_reminder.text()
+    assert '<span style="font-size:12px">◇</span>&nbsp;agent' in window.field_reminder.text()
     assert COLORS["accent_default"] in window.field_reminder.text()
     assert window.catalogue.clip(ids[0])["metadata"] == {}
     window.submit()

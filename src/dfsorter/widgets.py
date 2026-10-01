@@ -250,12 +250,20 @@ def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0):
         if fill:
             data = data.replace(b'fill="none"', f'fill="{tint}"'.encode())
         for scale in (1, 2, 3):
+            rendered = QPixmap((size + right_padding) * scale * 3, size * scale * 3)
+            rendered.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(rendered)
+            if y_offset:
+                painter.translate(0, y_offset * scale * 3)
+            QSvgRenderer(data).render(
+                painter, QRectF(0, 0, size * scale * 3, size * scale * 3)
+            )
+            painter.end()
             pixmap = QPixmap((size + right_padding) * scale, size * scale)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
-            if y_offset:
-                painter.translate(0, y_offset * scale)
-            QSvgRenderer(data).render(painter, QRectF(0, 0, size * scale, size * scale))
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawPixmap(pixmap.rect(), rendered, rendered.rect())
             painter.end()
             pixmap.setDevicePixelRatio(scale)
             result.addPixmap(pixmap, mode, state)

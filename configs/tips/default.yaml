@@ -1,0 +1,14 @@
+tips:
+  - Press I to set the In point and O to set the Out point.
+  - Press = in the command bar to insert the mainline separator, --.
+  - A second -- starts a description after the mainline.
+  - Submit multiple commands for one clip; later commands update only the fields they mention.
+  - Press Enter to save a command, then Shift+Enter to apply the verdict and advance.
+  - Press / or Enter in review mode to focus the command bar.
+  - Press ? (Shift + /) to see all Editing shortcuts.
+  - Command alias ghost expansions can be switched on or off in Settings → General → Editing.
+  - Accepted abbreviations can be changed in the game configuration.
+  - Each game's command bar example can be changed in Config → Identity.
+  - Hover over a field marker to see accepted values and aliases.
+  - If 12 px field markers and tips are too small, try 13 px in Settings → General → Editing.
+  - An unfinished command remains available when returning to a clip during the same application run.
