@@ -3,7 +3,7 @@ from pathlib import Path
 
 import PySide6
 import pytest
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtCore import QCoreApplication, QPoint, Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QInputDialog, QMessageBox
 
 from dfsorter.config import Registry
@@ -301,9 +301,13 @@ def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
     search = editor_window.config_editor.game_search
     assert first.height() >= games.fontMetrics().height() + 6
     assert second.top() >= first.bottom() + 1
-    assert search.geometry().left() == 12
-    assert search.geometry().right() == header.width() - 13
+    assert search.geometry().left() == 8
+    assert search.geometry().right() == header.width() - 9
     assert 6 <= search.geometry().top() - editor_window.config_editor.new_game_button.geometry().bottom() - 1 <= 8
+    assert editor_window.config_editor.games_heading.mapTo(editor_window.left, QPoint()).x() == 14
+    assert editor_window.config_editor.games_heading.property("role") == (
+        editor_window.session_heading.property("role")
+    )
     assert games.mapTo(editor_window.left, games.rect().topRight()).x() == editor_window.left.width() - 1
     assert games.mapTo(editor_window.left, games.rect().topLeft()).y() == (
         editor_window.config_editor.sidebar_header.geometry().bottom() + 1

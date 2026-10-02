@@ -303,7 +303,7 @@ Order search/filter controls, compact heading/action row where required, expandi
 
 Keep lists tall; command area belongs below center, not across entire window. Hide empty error rows. The Editing header uses the same flat toolbar surface across the pane width, with equal visible top and left insets for its title. Center the title, numeric position, and right icon vertically; lower the position text optically by about 1 px to align its writing line with the title. Session progress text sits at the bottom left with an 8 px inset rather than aligning to clip titles. Filters and footer visibility follow page requirements.
 
-Config's Games heading uses the same full-width flat toolbar surface and 16 px title inset, separated from the list by a subtle bottom divider. Put compact New game and Reload icon actions at its right edge, with accessible labels and tooltips; leave the bottom of the pane empty. The game list sits directly beneath the header on the continuous sidebar surface, flush with both side edges of the pane. The first row's painted surface meets the header edge without a top gap, and adjacent row surfaces have no vertical gap. Each row shows the canonical game name in primary text above a muted display code and total configured field count, including reserved fields. Invalid YAML uses its filename and an **Invalid configuration** secondary line. Center the two-line text block vertically with roughly 8 px of space above and below it. Follow the shared library-list treatment for a subtle selected surface spanning the list width, a 3 px cyan left accent flush with the list background's left edge, a quiet hover surface, and keyboard focus; size rows to contain all painted content without overlap.
+Config's Existing game configs heading uses the same full-width flat toolbar surface and compact pane-heading role as Session clips, with a 14 px title inset, separated from the list by a subtle bottom divider. Put compact New game and Reload icon actions at its right edge, with accessible labels and tooltips; leave the bottom of the pane empty. The game list sits directly beneath the header on the continuous sidebar surface, flush with both side edges of the pane. The first row's painted surface meets the header edge without a top gap, and adjacent row surfaces have no vertical gap. Each row shows the canonical game name in primary text above a muted display code and total configured field count, including reserved fields. Invalid YAML uses its filename and an **Invalid configuration** secondary line. Center the two-line text block vertically with roughly 8 px of space above and below it. Follow the shared library-list treatment for a subtle selected surface spanning the list width, a 3 px cyan left accent flush with the list background's left edge, a quiet hover surface, and keyboard focus; size rows to contain all painted content without overlap.
 
 Search is the primary filter entry. The three filter menu buttons beneath it share height,
 radius, padding, border treatment and arrow placement. Menus use persistent checkboxes for
@@ -496,8 +496,9 @@ single Save action is primary; Revert, Reload and row actions remain secondary. 
 tables legible in Light and Dark without adding decorative cards merely to occupy space.
 Config's Game configurations heading uses the shared 22 px section-heading row with a
 24 px file-cog icon, aligned to the Home and Session workspace heading inset.
-The Config game navigator places Games, New game, Reload and Search games in one flat
-toolbar surface above the list. Use 12 px horizontal and 10 px vertical insets, an
+The Config game navigator places Existing game configs, New game, Reload and Search games in one flat
+toolbar surface above the list. Use the shared 8 px search inset on both sides and
+8 px top inset, an
 8 px gap between the heading row and search, and a subtle bottom divider. Align the
 search with game-row content and keep the list rows and selection styling unchanged.
 Config Revert changes in place to a red Confirm revert button while confirmation is armed, using the shared danger role. Outside interaction restores its secondary appearance.
