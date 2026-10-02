@@ -2,7 +2,7 @@ import html
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PySide6.QtWidgets import QCheckBox, QProxyStyle, QStyle
+from PySide6.QtWidgets import QCheckBox, QComboBox, QProxyStyle, QStyle
 
 from .app_paths import ROOT
 
@@ -261,7 +261,7 @@ def stylesheet():
         QLabel[role="sectionHeading"] { font-size: %(font_section_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: %(bg_library_toolbar)s; }
-        QWidget#configSidebarHeader { background: %(bg_library_toolbar)s; }
+        QWidget#configSidebarHeader { background: %(bg_library_toolbar)s; border-bottom: 1px solid %(border_subtle)s; }
         QLabel#projectsActiveName { color: %(accent_default)s; font-size: %(font_sm)spx; }
         QToolButton[projectsAction="true"]:hover { background: %(surface_hover)s; border-color: %(border_subtle)s; }
         QToolButton[projectsAction="true"]:pressed { background: %(surface_pressed)s; }
@@ -386,17 +386,20 @@ def stylesheet():
         QPushButton#navigation:disabled { background: transparent; color: %(text_disabled)s; border-bottom-color: transparent; }
         QListWidget { background: %(surface_workspace)s; border: none; padding: 4px; outline: none; }
         QListWidget#clipLibrary { padding: 0px; }
+        QListWidget#configGames { padding: 0px; }
         QWidget#clipScrollTopFade, QWidget#clipScrollBottomFade { background: transparent; border: none; }
         QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
         QListWidget#projectsList::item:selected { background: %(surface_pressed)s; color: %(text_primary)s; }
         QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
         QListWidget::item { padding: 2px 4px; }
+        QListWidget#configGames::item { padding: 0px; }
         QListWidget::item:selected { background: %(accent_selection)s; color: %(text_primary)s; }
         QListWidget::item:hover { background: %(surface_hover)s; }
         QTableWidget { background: %(surface_control)s; color: %(text_primary)s; border: 1px solid %(border_default)s; gridline-color: %(border_subtle)s; selection-background-color: %(accent_selection)s; selection-color: %(text_primary)s; outline: none; }
         QTableWidget::item:hover { background: %(surface_hover)s; }
         QHeaderView::section { background: %(surface_subtle)s; color: %(text_secondary)s; border: none; border-bottom: 1px solid %(border_subtle)s; padding: 4px 8px; }
         QComboBox QAbstractItemView { background: %(surface_panel)s; selection-background-color: %(accent_selection)s; }
+        QComboBox QAbstractItemView::item { padding: 4px 8px; }
         QMenuBar, QMenu { background: %(surface_panel)s; }
         QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }
         QMenu { border: 1px solid %(border_default)s; }
@@ -451,6 +454,8 @@ class ApplicationStyle(QProxyStyle):
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QStyle.StyleHint.SH_ToolTip_WakeUpDelay:
             return 200
+        if hint == QStyle.StyleHint.SH_ComboBox_Popup and isinstance(widget, QComboBox):
+            return 0
         return super().styleHint(hint, option, widget, returnData)
 
 

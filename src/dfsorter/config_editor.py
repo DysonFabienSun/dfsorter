@@ -3,7 +3,8 @@
 import re
 from copy import deepcopy
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QRect, QSize, Qt
+from PySide6.QtGui import QColor, QFontMetrics
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStyle,
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
@@ -34,8 +36,10 @@ from PySide6.QtWidgets import (
 from .config import GLOBAL_FIELDS
 from .config_store import GameFile, new_game_path
 from .history import EditHistory
-from .theme import role
-from .widgets import heading
+from .theme import COLORS, font, role
+from .widgets import heading, tool
+
+GAME_SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 def action(label, callback):
@@ -65,6 +69,51 @@ class TableEditDelegate(QStyledItemDelegate):
         return editor
 
 
+class GameListDelegate(QStyledItemDelegate):
+    def sizeHint(self, option, index):
+        title_height = QFontMetrics(font("md", "medium", base=option.font)).height()
+        summary_height = QFontMetrics(font("sm", base=option.font)).height()
+        return QSize(100, title_height + summary_height + 18)
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setClipRect(option.rect)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
+        row = option.rect
+        if selected or hovered:
+            painter.fillRect(row, QColor(COLORS["accent_soft" if selected else "surface_hover"]))
+        if selected:
+            painter.fillRect(QRect(row.left(), row.top(), 3, row.height()), QColor(COLORS["accent_default"]))
+        if focused:
+            painter.setPen(QColor(COLORS["focus"]))
+            painter.drawRect(row.adjusted(0, 0, -1, -1))
+
+        left = row.left() + 12
+        width = max(0, row.right() - left - 8)
+        title_font = font("md", "medium", base=option.font)
+        summary_font = font("sm", base=option.font)
+        title_metrics = QFontMetrics(title_font)
+        summary_metrics = QFontMetrics(summary_font)
+        top = row.top() + (row.height() - title_metrics.height() - summary_metrics.height() - 2) // 2 - 1
+        painter.setFont(title_font)
+        painter.setPen(QColor(COLORS["text_primary"]))
+        painter.drawText(
+            QRect(left, top, width, title_metrics.height()),
+            Qt.AlignmentFlag.AlignVCenter,
+            title_metrics.elidedText(index.data(), Qt.TextElideMode.ElideRight, width),
+        )
+        painter.setFont(summary_font)
+        painter.setPen(QColor(COLORS["text_secondary"]))
+        painter.drawText(
+            QRect(left, top + title_metrics.height() + 2, width, summary_metrics.height()),
+            Qt.AlignmentFlag.AlignVCenter,
+            summary_metrics.elidedText(index.data(GAME_SUMMARY_ROLE), Qt.TextElideMode.ElideRight, width),
+        )
+        painter.restore()
+
+
 class Rows(QWidget):
     def __init__(self, headings, changed, parent=None, hint=""):
         super().__init__(parent)
@@ -87,7 +136,7 @@ class Rows(QWidget):
         )
         self.table.setFixedHeight(128)
         self.table.setToolTip(
-            "add row or double-click empty table space to start a new entry; "
+            "Add row or double-click empty table space to start a new entry; "
             "click a selected cell or double-click a cell to edit it."
         )
         self.table.viewport().installEventFilter(self)
@@ -198,17 +247,25 @@ class ConfigEditor(QWidget):
         self.sidebar_header.setObjectName("configSidebarHeader")
         header_layout = QHBoxLayout(self.sidebar_header)
         header_layout.setContentsMargins(16, 8, 8, 8)
+        header_layout.setSpacing(4)
         games_heading = QLabel("Games")
         role(games_heading, "paneHeading")
         header_layout.addWidget(games_heading)
+        header_layout.addStretch()
+        self.new_game_button = tool("plus", "New game", self.new_game)
+        self.reload_button = tool("refresh-cw", "Reload game configurations", self.reload)
+        header_layout.addWidget(self.new_game_button)
+        header_layout.addWidget(self.reload_button)
         self.sidebar = QWidget(window.left)
         role(self.sidebar, "transparent")
         side = QVBoxLayout(self.sidebar)
-        side.setContentsMargins(8, 4, 8, 4)
+        side.setContentsMargins(0, 0, 0, 4)
         self.games = QListWidget()
+        self.games.setObjectName("configGames")
+        self.games.setItemDelegate(GameListDelegate(self.games))
+        self.games.setMouseTracking(True)
         self.games.currentItemChanged.connect(self.select_game)
         side.addWidget(self.games, 1)
-        side.addLayout(row(action("New game", self.new_game), action("Reload", self.reload)))
 
         body = QVBoxLayout(self)
         body.setContentsMargins(0, 0, 0, 0)
@@ -292,22 +349,22 @@ class ConfigEditor(QWidget):
         form.addRow("Type", self.field_type)
         form.addRow("", self.multiple)
         self.table_edit_hint = QLabel(
-            "add row or double-click empty table space to start a new entry; "
+            "Add row or double-click empty table space to start a new entry; "
             "click a selected cell or double-click a cell to edit it. "
-            "tab moves to the next cell. click outside the tables to clear the selection."
+            "Tab moves to the next cell. Click outside the tables to clear the selection."
         )
         self.table_edit_hint.setWordWrap(True)
         role(self.table_edit_hint, "secondary")
         form.addRow("", self.table_edit_hint)
         self.prefixes = Rows(
             ["Input prefix"], self.mark_dirty,
-            hint="field names already work as prefixes. add abbreviations here, such as wpn for weapon.",
+            hint="Field names already work as prefixes. Add abbreviations here, such as wpn for weapon.",
         )
         self.values = Rows(["Canonical value"], self.mark_dirty)
         self.aliases = Rows(
             ["Alias", "Canonical value"], self.mark_dirty,
-            hint="map shorthand to a value listed above, such as mp5navy → mp5. "
-            "values and aliases are case-insensitive and cannot match field names or prefixes.",
+            hint="Map shorthand to a value listed above, such as mp5navy → mp5. "
+            "Values and aliases are case-insensitive and cannot match field names or prefixes.",
         )
         self.links = Rows(["Source value", "Target field", "Target value"], self.mark_dirty)
         form.addRow("Prefix aliases", self.prefixes)
@@ -315,8 +372,8 @@ class ConfigEditor(QWidget):
         form.addRow("Value aliases", self.aliases)
         form.addRow("Inference links", self.links)
         hint = QLabel(
-            "a source value can fill another field automatically. use one link row per target value. "
-            "repeated target fields build a multiple-value link; explicit or existing values take priority."
+            "A source value can fill another field automatically. Use one link row per target value. "
+            "Repeated target fields build a multiple-value link; explicit or existing values take priority."
         )
         hint.setWordWrap(True)
         role(hint, "secondary")
@@ -563,10 +620,20 @@ class ConfigEditor(QWidget):
         self.games.blockSignals(True)
         self.games.clear()
         for path in sorted(self.directory.glob("*.yaml"), key=lambda value: value.name.casefold()):
-            item = QListWidgetItem(path.stem)
+            errors = [error for error in self.window.registry.errors if error.startswith(path.name + ":")]
+            game = None
+            if not errors:
+                try:
+                    game = self.window.registry.game(GameFile(path).draft()["name"])
+                except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                    pass
+            item = QListWidgetItem(game.name if game else path.stem)
+            item.setData(
+                GAME_SUMMARY_ROLE,
+                f"{game.code} · {len(game.fields)} {'field' if len(game.fields) == 1 else 'fields'}"
+                if game else "Invalid configuration",
+            )
             item.setData(Qt.ItemDataRole.UserRole, path.name)
-            if any(error.startswith(path.name + ":") for error in self.window.registry.errors):
-                item.setText(path.stem + " · Error")
             self.games.addItem(item)
             if path.name == select:
                 self.games.setCurrentItem(item)
@@ -815,12 +882,12 @@ class ConfigEditor(QWidget):
             if freeform else "Canonical values accepted for this field."
         )
         self.values.hint.setText(
-            "optional shortcuts: add mp5 to accept mp5 without a prefix. "
-            "other weapons still accept weapon:othergun."
+            "Optional shortcuts: Add mp5 to accept mp5 without a prefix. "
+            "Other weapons still accept weapon:othergun."
             if freeform and self.field_key == "weapon" else
-            "optional named values work without a prefix. other text remains accepted with a prefix."
+            "Optional named values work without a prefix. Other text remains accepted with a prefix."
             if freeform else
-            "list accepted values in their stored spelling. commands accept these values without a prefix."
+            "List accepted values in their stored spelling. Commands accept these values without a prefix."
         )
         self.values.hint.show()
         self.aliases.setToolTip("Accepted shorthand mapped to a configured canonical value.")

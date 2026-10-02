@@ -4,10 +4,10 @@ from pathlib import Path
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QInputDialog, QMessageBox
 
 from dfsorter.config import Registry
-from dfsorter.config_editor import Rows
+from dfsorter.config_editor import GAME_SUMMARY_ROLE, Rows
 from dfsorter.config_store import GameFile
 from dfsorter.parsing import parse_command
 from dfsorter.ui import ROOT, Window, style_application
@@ -92,6 +92,68 @@ def test_table_add_row_starts_typing_and_tab_edits_next_cell(editor_window):
         assert rows.values() == [["mp5navy", "mp5k"]]
     finally:
         rows.close()
+
+
+def test_field_type_popup_shows_both_options_without_scrolling(editor_window):
+    application = QApplication.instance()
+    editor_window.panel("Config")
+    combo = editor_window.config_editor.field_type
+    closed_height = combo.height()
+    combo.showPopup()
+    application.processEvents()
+    try:
+        view = combo.view()
+        assert view.sizeHintForRow(0) >= 20
+        assert view.viewport().height() >= sum(view.sizeHintForRow(index) for index in range(combo.count()))
+        assert not view.verticalScrollBar().isVisible()
+        assert combo.height() == closed_height
+    finally:
+        combo.hidePopup()
+
+    long_combo = QComboBox()
+    long_combo.addItems([str(index) for index in range(20)])
+    long_combo.show()
+    long_combo.showPopup()
+    application.processEvents()
+    try:
+        assert long_combo.view().verticalScrollBar().isVisible()
+    finally:
+        long_combo.hidePopup()
+        long_combo.close()
+
+
+def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
+    application = QApplication.instance()
+    editor_window.panel("Config")
+    games = editor_window.config_editor.games
+    application.processEvents()
+    assert games.count() >= 2
+    first = games.visualItemRect(games.item(0))
+    second = games.visualItemRect(games.item(1))
+    assert first.height() >= games.fontMetrics().height() + 6
+    assert second.top() >= first.bottom() + 1
+    assert games.mapTo(editor_window.left, games.rect().topRight()).x() == editor_window.left.width() - 1
+    assert games.mapTo(editor_window.left, games.rect().topLeft()).y() == (
+        editor_window.config_editor.sidebar_header.geometry().bottom() + 1
+    )
+
+
+def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
+    editor_window.panel("Config")
+    editor = editor_window.config_editor
+    apex = next(editor.games.item(index) for index in range(editor.games.count())
+                if editor.games.item(index).data(Qt.ItemDataRole.UserRole) == "Apex Legends.yaml")
+    assert apex.text() == "Apex Legends"
+    assert apex.data(GAME_SUMMARY_ROLE) == "APX · 4 fields"
+
+    invalid = editor.directory / "Invalid.yaml"
+    invalid.write_text("name: [", encoding="utf-8")
+    editor_window.reload_configs()
+    editor.refresh_files(select="Invalid.yaml")
+    broken = editor.games.currentItem()
+    assert broken.text() == "Invalid"
+    assert broken.data(GAME_SUMMARY_ROLE) == "Invalid configuration"
+    assert not editor.tabs.isTabEnabled(0)
 
 
 @pytest.mark.parametrize("existing", [False, True])

@@ -2206,7 +2206,10 @@ class Window(QMainWindow):
         self.filters.setVisible(name not in {"Editing", "Export", "Config"})
         self.browse_filters.setVisible(name == "Browse")
         self.library_toolbar.setVisible(name not in {"Editing", "Export", "Config"})
-        self.left_layout.setContentsMargins(0, 0 if name in {"Home", "Browse", "Session"} else 4, 8, 4)
+        self.left_layout.setContentsMargins(
+            0, 0 if name in {"Home", "Browse", "Session", "Config"} else 4,
+            0 if name == "Config" else 8, 4,
+        )
         self.library.setVisible(name != "Config")
         self.library_error.setVisible(name != "Config" and bool(self.library_error.text()))
         self.config_editor.sidebar_header.setVisible(name == "Config")
