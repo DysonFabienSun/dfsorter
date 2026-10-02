@@ -37,7 +37,7 @@ Working titles and generated Share/Project Export filename bodies default to low
 
 All application-managed files and persistent state stay inside the DFSorter project/application directory. Do not use AppData or another per-user system directory.
 
-Windows distribution uses a portable release ZIP. The extracted directory contains the executable, bundled playback and media tools, resources, default game definitions, active `configs/games/`, `data/`, `cache/`, and update backups. A packaged copy requires no separately installed Python, Git, FFmpeg, or 7-Zip. Updates preserve `data/`, `configs/`, and `cache/`; unchanged shipped game definitions may receive revised defaults, while locally edited definitions remain in place and revised copies are offered separately.
+Windows distribution uses a portable release ZIP. The extracted directory contains the executable, bundled playback and media tools, resources, default game definitions, active `configs/games/`, `data/`, `cache/`, and update backups. A packaged copy requires no separately installed Python, Git, FFmpeg, or 7-Zip. Updates preserve `data/`, `configs/`, and `cache/`. At startup, game definitions merge against the previous shipped defaults kept in `data/default-games/`. Distinct local and incoming changes are combined; when both change the same setting, the local value is kept and a conflict is reported. An older install without previous default files preserves edited definitions on its first update and offers incoming copies under `configs/default-updates/`. Skipped conflicts appear in a startup dialog and in `configs/default-updates/merge-conflicts.txt`.
 
 A recommended layout is:
 

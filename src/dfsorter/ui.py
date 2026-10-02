@@ -5317,7 +5317,7 @@ def main():
     import PySide6
 
     (ROOT / "data").mkdir(exist_ok=True)
-    prepare_game_configs()
+    config_notices = prepare_game_configs()
     prepare_tip_configs()
     logging.basicConfig(
         level=logging.INFO,
@@ -5337,6 +5337,17 @@ def main():
     style_application(application)
     window = Window()
     window.show()
+    if config_notices:
+        QTimer.singleShot(
+            0,
+            lambda: QMessageBox.warning(
+                window,
+                "Game configuration conflicts",
+                "Some incoming game settings could not be merged. Local settings were kept.\n\n"
+                + "\n".join(config_notices)
+                + "\n\nDetails: configs/default-updates/merge-conflicts.txt",
+            ),
+        )
     return application.exec()
 
 

@@ -9,6 +9,7 @@ import zipfile
 import pytest
 
 from dfsorter import app_paths, release_update
+from dfsorter.config_merge import merge
 
 
 def test_latest_release_selects_asset_matching_tag(monkeypatch):
@@ -54,16 +55,158 @@ def test_packaged_game_defaults_preserve_local_edits(tmp_path, monkeypatch):
     defaults = tmp_path / "defaults/games"
     defaults.mkdir(parents=True)
     (defaults / "Game.yaml").write_text("version: 1", encoding="utf-8")
-    app_paths.prepare_game_configs()
+    assert app_paths.prepare_game_configs() == []
     active = tmp_path / "configs/games/Game.yaml"
     assert active.read_text(encoding="utf-8") == "version: 1"
     active.write_text("local edit", encoding="utf-8")
     (defaults / "Game.yaml").write_text("version: 2", encoding="utf-8")
-    app_paths.prepare_game_configs()
+    notices = app_paths.prepare_game_configs()
+    assert notices == ["Game.yaml: merge failed: configuration is not a mapping"]
     assert active.read_text(encoding="utf-8") == "local edit"
     assert (tmp_path / "configs/default-updates/Game.yaml").read_text(
         encoding="utf-8"
     ) == "version: 2"
+
+
+def test_legacy_game_default_preserves_local_edits_without_baseline(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/games"
+    defaults.mkdir(parents=True)
+    old = (
+        "name: Example\ncode: EXM\nfields: {kill: {}}\n"
+        "display_order: [kill, mainline]\n"
+    )
+    (defaults / "Example.yaml").write_text(old, encoding="utf-8")
+    app_paths.prepare_game_configs()
+    active = tmp_path / "configs/games/Example.yaml"
+    active.write_text(old + "# local\n", encoding="utf-8")
+    (tmp_path / "data/default-games/Example.yaml").unlink()
+    (defaults / "Example.yaml").write_text(old.replace("EXM", "NEW"), encoding="utf-8")
+    assert app_paths.prepare_game_configs() == [
+        "Example.yaml: previous default unavailable; edited configuration preserved"
+    ]
+    assert active.read_text(encoding="utf-8") == old + "# local\n"
+
+
+def test_packaged_game_defaults_merge_distinct_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/games"
+    defaults.mkdir(parents=True)
+    original = (
+        "name: Example\ncode: EXM\nfields:\n  kill: {}\n  weapon:\n"
+        "    type: enum\n    values: [Pistol]\n    aliases: {sidearm: Pistol}\n"
+        "display_order: [kill, weapon, mainline]\n"
+    )
+    (defaults / "Example.yaml").write_text(original, encoding="utf-8")
+    assert app_paths.prepare_game_configs() == []
+    active = tmp_path / "configs/games/Example.yaml"
+    active.write_text(original.replace("[Pistol]", "[Pistol, Rifle]"), encoding="utf-8")
+    (defaults / "Example.yaml").write_text(
+        original.replace("[Pistol]", "[Pistol, SMG]")
+        .replace("{sidearm: Pistol}", "{sidearm: Pistol, automatic: SMG}"),
+        encoding="utf-8",
+    )
+    assert app_paths.prepare_game_configs() == []
+    merged = app_paths.yaml.safe_load(active.read_text(encoding="utf-8"))
+    assert merged["fields"]["weapon"]["values"] == ["Pistol", "Rifle", "SMG"]
+    assert merged["fields"]["weapon"]["aliases"]["automatic"] == "SMG"
+
+
+def test_packaged_game_defaults_skip_conflicting_setting(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/games"
+    defaults.mkdir(parents=True)
+    original = (
+        "name: Example\ncode: EXM\ncommand_example: original\nfields:\n  kill: {}\n"
+        "  weapon:\n    type: enum\n    values: [Pistol]\n"
+        "display_order: [kill, weapon, mainline]\n"
+    )
+    (defaults / "Example.yaml").write_text(original, encoding="utf-8")
+    app_paths.prepare_game_configs()
+    active = tmp_path / "configs/games/Example.yaml"
+    active.write_text(original.replace("original", "local"), encoding="utf-8")
+    (defaults / "Example.yaml").write_text(
+        original.replace("original", "incoming").replace("[Pistol]", "[Pistol, Rifle]"),
+        encoding="utf-8",
+    )
+    assert app_paths.prepare_game_configs() == ["Example.yaml: command_example"]
+    merged = app_paths.yaml.safe_load(active.read_text(encoding="utf-8"))
+    assert merged["command_example"] == "local"
+    assert merged["fields"]["weapon"]["values"] == ["Pistol", "Rifle"]
+    assert "Example.yaml: command_example" in (
+        tmp_path / "configs/default-updates/merge-conflicts.txt"
+    ).read_text(encoding="utf-8")
+
+
+def test_packaged_game_defaults_keep_local_alias_and_yaml_comment(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/games"
+    defaults.mkdir(parents=True)
+    original = (
+        "name: Example\ncode: EXM\nfields:\n  kill: {}\n"
+        "  weapon:\n    type: enum\n    values: [Pistol, Rifle, SMG]\n"
+        "    aliases: {short: Pistol}\n"
+        "display_order: [kill, weapon, mainline]\n"
+    )
+    (defaults / "Example.yaml").write_text(original, encoding="utf-8")
+    app_paths.prepare_game_configs()
+    active = tmp_path / "configs/games/Example.yaml"
+    active.write_text("# Personal note\n" + original.replace("short: Pistol", "short: Rifle"), encoding="utf-8")
+    (defaults / "Example.yaml").write_text(
+        original.replace("short: Pistol", "short: SMG")
+        .replace("[Pistol, Rifle, SMG]", "[Pistol, Rifle, SMG, Sniper]"),
+        encoding="utf-8",
+    )
+    assert app_paths.prepare_game_configs() == ["Example.yaml: fields.weapon.aliases.short"]
+    text = active.read_text(encoding="utf-8")
+    assert text.startswith("# Personal note\n")
+    assert "short: Rifle" in text
+    assert "Sniper" in text
+    assert app_paths.prepare_game_configs() == []
+
+
+def test_game_default_merge_keeps_local_on_competing_list_reorders():
+    conflicts = []
+    assert merge(
+        {"display_order": ["kill", "map", "weapon", "mainline"]},
+        {"display_order": ["weapon", "kill", "map", "mainline"]},
+        {"display_order": ["map", "kill", "weapon", "mainline"]},
+        conflicts=conflicts,
+    ) == {"display_order": ["weapon", "kill", "map", "mainline"]}
+    assert conflicts == ["display_order"]
+
+
+def test_packaged_game_defaults_skip_invalid_item_but_apply_other_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_paths, "ROOT", tmp_path)
+    monkeypatch.setattr(app_paths.sys, "frozen", True, raising=False)
+    defaults = tmp_path / "defaults/games"
+    defaults.mkdir(parents=True)
+    original = (
+        "name: Example\ncode: EXM\ncommand_example: original\nfields:\n  kill: {}\n"
+        "  weapon:\n    type: enum\n    values: [Pistol]\n"
+        "display_order: [kill, weapon, mainline]\n"
+    )
+    (defaults / "Example.yaml").write_text(original, encoding="utf-8")
+    app_paths.prepare_game_configs()
+    active = tmp_path / "configs/games/Example.yaml"
+    active.write_text(
+        original.replace("values: [Pistol]", "values: [Pistol, Rifle]"), encoding="utf-8"
+    )
+    (defaults / "Example.yaml").write_text(
+        original.replace("command_example: original", "command_example: new")
+        .replace("values: [Pistol]", "values: [Pistol, SMG]\n    aliases: {rifle: SMG}"),
+        encoding="utf-8",
+    )
+    notices = app_paths.prepare_game_configs()
+    merged = app_paths.yaml.safe_load(active.read_text(encoding="utf-8"))
+    assert merged["command_example"] == "new"
+    assert merged["fields"]["weapon"]["values"] == ["Pistol", "Rifle", "SMG"]
+    assert "aliases" not in merged["fields"]["weapon"]
+    assert notices == ["Example.yaml: fields.weapon.aliases"]
 
 
 def test_packaged_tip_defaults_preserve_local_edits(tmp_path, monkeypatch):
