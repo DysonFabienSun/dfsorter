@@ -15,6 +15,7 @@
 ## Portable ZIP Builds
 
 - Never generate `build/DFSorter-Windows-x64.zip` on this device, including for tagged releases. The release CI/CD workflow builds the ZIP and creates the release draft when a version tag is pushed.
+- Maintain release game defaults in `configs/shipped/`, separate from editable preferences in `configs/games/`. Sync selected game changes explicitly before release. Always ship `configs/tips/` as tip defaults.
 
 ## Version Tag Commits
 

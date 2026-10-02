@@ -6,7 +6,7 @@ The installation instructions are in `README.md`. This file covers release prepa
 
 Run `pwsh -File packaging/build-release.ps1` on Windows with `uv` available. The script installs Python 3.13 and locked build dependencies, verifies the pinned libmpv and FFmpeg archives, builds the application and updater, and writes `build/DFSorter-Windows-x64.zip`. The optional `-NoProxy` switch is used in CI; local builds use the PowerShell profile's proxy helpers when present.
 
-The release build includes the current `configs/games/*.yaml` as defaults. It does not include a catalogue or settings. It bundles `runtime/mpv/`, FFmpeg and ffprobe, Qt plugins, icons, and third-party license files. The bundle's `release.json` lists hashes for every application-owned file. The updater replaces those files after DFSorter exits, while `data/`, `configs/`, `cache/`, and `backups/` stay in the extracted directory.
+The release build includes `configs/shipped/*.yaml` as game defaults and always includes `configs/tips/*.yaml` as tip defaults. The shipped game files are maintained separately from editable preferences in `configs/games/`; copy selected changes there when they are ready for release. It does not include a catalogue or settings. It bundles `runtime/mpv/`, FFmpeg and ffprobe, Qt plugins, icons, and third-party license files. The bundle's `release.json` lists hashes for every application-owned file. The updater replaces those files after DFSorter exits, while `data/`, `configs/`, `cache/`, and `backups/` stay in the extracted directory.
 
 ## Publish
 

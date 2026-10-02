@@ -1,0 +1,100 @@
+name: Overwatch
+code: OW2
+command_example: '3k dva kiriko kingsrow R4 -- mainline -- description'
+aliases: [overwatch, overwatch2, 'Overwatch 2', ow2]
+fields:
+  kill: {}
+  hero:
+    type: enum
+    multiple: true
+    values:
+      - Ana
+      - Anran
+      - Ashe
+      - Baptiste
+      - Bastion
+      - Brigitte
+      - Cassidy
+      - D.Mon
+      - D.Va
+      - Domina
+      - Doomfist
+      - Echo
+      - Emre
+      - Freja
+      - Genji
+      - Hanzo
+      - Hazard
+      - Illari
+      - Jetpack Cat
+      - Junker Queen
+      - Junkrat
+      - Juno
+      - Kiriko
+      - Lifeweaver
+      - Lúcio
+      - Mauga
+      - Mei
+      - Mercy
+      - Mizuki
+      - Moira
+      - Orisa
+      - Pharah
+      - Ramattra
+      - Reaper
+      - Reinhardt
+      - Roadhog
+      - Shion
+      - Sierra
+      - Sigma
+      - Sojourn
+      - 'Soldier: 76'
+      - Sombra
+      - Symmetra
+      - Torbjörn
+      - Tracer
+      - Vendetta
+      - Venture
+      - Widowmaker
+      - Winston
+      - Wrecking Ball
+      - Wuyang
+      - Zarya
+      - Zenyatta
+    aliases: {dva: D.Va, jq: Junker Queen, lucio: Lúcio, soldier76: 'Soldier: 76', torb: Torbjörn, widow: Widowmaker}
+  map:
+    type: enum
+    values:
+      - Aatlis
+      - Antarctic Peninsula
+      - Blizzard World
+      - Busan
+      - Circuit Royal
+      - Colosseo
+      - Dorado
+      - Eichenwalde
+      - Esperança
+      - Havana
+      - Hollywood
+      - Ilios
+      - Junkertown
+      - King's Row
+      - Lijiang Tower
+      - Midtown
+      - Neon Junction
+      - Nepal
+      - New Junk City
+      - New Queen Street
+      - Numbani
+      - Oasis
+      - Paraíso
+      - Rialto
+      - Route 66
+      - Runasapi
+      - Samoa
+      - Shambali Monastery
+      - Suravasa
+      - 'Watchpoint: Gibraltar'
+    aliases: {gibraltar: 'Watchpoint: Gibraltar', kingsrow: "King's Row", nqs: New Queen Street, paraiso: Paraíso}
+display_order: [kill, hero, map, mainline]
+suggested_fields: [hero]

@@ -1,0 +1,12 @@
+name: Battlefield 6
+code: BF6
+command_example: 'wpn:m443 R4 -- epic last stand'
+aliases: [bf6, battlefield6]
+fields:
+  kill: {}
+  weapon:
+    type: freeform
+    multiple: true
+    prefixes: [wpn]
+display_order: [kill, weapon, mainline]
+suggested_fields: []

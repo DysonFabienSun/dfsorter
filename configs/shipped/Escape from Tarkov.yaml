@@ -1,0 +1,17 @@
+name: Escape from Tarkov
+code: EFT
+command_example: 'wpn:NL545 map:lab -- raiders go brrrr'
+aliases: [eft, tarkov]
+fields:
+  kill: {}
+  weapon:
+    type: freeform
+    multiple: true
+    prefixes: [wpn]
+  map:
+    type: enum
+    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab,
+        Woods, Terminal, Labyrinth]
+    aliases: {streets: Streets of Tarkov, labs: The Lab, lab: The Lab, labrys: Labyrinth}
+display_order: [kill, map, weapon, mainline]
+suggested_fields: []
