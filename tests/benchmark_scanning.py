@@ -15,7 +15,7 @@ BASELINE_REF = "0e078867643ab602af5010bce6f59a26a80e367a"
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    registry = Registry(root / "configs/games")
+    registry = Registry(root / "configs/shipped")
     parser = argparse.ArgumentParser()
     parser.add_argument("capture", type=Path)
     parser.add_argument(

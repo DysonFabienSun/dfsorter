@@ -56,7 +56,8 @@ def application():
 
 @pytest.fixture
 def window(tmp_path, application, close_window):
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
+    shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     result = Window(tmp_path)
     result.show()
     application.processEvents()
@@ -269,7 +270,8 @@ def test_update_check_is_in_settings_menu(window):
 def test_portable_launch_checks_for_updates_once(application, tmp_path, monkeypatch):
     import dfsorter.ui as ui
 
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
+    shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     monkeypatch.setattr(ui, "installed_release", lambda: {"version": "1.0.0"})
     checks = []
     monkeypatch.setattr(
@@ -2628,7 +2630,8 @@ def test_review_advance_skips_verdicts_without_wrapping(window, application, tmp
 def test_startup_rescans_enabled_folders(application, tmp_path):
     from dfsorter.catalogue import Catalogue
 
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
+    shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     catalogue = Catalogue(tmp_path / "data/dfsorter.db")
     enabled = tmp_path / "VALORANT"
     disabled = tmp_path / "disabled"

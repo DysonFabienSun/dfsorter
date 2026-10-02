@@ -29,7 +29,8 @@ def main():
     destination = ROOT / "cache/verification/facelift" / scale
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        shutil.copytree(ROOT / "configs", root / "configs")
+        shutil.copytree(ROOT / "configs/shipped", root / "configs/games")
+        shutil.copytree(ROOT / "configs/tips", root / "configs/tips")
         captures = root / "captures"
         captures.mkdir()
         fixture_video = root / "fixture.mp4"

@@ -10,3 +10,6 @@ runtime/mpv/
 build/
 DFSorter.lnk
 *.psd
+/configs/games/*
+!/configs/games/.gitkeep
+!/configs/games/README.txt

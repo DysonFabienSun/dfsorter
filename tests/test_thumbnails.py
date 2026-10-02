@@ -96,7 +96,8 @@ def test_thumbnail_ffmpeg_does_not_open_windows_console(tmp_path, monkeypatch, a
 
 
 def test_stale_thumbnail_does_not_change_filtered_browse(tmp_path, application):
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
+    shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     window = Window(tmp_path)
     window.show()
     try:

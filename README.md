@@ -57,7 +57,7 @@ Projects group clips for export. Open the **Projects** pane to create or select 
 
 ### Configs
 
-The **Config** page manages game definitions used to recognize games, interpret metadata commands, and build working titles. Choose a game to inspect or edit its fields, aliases, and title order. Changes remain drafts until **Save**. New games can also be added here.
+The **Config** page manages game definitions used to recognize games, interpret metadata commands, and build working titles. Choose a game to inspect or edit its fields, aliases, and title order. Changes remain drafts until **Save**. New games can also be added here. In a source checkout, copy desired defaults from `configs/shipped/` to `configs/games/` before running the application; personal game YAML files in `configs/games/` are ignored by Git.
 
 ## File & Data Storage
 

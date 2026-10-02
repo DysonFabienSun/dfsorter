@@ -50,7 +50,8 @@ def editor_window(tmp_path, close_window):
     QCoreApplication.addLibraryPath(str(Path(PySide6.__file__).parent / "plugins"))
     application = QApplication.instance() or QApplication([])
     style_application(application)
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
+    shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     window = Window(tmp_path)
     window.show()
     application.processEvents()
@@ -79,7 +80,7 @@ def test_table_add_row_starts_typing_and_tab_edits_next_cell(editor_window):
         QTest.keyClicks(application.focusWidget(), "mp5")
         QTest.keyClick(application.focusWidget(), Qt.Key.Key_Return)
         application.processEvents()
-        assert rows.values() == [["mp5navy", "mp5"]]
+        assert rows.values() == [["mp5navy", "mp5"], ["", ""]]
         rect = rows.table.visualItemRect(rows.table.item(0, 1))
         QTest.mouseClick(rows.table.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
         QTest.mouseDClick(rows.table.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
@@ -89,7 +90,67 @@ def test_table_add_row_starts_typing_and_tab_edits_next_cell(editor_window):
         QTest.keyClicks(application.focusWidget(), "mp5k")
         QTest.keyClick(application.focusWidget(), Qt.Key.Key_Return)
         application.processEvents()
-        assert rows.values() == [["mp5navy", "mp5k"]]
+        assert rows.values() == [["mp5navy", "mp5k"], ["", ""]]
+    finally:
+        rows.close()
+
+
+@pytest.mark.parametrize("headings,column", [
+    (["Value"], 0),
+    (["Alias", "Canonical value"], 0),
+    (["Alias", "Canonical value"], 1),
+])
+def test_enter_in_last_row_creates_next_row(editor_window, headings, column):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    application = QApplication.instance()
+    rows = Rows(headings, lambda: None)
+    rows.set_values([["first"] + [""] * (len(headings) - 1),
+                     ["last"] + [""] * (len(headings) - 1)])
+    rows.show()
+    rows.activateWindow()
+    application.processEvents()
+    try:
+        rows.table.setCurrentCell(0, 0)
+        rows.table.editItem(rows.table.item(0, 0))
+        application.processEvents()
+        QTest.keyClick(application.focusWidget(), Qt.Key.Key_Return)
+        application.processEvents()
+        assert rows.table.rowCount() == 2
+
+        rows.table.setCurrentCell(1, column)
+        rows.table.editItem(rows.table.item(1, column))
+        application.processEvents()
+        QTest.keyClick(application.focusWidget(), Qt.Key.Key_Return)
+        application.processEvents()
+        assert rows.table.rowCount() == 3
+        assert rows.table.currentRow() == 2
+        assert rows.table.currentColumn() == 0
+        assert isinstance(application.focusWidget(), QLineEdit)
+        assert rows.values()[:2] == [["first"] + [""] * (len(headings) - 1),
+                                     ["last"] + [""] * (len(headings) - 1)]
+    finally:
+        rows.close()
+
+
+def test_enter_on_selected_last_row_creates_next_row(editor_window):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    application = QApplication.instance()
+    rows = Rows(["Value"], lambda: None)
+    rows.set_values([["existing"]])
+    rows.show()
+    rows.activateWindow()
+    application.processEvents()
+    try:
+        rows.table.setCurrentCell(0, 0)
+        rows.table.setFocus()
+        QTest.keyClick(rows.table, Qt.Key.Key_Return)
+        application.processEvents()
+        assert rows.values() == [["existing"], [""]]
+        assert isinstance(application.focusWidget(), QLineEdit)
     finally:
         rows.close()
 
@@ -182,7 +243,7 @@ def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
     apex = next(editor.games.item(index) for index in range(editor.games.count())
                 if editor.games.item(index).data(Qt.ItemDataRole.UserRole) == "Apex Legends.yaml")
     assert apex.text() == "Apex Legends"
-    assert apex.data(GAME_SUMMARY_ROLE) == "APX · 4 fields"
+    assert apex.data(GAME_SUMMARY_ROLE) == "APX · 5 fields"
 
     invalid = editor.directory / "Invalid.yaml"
     invalid.write_text("name: [", encoding="utf-8")
@@ -223,7 +284,8 @@ def test_table_empty_double_click_adds_editable_row(editor_window, existing):
     QTest.keyClicks(application.focusWidget(), "newalias")
     QTest.keyClick(application.focusWidget(), Qt.Key.Key_Return)
     application.processEvents()
-    assert rows.values()[-1] == ["newalias"]
+    assert rows.values()[-2:] == [["newalias"], [""]]
+    editor.undo()  # Enter-created row
     editor.undo()  # typing
     editor.undo()  # row creation
     assert rows.values() == ([["existing"]] if existing else [])

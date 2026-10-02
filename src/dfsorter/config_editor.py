@@ -58,15 +58,31 @@ def row(*widgets):
 
 
 class TableEditDelegate(QStyledItemDelegate):
-    def __init__(self, changed, parent):
+    def __init__(self, changed, add_row, parent):
         super().__init__(parent)
         self.changed = changed
+        self.add_row = add_row
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
         if isinstance(editor, QLineEdit):
             editor.textEdited.connect(lambda _text: self.changed())
         return editor
+
+    def eventFilter(self, watched, event):
+        add_after_commit = (
+            isinstance(watched, QLineEdit)
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and self.parent().currentRow() == self.parent().rowCount() - 1
+        )
+        if add_after_commit:
+            self.commitData.emit(watched)
+            self.closeEditor.emit(watched, QAbstractItemDelegate.EndEditHint.NoHint)
+            self.add_row()
+            return True
+        return super().eventFilter(watched, event)
 
 
 class GameListDelegate(QStyledItemDelegate):
@@ -121,7 +137,7 @@ class Rows(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.table = QTableWidget(0, len(headings))
-        self.table.setItemDelegate(TableEditDelegate(changed, self.table))
+        self.table.setItemDelegate(TableEditDelegate(changed, self.add, self.table))
         self.table.setHorizontalHeaderLabels(headings)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setHighlightSections(False)
@@ -137,9 +153,11 @@ class Rows(QWidget):
         self.table.setFixedHeight(128)
         self.table.setToolTip(
             "Add row or double-click empty table space to start a new entry; "
-            "click a selected cell or double-click a cell to edit it."
+            "click a selected cell or double-click a cell to edit it. "
+            "Enter on the last row adds another row."
         )
         self.table.viewport().installEventFilter(self)
+        self.table.installEventFilter(self)
         self.table.itemChanged.connect(lambda _: changed())
         body.addWidget(self.table)
         body.addLayout(row(action("Add row", self.add), action("Remove row", self.remove)))
@@ -151,6 +169,16 @@ class Rows(QWidget):
         self.changed = changed
 
     def eventFilter(self, watched, event):
+        if (
+            watched is self.table
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and self.table.currentRow() == self.table.rowCount() - 1
+            and self.table.isEnabled()
+        ):
+            self.add()
+            return True
         if (
             watched is self.table.viewport()
             and event.type() == QEvent.Type.MouseButtonDblClick
@@ -351,7 +379,8 @@ class ConfigEditor(QWidget):
         self.table_edit_hint = QLabel(
             "Add row or double-click empty table space to start a new entry; "
             "click a selected cell or double-click a cell to edit it. "
-            "Tab moves to the next cell. Click outside the tables to clear the selection."
+            "Tab moves to the next cell; Enter on the last row adds another row. "
+            "Click outside the tables to clear the selection."
         )
         self.table_edit_hint.setWordWrap(True)
         role(self.table_edit_hint, "secondary")

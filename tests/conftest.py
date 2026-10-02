@@ -29,7 +29,7 @@ def close_window():
 
 @pytest.fixture
 def registry():
-    return Registry(Path(__file__).resolve().parents[1] / "configs/games")
+    return Registry(Path(__file__).resolve().parents[1] / "configs/shipped")
 
 
 @pytest.fixture

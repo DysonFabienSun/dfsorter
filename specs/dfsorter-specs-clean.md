@@ -967,7 +967,9 @@ Switching between these types retains the value and alias rows and their content
 Add row or double-clicking empty table space adds a row and immediately focuses and
 edits its first cell. Clicking an
 already-selected cell or double-clicking an existing cell edits it; Tab commits the
-current cell and moves to the next cell. Only one cell across the editor tables is
+current cell and moves to the next cell. Enter on the last row adds a new row and
+opens its first cell for editing; Enter on earlier rows commits without adding a row.
+Only one cell across the editor tables is
 selected at a time. Clicking another table or outside the tables clears the previous
 selection; row action buttons retain the selection so Remove row can act on it.
 Fields shows a brief instruction for table entry.
