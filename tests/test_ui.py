@@ -2464,7 +2464,7 @@ def test_command_validation_colors_and_save_feedback(window, application, tmp_pa
         ("jett va", "typing"),
         ("jett tag:", "incomplete"),
         ("jett nonsense ", "invalid"),
-        ("R9", "invalid"),
+        ("R6", "invalid"),
     ]:
         window.command.setText(text)
         window.update_command_state()

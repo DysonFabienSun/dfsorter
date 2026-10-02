@@ -1216,4 +1216,4 @@ class ConfigEditor(QWidget):
         self.initial_states[filename] = deepcopy(self.last_state)
         self.saved_states[filename] = deepcopy(self.last_state)
         self.update_dirty()
-        self.message("New game draft. Add a three-character uppercase display code before saving.")
+        self.message("New game draft. Add a two- or three-character uppercase display code before saving.")

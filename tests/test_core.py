@@ -45,6 +45,56 @@ def test_shipped_game_configs_have_no_collisions(registry):
     assert len(registry.games) == len(list(registry.directory.glob("*.yaml")))
 
 
+def test_delta_force_operations_config(registry):
+    game = registry.game("Delta Force")
+    assert registry.resolve("df") == game.name
+    assert game.code == "DF"
+    assert len(game.fields["weapon"]["values"]) == 68
+    assert len(game.fields["operator"]["values"]) == 17
+    assert len(game.fields["map"]["values"]) == 6
+    assert game.fields["difficulty"]["values"] == ["常规", "机密", "绝密"]
+    assert game.fields["map"]["aliases"] == {
+        "大坝": "零号大坝", "溪谷": "长弓溪谷", "长弓": "长弓溪谷",
+        "航天": "航天基地", "巴克": "巴克什", "监狱": "潮汐监狱",
+        "核电站": "AZ3核电站", "AZ3": "AZ3核电站",
+    }
+    assert parse_command("R93 R4", game.name, registry) == {
+        "metadata": {"weapon": ["R93"]}, "rating": 4,
+    }
+    with pytest.raises(ValueError, match="Rating must be R1 through R5"):
+        parse_command("R6", game.name, registry)
+    with pytest.raises(ValueError, match="Unknown metadata: R9"):
+        parse_command("R9", game.name, registry)
+    assert parse_command("3k 溪谷 红狼 diff:机密 腾龙 野牛 R4", game.name, registry) == {
+        "metadata": {
+            "kill": 3,
+            "map": "长弓溪谷",
+            "operator": "红狼",
+            "difficulty": "机密",
+            "weapon": ["CI-19", "Bizon"],
+        },
+        "rating": 4,
+    }
+
+
+@pytest.mark.parametrize("code, valid", [("D", False), ("DF", True), ("DFO", True), ("DFOR", False)])
+def test_game_display_code_length(tmp_path, code, valid):
+    raw = {"name": "Example", "code": code, "fields": {"kill": {}},
+           "display_order": ["kill", "mainline"]}
+    registry = Registry(tmp_path, {"Example.yaml": raw})
+    assert (registry.game("Example") is not None) is valid
+
+
+def test_search_treats_r93_as_plain_text_and_r6_as_invalid_rating(registry):
+    clips = [{
+        "source_path": "R93 clip.mp4", "game": "Delta Force", "metadata": {"weapon": ["R93"]},
+        "mainline": "", "description": "", "tag": None, "rating": None,
+    }]
+    assert query_clips(clips, "R93", registry) == clips
+    with pytest.raises(ValueError, match="Rating comparison needs a value from R1 through R5"):
+        query_clips(clips, "R6", registry)
+
+
 @pytest.mark.parametrize(
     "text,state,patch",
     [
@@ -52,7 +102,8 @@ def test_shipped_game_configs_have_no_collisions(registry):
         ("agent:", "incomplete", {}),
         ("jett va", "typing", {"metadata": {"agent": "Jett"}}),
         ('jett tag:"unfinished', "incomplete", {"metadata": {"agent": "Jett"}}),
-        ("jett R9", "invalid", {"metadata": {"agent": "Jett"}}),
+        ("jett R6", "invalid", {"metadata": {"agent": "Jett"}}),
+        ("jett R9", "typing", {"metadata": {"agent": "Jett"}}),
         ("jett sage", "invalid", {"metadata": {"agent": "Jett"}}),
         ("nonsense jett", "invalid", {}),
         ("jett nonsense ", "invalid", {"metadata": {"agent": "Jett"}}),
@@ -627,7 +678,7 @@ def test_queries(catalogue, clips, registry):
         ("rating:>4", set()),
     ):
         assert {clip["clip_id"] for clip in query_clips(catalogue.clips(), expression, registry)} == expected
-    for expression in ("rating:", "rating:>=", "rating:0", "rating:>6", "r0", "r6"):
+    for expression in ("rating:", "rating:>=", "rating:0", "rating:>6", "r6"):
         with pytest.raises(ValueError, match="Rating comparison needs a value from R1 through R5"):
             query_clips(catalogue.clips(), expression, registry)
 

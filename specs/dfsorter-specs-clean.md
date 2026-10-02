@@ -27,7 +27,7 @@ A **Session** is a temporary-but-persisted, fixed review queue. It freezes the m
 - Matching, parsing, aliases, filtering, and text sorting are case-insensitive.
 - Case-insensitive matching must not destroy the canonical capitalization of stored structured metadata.
 - Parsed field values have leading and trailing whitespace removed. Free-form human text such as `mainline` and `description` preserves the user's original capitalization, punctuation, and internal spacing.
-- Game-specific YAML files define the canonical game name and a three-letter uppercase display code such as `VAL`, `BF6`, or `EFT`.
+- Game-specific YAML files define the canonical game name and a two- or three-character uppercase display code such as `DF`, `VAL`, or `BF6`.
 
 ---
 
@@ -146,7 +146,7 @@ One YAML file is stored per supported game under `configs/games/`.
 Each config should define at least:
 
 - canonical game name;
-- three-letter uppercase display code;
+- two- or three-character uppercase display code;
 - accepted aliases for identifying the game;
 - game-specific field definitions;
 - aliases/shorthand for structured field values;
@@ -194,6 +194,8 @@ The following concepts have application-level parsing logic:
 - `kill`: written as `XK`/`Xk`, such as `4K`.
 - `clutch`: written as `1vX`, such as `1v4`, when the current game declares a clutch field.
 - `rating`: written as `R1` through `R5`, case-insensitive, and available for every game.
+
+`R1` through `R6` are reserved for rating syntax. `R6` is invalid because ratings stop at five. Other `R` followed by a number tokens, such as Delta Force's `R93`, resolve as game metadata when configured; otherwise they are unknown metadata.
 
 `kill` and `clutch` are reserved metadata field names. `rating` is a global clip field rather than a game-specific field.
 
@@ -256,7 +258,7 @@ display_order:
 
 Only present values are rendered.
 
-The game's three-letter code is displayed as a prefix where the UI calls for it, for example:
+The game's display code is displayed as a prefix where the UI calls for it, for example:
 
 ```text
 VAL_1v4 3K Killjoy Ascent Vandal clutch of the century
@@ -413,7 +415,7 @@ tag:LOW_FPS
 
 Plain terms search human-facing text such as source filename, `mainline`, and `description`.
 
-Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable. Home, Session and Browse search update on every text change. Invalid or incomplete structured expressions show the inline error while retaining the last valid result list. Plain terms match the source filename, tag, complete displayed working title (game-code prefix, structured metadata and mainline), and description. `rating:4` and `r4` match only clips rated R4. The `rating:` form also supports `=`, `>`, `<`, `>=`, and `<=` comparisons, such as `rating:>=4`; the `r4` shorthand is exact only. Rating values and comparison thresholds must be 1 through 5. Rating terms can be combined with other search terms and never match unrated clips. Missing or out-of-range values are invalid.
+Search/filter parsing is case-insensitive and resolves canonical aliases using the current game configuration where applicable. Home, Session and Browse search update on every text change. Invalid or incomplete structured expressions show the inline error while retaining the last valid result list. Plain terms match the source filename, tag, complete displayed working title (game-code prefix, structured metadata and mainline), and description. `rating:4` and `r4` match only clips rated R4. The `rating:` form also supports `=`, `>`, `<`, `>=`, and `<=` comparisons, such as `rating:>=4`; the `r4` shorthand is exact only. Rating values and comparison thresholds must be 1 through 5. Rating terms can be combined with other search terms and never match unrated clips. Missing or out-of-range values are invalid. The `r6` shorthand is invalid; `r7` and higher are ordinary search terms.
 
 Rating remains an editorial reference and optional export-grouping value; rating searches do not change triage or clip order.
 
@@ -900,7 +902,7 @@ For each game represented in the Project, the user may choose which structured f
 
 The user may independently choose whether to include:
 
-- the game's three-letter prefix;
+- the game's display-code prefix;
 - clutch;
 - kill;
 - game-specific fields such as agent, map, or weapon;

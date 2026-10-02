@@ -52,8 +52,8 @@ class Registry:
 
     def _load(self, raw):
         name, code = raw["name"], raw["code"]
-        if not isinstance(name, str) or not name.strip() or not re.fullmatch(r"[A-Z0-9]{3}", code):
-            raise ValueError("Expected a game name and three-character uppercase display code")
+        if not isinstance(name, str) or not name.strip() or not re.fullmatch(r"[A-Z0-9]{2,3}", code):
+            raise ValueError("Expected a game name and two- or three-character uppercase display code")
         fields = raw["fields"]
         reserved = GLOBAL_FIELDS
         if not isinstance(fields, dict) or reserved.intersection(fields):
@@ -96,7 +96,7 @@ class Registry:
                 target = (key, value)
                 if folded in values and values[folded] != target:
                     raise ValueError(f"Ambiguous alias: {alias}")
-                if re.fullmatch(r"(\d+k|1v\d+|r\d+)", folded):
+                if re.fullmatch(r"(\d+k|1v\d+|r[1-6])", folded):
                     raise ValueError(f"Alias conflicts with reserved token: {alias}")
                 values[folded] = target
             field_links = definition.get("links", {})

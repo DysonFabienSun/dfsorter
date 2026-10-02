@@ -1,0 +1,94 @@
+name: Delta Force
+code: DF
+command_example: '3k 溪谷 红狼 diff:机密 k416 R4 -- mainline -- description'
+aliases: [df, deltaforce, 烽火地带]
+fields:
+  kill: {}
+  difficulty:
+    type: enum
+    prefixes: [diff]
+    values: [常规, 机密, 绝密]
+  operator:
+    type: enum
+    prefixes: [op]
+    values: [红狼, 威龙, 无名, 疾风, 牧羊人, 乌鲁鲁, 深蓝, 比特, 液氮, 露娜, 骇爪, 银翼, 蜂医, 蛊, 佐娅, 蝶, 旅人]
+  map:
+    type: enum
+    values: [零号大坝, 长弓溪谷, 航天基地, 巴克什, 潮汐监狱, AZ3核电站]
+    aliases: {大坝: 零号大坝, 溪谷: 长弓溪谷, 长弓: 长弓溪谷, 航天: 航天基地, 巴克: 巴克什, 监狱: 潮汐监狱, 核电站: AZ3核电站, AZ3: AZ3核电站}
+  weapon:
+    type: enum
+    multiple: true
+    prefixes: [wpn]
+    values:
+      - QBZ95-1
+      - K416
+      - PTR-32
+      - M4A1
+      - AUG
+      - AK-12
+      - M16A4
+      - G3
+      - AKM
+      - CAR-15
+      - AKS-74
+      - ASh-12
+      - AS Val
+      - CI-19
+      - K437
+      - KC17
+      - MK47
+      - MCX LT
+      - M7
+      - SCAR-H
+      - SG552
+      - AR57
+      - RM277
+      - MDR
+      - Bizon
+      - Vector
+      - Vityaz
+      - MP5
+      - UZI
+      - SMG-45
+      - P90
+      - MP7
+      - QCQ171
+      - MK4
+      - SR-3M
+      - Thompson
+      - M700
+      - SV-98
+      - AWM
+      - R93
+      - M82
+      - M249
+      - PKM
+      - M250
+      - QJB-201
+      - VSS
+      - SVD
+      - SR-25
+      - SKS
+      - PSG-1
+      - M14
+      - SR9
+      - Lever-Action Rifle
+      - Mini-14
+      - SVCH
+      - G18
+      - QSZ-92G
+      - .357 Revolver
+      - G17
+      - 93R
+      - Desert Eagle
+      - M1911
+      - S12K
+      - M1014
+      - M870
+      - '725'
+      - FS-12
+      - Compound Bow
+    aliases: {腾龙: CI-19, 野牛: Bizon, 勇士: Vityaz, 沙漠之鹰: Desert Eagle}
+display_order: [kill, difficulty, operator, map, weapon, mainline]
+suggested_fields: [operator, map, weapon]

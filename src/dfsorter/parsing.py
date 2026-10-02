@@ -109,7 +109,7 @@ def parse_command_details(
         if token.quoted and ":" not in lowered:
             return False
         return bool(
-            re.fullmatch(r"(\d+k|1v\d+|r\d+)", lowered)
+            re.fullmatch(r"(\d+k|1v\d+|r[1-6])", lowered)
             or lowered.startswith("tag:")
             or lowered.startswith("[")
             or (game and lowered.split(":", 1)[0] in game.prefixes and ":" in lowered)
@@ -140,7 +140,7 @@ def parse_command_details(
             if not re.fullmatch(r"\[[^\[\]\s]+\]", token):
                 raise ValueError("Bracketed tags need one non-empty word without spaces")
             assign("tag", token[1:-1])
-        elif re.fullmatch(r"r\d+", folded):
+        elif re.fullmatch(r"r[1-6]", folded):
             rating = int(folded[1:])
             if rating not in range(1, 6):
                 raise ValueError("Rating must be R1 through R5")
@@ -300,7 +300,7 @@ def query_clips(clips: list[dict], expression: str, registry: Registry) -> list[
     tests = []
     known_fields = {key for game in registry.games.values() for key in game.fields}
     for term in terms:
-        short_rating = re.fullmatch(r"r(\d+)", term, re.IGNORECASE)
+        short_rating = re.fullmatch(r"r([1-6])", term, re.IGNORECASE)
         if short_rating or term.casefold().startswith("rating:"):
             value = short_rating[1] if short_rating else term.split(":", 1)[1]
             match = re.fullmatch(r"(>=|<=|>|<|=)?([1-5])", value)
