@@ -961,6 +961,8 @@ Config edits game definitions stored directly as YAML files under `configs/games
 A search field above the left game list filters by displayed name, code, or YAML filename,
 case-insensitively. Filtering does not switch or discard the open game draft, even when
 its list item is hidden. Clearing search restores the full list.
+Game rows show the current YAML file size after code and field count on the second line,
+using B below 1,024 bytes and KB at or above 1,024 bytes (1 KB = 1,024 B).
 
 Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 

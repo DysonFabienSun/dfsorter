@@ -7,7 +7,7 @@ from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication, QComboBox, QInputDialog, QMessageBox
 
 from dfsorter.config import Registry
-from dfsorter.config_editor import GAME_SUMMARY_ROLE, Rows
+from dfsorter.config_editor import GAME_SIZE_ROLE, GAME_SUMMARY_ROLE, Rows, yaml_size_text
 from dfsorter.config_store import GameFile
 from dfsorter.parsing import parse_command
 from dfsorter.ui import ROOT, Window, style_application
@@ -317,6 +317,9 @@ def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
                 if editor.games.item(index).data(Qt.ItemDataRole.UserRole) == "Apex Legends.yaml")
     assert apex.text() == "Apex Legends"
     assert apex.data(GAME_SUMMARY_ROLE) == "APX · 5 fields"
+    assert apex.data(GAME_SIZE_ROLE) == yaml_size_text(
+        (editor.directory / "Apex Legends.yaml").stat().st_size
+    )
 
     invalid = editor.directory / "Invalid.yaml"
     invalid.write_text("name: [", encoding="utf-8")
@@ -325,7 +328,15 @@ def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
     broken = editor.games.currentItem()
     assert broken.text() == "Invalid"
     assert broken.data(GAME_SUMMARY_ROLE) == "Invalid configuration"
+    assert broken.data(GAME_SIZE_ROLE) == "7 B"
     assert not editor.tabs.isTabEnabled(0)
+
+
+@pytest.mark.parametrize("size, label", [
+    (0, "0 B"), (1023, "1023 B"), (1024, "1.0 KB"), (1536, "1.5 KB"),
+])
+def test_yaml_size_text_uses_binary_kilobytes(size, label):
+    assert yaml_size_text(size) == label
 
 
 def test_config_game_search_filters_without_changing_open_draft(editor_window):

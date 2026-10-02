@@ -40,6 +40,11 @@ from .theme import COLORS, font, role
 from .widgets import heading, tool
 
 GAME_SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 1
+GAME_SIZE_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+def yaml_size_text(size):
+    return f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
 
 
 def action(label, callback):
@@ -166,7 +171,11 @@ class GameListDelegate(QStyledItemDelegate):
         painter.drawText(
             QRect(left, top + title_metrics.height() + 2, width, summary_metrics.height()),
             Qt.AlignmentFlag.AlignVCenter,
-            summary_metrics.elidedText(index.data(GAME_SUMMARY_ROLE), Qt.TextElideMode.ElideRight, width),
+            summary_metrics.elidedText(
+                f"{index.data(GAME_SUMMARY_ROLE)} · {index.data(GAME_SIZE_ROLE)}",
+                Qt.TextElideMode.ElideRight,
+                width,
+            ),
         )
         painter.restore()
 
@@ -875,6 +884,7 @@ class ConfigEditor(QWidget):
                 f"{game.code} · {len(game.fields)} {'field' if len(game.fields) == 1 else 'fields'}"
                 if game else "Invalid configuration",
             )
+            item.setData(GAME_SIZE_ROLE, yaml_size_text(path.stat().st_size))
             item.setData(Qt.ItemDataRole.UserRole, path.name)
             self.games.addItem(item)
             if path.name == select:
