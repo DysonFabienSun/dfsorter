@@ -297,8 +297,13 @@ def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
     assert games.count() >= 2
     first = games.visualItemRect(games.item(0))
     second = games.visualItemRect(games.item(1))
+    header = editor_window.config_editor.sidebar_header
+    search = editor_window.config_editor.game_search
     assert first.height() >= games.fontMetrics().height() + 6
     assert second.top() >= first.bottom() + 1
+    assert search.geometry().left() == 12
+    assert search.geometry().right() == header.width() - 13
+    assert 6 <= search.geometry().top() - editor_window.config_editor.new_game_button.geometry().bottom() - 1 <= 8
     assert games.mapTo(editor_window.left, games.rect().topRight()).x() == editor_window.left.width() - 1
     assert games.mapTo(editor_window.left, games.rect().topLeft()).y() == (
         editor_window.config_editor.sidebar_header.geometry().bottom() + 1
@@ -321,6 +326,26 @@ def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
     assert broken.text() == "Invalid"
     assert broken.data(GAME_SUMMARY_ROLE) == "Invalid configuration"
     assert not editor.tabs.isTabEnabled(0)
+
+
+def test_config_game_search_filters_without_changing_open_draft(editor_window):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    editor.example.setText("unsaved search draft")
+    selected = editor.games.currentItem()
+    editor.game_search.setText("apx")
+    visible = [editor.games.item(index).text() for index in range(editor.games.count())
+               if not editor.games.item(index).isHidden()]
+    assert visible == ["Apex Legends"]
+    assert editor.games.currentItem() is selected
+    assert editor.example.text() == "unsaved search draft"
+    editor.game_search.setText("no matching game")
+    assert all(editor.games.item(index).isHidden() for index in range(editor.games.count()))
+    assert editor.games.currentItem() is selected
+    editor.game_search.clear()
+    assert all(not editor.games.item(index).isHidden() for index in range(editor.games.count()))
 
 
 @pytest.mark.parametrize("existing", [False, True])

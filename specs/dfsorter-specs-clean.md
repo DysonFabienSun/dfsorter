@@ -958,6 +958,10 @@ Share and Project Export appear in a top-navigation Output Jobs dropdown with pe
 
 Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
 
+A search field above the left game list filters by displayed name, code, or YAML filename,
+case-insensitively. Filtering does not switch or discard the open game draft, even when
+its list item is hidden. Clearing search restores the full list.
+
 Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 
 Fields exposes values and value aliases for both ordinary field types. The values row

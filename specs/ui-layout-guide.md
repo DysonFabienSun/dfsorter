@@ -496,6 +496,10 @@ single Save action is primary; Revert, Reload and row actions remain secondary. 
 tables legible in Light and Dark without adding decorative cards merely to occupy space.
 Config's Game configurations heading uses the shared 22 px section-heading row with a
 24 px file-cog icon, aligned to the Home and Session workspace heading inset.
+The Config game navigator places Games, New game, Reload and Search games in one flat
+toolbar surface above the list. Use 12 px horizontal and 10 px vertical insets, an
+8 px gap between the heading row and search, and a subtle bottom divider. Align the
+search with game-row content and keep the list rows and selection styling unchanged.
 Config Revert changes in place to a red Confirm revert button while confirmation is armed, using the shared danger role. Outside interaction restores its secondary appearance.
 Config tables use consistent header typography regardless of column selection. Brief
 wrapping notes beneath tables use the shared secondary-text role to explain command syntax.

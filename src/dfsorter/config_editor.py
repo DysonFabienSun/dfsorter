@@ -415,17 +415,26 @@ class ConfigEditor(QWidget):
         self.loading = False
         self.sidebar_header = QWidget(window.left)
         self.sidebar_header.setObjectName("configSidebarHeader")
-        header_layout = QHBoxLayout(self.sidebar_header)
-        header_layout.setContentsMargins(16, 8, 8, 8)
-        header_layout.setSpacing(4)
+        header_layout = QVBoxLayout(self.sidebar_header)
+        header_layout.setContentsMargins(12, 10, 12, 10)
+        header_layout.setSpacing(8)
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(4)
         games_heading = QLabel("Games")
         role(games_heading, "paneHeading")
-        header_layout.addWidget(games_heading)
-        header_layout.addStretch()
+        heading_row.addWidget(games_heading)
+        heading_row.addStretch()
         self.new_game_button = tool("plus", "New game", self.new_game)
         self.reload_button = tool("refresh-cw", "Reload game configurations", self.reload)
-        header_layout.addWidget(self.new_game_button)
-        header_layout.addWidget(self.reload_button)
+        heading_row.addWidget(self.new_game_button)
+        heading_row.addWidget(self.reload_button)
+        header_layout.addLayout(heading_row)
+        self.game_search = QLineEdit()
+        self.game_search.setPlaceholderText("Search games")
+        self.game_search.setProperty("librarySearch", True)
+        self.game_search.textChanged.connect(self.filter_games)
+        header_layout.addWidget(self.game_search)
         self.sidebar = QWidget(window.left)
         role(self.sidebar, "transparent")
         side = QVBoxLayout(self.sidebar)
@@ -873,6 +882,7 @@ class ConfigEditor(QWidget):
         if self.games.currentItem() is None and self.games.count():
             self.games.setCurrentRow(0)
         self.games.blockSignals(False)
+        self.filter_games()
         if self.games.currentItem():
             self.load_game(self.games.currentItem().data(Qt.ItemDataRole.UserRole))
         else:
@@ -880,6 +890,16 @@ class ConfigEditor(QWidget):
             self.tabs.setEnabled(False)
             self.save_button.setEnabled(False)
             self.revert_button.setEnabled(False)
+
+    def filter_games(self):
+        query = self.game_search.text().strip().casefold()
+        for index in range(self.games.count()):
+            item = self.games.item(index)
+            searchable = (
+                item.text(), item.data(GAME_SUMMARY_ROLE) or "",
+                item.data(Qt.ItemDataRole.UserRole) or "",
+            )
+            item.setHidden(bool(query) and not any(query in value.casefold() for value in searchable))
 
     def confirm_discard(self):
         self.cancel_revert()
