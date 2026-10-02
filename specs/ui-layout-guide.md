@@ -309,7 +309,7 @@ Config's Existing game configs heading uses the same full-width flat toolbar sur
 
 Search is the primary filter entry. The three filter menu buttons beneath it share height,
 radius, padding, border treatment and arrow placement. Menus use persistent checkboxes for
-multi-selection. Keep the toolbar plane flat without an enclosing rounded card. Search keeps
+multi-selection. Allow button widths to follow their current labels. Keep the toolbar plane flat without an enclosing rounded card. Search keeps
 rounded input styling with a quiet resting border, stronger hover border and accent focus ring.
 
 ### Clip cards

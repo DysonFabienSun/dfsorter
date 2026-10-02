@@ -383,7 +383,7 @@ The exact content of each pane depends on the active panel.
 | Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
 | Config | Game list | Game-config editor and validation status | Hidden | Hidden |
 
-Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Frozen Editing sessions and Export membership are unaffected.
+Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. The Clips button shows the selected verdict names in menu order, or **Clips: all** / **Clips: none** for those states, and grows to fit its label. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. The Games and Projects buttons show counts of selected options, including Uncategorized in the Games count. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Frozen Editing sessions and Export membership are unaffected.
 
 ### 9.5 Left-Pane Library
 

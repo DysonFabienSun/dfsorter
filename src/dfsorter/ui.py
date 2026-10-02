@@ -261,6 +261,7 @@ class FilterMenuButton(QPushButton):
 
     def __init__(self, label, all_label, options=(), selected=None, empty_text=None):
         super().__init__(label)
+        self.label = label
         self.all_label = all_label
         self.empty_text = empty_text
         self._all_selected = selected is None
@@ -298,6 +299,17 @@ class FilterMenuButton(QPushButton):
         return self._all_selected
 
     def _rebuild_menu(self):
+        selected = self.selected_values()
+        if self.label == "Clips":
+            choices = (
+                "all" if self._all_selected
+                else ", ".join(label.lower() for label, value in self._options if value in selected)
+                or "none"
+            )
+            self.setText(f"Clips: {choices}")
+        else:
+            self.setText(f"{self.label} ({len(selected)})")
+        self.setMinimumWidth(self.sizeHint().width())
         self._menu.clear()
         all_action = self._menu.addAction(self.all_label)
         all_action.setCheckable(True)

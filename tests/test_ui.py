@@ -5532,9 +5532,9 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
     window.refresh_references()
     window.panel("Home")
 
-    assert window.clip_filter.text() == "Clips"
-    assert window.game_filter.text() == "Games"
-    assert window.project_filter.text() == "Projects"
+    assert window.clip_filter.text() == "Clips: pending, keep"
+    assert window.game_filter.text() == f"Games ({len(window.registry.games) + 1})"
+    assert window.project_filter.text() == "Projects (0)"
     assert window.clip_filter.selected_values() == {None, "keep"}
     assert window.game_filter.all_selected()
     assert window.project_filter.all_selected()
@@ -5549,6 +5549,7 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
         if action.text() == "Discard":
             action.trigger()
             break
+    assert window.clip_filter.text() == "Clips: all"
     assert window.library.count() == 1
     window.unavailable_toggle.click()
     assert window.settings["show_unavailable_clips"] is True
@@ -5564,6 +5565,37 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
         assert restarted.unavailable_toggle.property("iconName") == "eye"
     finally:
         restarted.close()
+
+
+def test_filter_button_labels_follow_selected_options(window, application):
+    window.panel("Home")
+    window.clip_filter.set_selected_values({None})
+    assert window.clip_filter.text() == "Clips: pending"
+    narrow_width = window.clip_filter.sizeHint().width()
+    window.clip_filter.set_selected_values({None, "discard"})
+    assert window.clip_filter.text() == "Clips: pending, discard"
+    application.processEvents()
+    assert window.clip_filter.sizeHint().width() > narrow_width
+    assert window.clip_filter.width() >= window.clip_filter.sizeHint().width()
+    window.clip_filter.set_selected_values(set())
+    assert window.clip_filter.text() == "Clips: none"
+
+    window.game_filter.set_selected_values({""})
+    assert window.game_filter.text() == "Games (1)"
+    window.game_filter.set_selected_values(set())
+    assert window.game_filter.text() == "Games (0)"
+
+    first_project = window.catalogue.save_project("First")
+    second_project = window.catalogue.save_project("Second")
+    window.refresh_references()
+    assert window.project_filter.text() == "Projects (2)"
+    window.project_filter.set_selected_values({first_project})
+    assert window.project_filter.text() == "Projects (1)"
+    window.panel("Browse")
+    application.processEvents()
+    assert window.project_filter.text() == "Projects (1)"
+    assert window.project_filter.selected_values() == {first_project}
+    assert second_project not in window.project_filter.selected_values()
 
 
 @pytest.mark.parametrize("remaining", [False, True])
