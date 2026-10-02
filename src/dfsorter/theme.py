@@ -1,6 +1,6 @@
 import html
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QLocale, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PySide6.QtWidgets import QCheckBox, QComboBox, QProxyStyle, QStyle
 
@@ -476,7 +476,18 @@ def apply_theme(application, mode="light"):
         (name for name in ("Segoe UI Symbol", "DejaVu Sans", "Apple Symbols") if name in available),
         family,
     )
-    application.setFont(font(base=QFont(family)))
+    chinese_families = ("Microsoft YaHei UI", "Microsoft JhengHei UI")
+    if QLocale.system().territory() in {
+        QLocale.Country.Taiwan,
+        QLocale.Country.HongKong,
+        QLocale.Country.Macau,
+    }:
+        chinese_families = tuple(reversed(chinese_families))
+    families = [family]
+    families.extend(name for name in chinese_families if name in available)
+    application_font = QFont()
+    application_font.setFamilies(families)
+    application.setFont(font(base=application_font))
     palette = QPalette()
     for name, token in {
         "Window": "surface_canvas",

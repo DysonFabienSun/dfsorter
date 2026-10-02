@@ -172,7 +172,7 @@ and widgets. Components must never retain colors captured from the previous mode
 
 ### Typography, spacing and dimensions
 
-Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallback. Do not download or bundle fonts. All dimensions below are logical pixels and scale with Qt's display scaling.
+Use Segoe UI on Windows, then installed Inter, Arial and Qt's sans-serif fallback. For Chinese glyphs, prefer installed Microsoft YaHei UI; prefer Microsoft JhengHei UI first on Traditional Chinese Windows locales. Do not download or bundle fonts. All dimensions below are logical pixels and scale with Qt's display scaling.
 
 | Tokens | Values |
 | --- | --- |

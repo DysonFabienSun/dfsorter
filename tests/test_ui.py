@@ -2163,6 +2163,29 @@ def test_checklist_symbols_use_font_with_glyph_coverage(application):
         assert fragment.charFormat().fontFamilies() == [SYMBOL_FONT_FAMILY]
 
 
+def test_chinese_text_uses_windows_ui_font_fallback(application):
+    from PySide6.QtGui import QTextLayout
+
+    if os.name != "nt":
+        pytest.skip("Windows Chinese UI font fallback")
+    chinese_families = [
+        family for family in application.font().families()
+        if family in {"Microsoft YaHei UI", "Microsoft JhengHei UI"}
+    ]
+    if not chinese_families:
+        pytest.skip("Windows Chinese UI fonts are not installed")
+
+    layout = QTextLayout("Segoe 中文", application.font())
+    layout.beginLayout()
+    line = layout.createLine()
+    line.setLineWidth(500)
+    layout.endLayout()
+    rendered_families = {run.rawFont().familyName() for run in layout.glyphRuns()}
+    assert "Segoe UI" in rendered_families
+    assert chinese_families[0] in rendered_families
+    assert "SimSun" not in rendered_families
+
+
 def test_field_checklist_hover_shows_all_overwatch_options(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.catalogue.patch(ids[0], {"game": "Overwatch"})
