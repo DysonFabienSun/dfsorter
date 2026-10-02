@@ -1,3 +1,4 @@
+import html
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
@@ -139,6 +140,7 @@ THEMES = {
 # Custom painters import this object. Mutating it keeps those references current.
 COLORS = dict(THEMES["light"])
 ACTIVE_SCHEME = "light"
+SYMBOL_FONT_FAMILY = "sans-serif"
 
 FONT_SIZES = {
     "xs": 11, "sm": 12, "md": 13, "base": 14, "card_title": 14,
@@ -453,7 +455,7 @@ class ApplicationStyle(QProxyStyle):
 
 
 def apply_theme(application, mode="light"):
-    global ACTIVE_SCHEME
+    global ACTIVE_SCHEME, SYMBOL_FONT_FAMILY
     ACTIVE_SCHEME = resolved_scheme(application, mode)
     COLORS.clear()
     COLORS.update(THEMES[ACTIVE_SCHEME])
@@ -463,6 +465,11 @@ def apply_theme(application, mode="light"):
     available = set(QFontDatabase.families())
     family = next(
         (name for name in ("Segoe UI", "Inter", "Arial") if name in available), "sans-serif"
+    )
+    # Explicit coverage avoids Qt's expensive first-use font fallback for checklist glyphs.
+    SYMBOL_FONT_FAMILY = next(
+        (name for name in ("Segoe UI Symbol", "DejaVu Sans", "Apple Symbols") if name in available),
+        family,
     )
     application.setFont(font(base=QFont(family)))
     palette = QPalette()
@@ -491,6 +498,13 @@ def apply_theme(application, mode="light"):
     application.setPalette(palette)
     application.setStyleSheet(stylesheet())
     return ACTIVE_SCHEME
+
+
+def symbol_text(text, size=None):
+    style = f"font-family:'{SYMBOL_FONT_FAMILY}'"
+    if size is not None:
+        style += f"; font-size:{size}px"
+    return f'<span style="{style}">{html.escape(text)}</span>'
 
 
 def title_styles(card=False, on_video=False, library=False, compact_card=False):

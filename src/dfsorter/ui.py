@@ -97,7 +97,16 @@ from .playback import Player, playback_start_settings, playback_volume
 from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
-from .theme import COLORS, SIZES, apply_theme, font, resolved_scheme, role, title_styles
+from .theme import (
+    COLORS,
+    SIZES,
+    apply_theme,
+    font,
+    resolved_scheme,
+    role,
+    symbol_text,
+    title_styles,
+)
 from .thumbnails import ThumbnailCache
 from .tips import TipLibrary, TipWidget
 from .update_ui import UpdateController
@@ -3270,11 +3279,11 @@ class Window(QMainWindow):
                 mark, color = "x", "status_danger"
             elif key in inferred_fields:
                 mark, color = (
-                    f'<span style="font-size:{self.editing_bottom_size()}px">◇</span>',
+                    symbol_text("◇", self.editing_bottom_size()),
                     "accent_default",
                 )
             elif not missing:
-                mark, color = "✓", "status_success"
+                mark, color = symbol_text("✓"), "status_success"
             elif key in game.suggested_fields:
                 mark, color = "!", "status_warning"
             else:

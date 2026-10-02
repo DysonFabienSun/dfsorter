@@ -40,7 +40,7 @@ from dfsorter.command_input import CommandInput, command_expansions
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
-from dfsorter.theme import COLORS, FONT_SIZES
+from dfsorter.theme import COLORS, FONT_SIZES, symbol_text
 from dfsorter.ui import ROOT, Window, style_application
 from dfsorter.update_ui import UpdateController
 from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate
@@ -2110,13 +2110,14 @@ def test_field_checklist_previews_commands_without_saving(window, application, t
     window.command.setFocus()
     QTest.keyClicks(window.command, "jett R3 -- Example")
     for key in ("agent", "rating", "mainline"):
-        assert f"✓&nbsp;{key}" in window.field_reminder.text()
+        assert f"✓</span>&nbsp;{key}" in window.field_reminder.text()
+    assert symbol_text("✓") in window.field_reminder.text()
     assert "press Enter to save" in window.field_reminder.toolTip()
     assert window.catalogue.clip(ids[0]) == saved
     window.render_clip()
-    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert "✓</span>&nbsp;agent" in window.field_reminder.text()
     window.command.setText('jett tag:"unfinished')
-    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert "✓</span>&nbsp;agent" in window.field_reminder.text()
     assert window.command.property("validationState") == "incomplete"
     assert window.command_error.isHidden()
     window.command.clear()
@@ -2126,10 +2127,29 @@ def test_field_checklist_previews_commands_without_saving(window, application, t
     assert window.catalogue.clip(ids[0])["metadata"]["agent"] == "Jett"
     window.command.setText('tag:""')
     assert "o&nbsp;tag" in window.field_reminder.text()
-    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert "✓</span>&nbsp;agent" in window.field_reminder.text()
     assert window.catalogue.clip(ids[0])["tag"] == "Example"
     window.command.clear()
-    assert "✓&nbsp;tag" in window.field_reminder.text()
+    assert "✓</span>&nbsp;tag" in window.field_reminder.text()
+
+
+def test_checklist_symbols_use_font_with_glyph_coverage(application):
+    from PySide6.QtGui import QFont, QRawFont
+
+    from dfsorter.theme import SYMBOL_FONT_FAMILY
+
+    if os.name != "nt":
+        pytest.skip("Windows first-use font fallback regression")
+    assert SYMBOL_FONT_FAMILY == "Segoe UI Symbol"
+    raw_font = QRawFont.fromFont(QFont(SYMBOL_FONT_FAMILY))
+    for glyph in ("✓", "◇"):
+        assert raw_font.supportsCharacter(ord(glyph))
+        document = QTextDocument()
+        document.setDefaultFont(application.font())
+        document.setHtml(symbol_text(glyph) + " agent")
+        fragment = document.begin().begin().fragment()
+        assert fragment.text() == glyph
+        assert fragment.charFormat().fontFamilies() == [SYMBOL_FONT_FAMILY]
 
 
 def test_field_checklist_hover_shows_all_overwatch_options(window, application, tmp_path):
@@ -2175,7 +2195,7 @@ def test_inferred_field_preview_and_history(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
     window.command.setText("hh")
-    assert '<span style="font-size:12px">◇</span>&nbsp;agent' in window.field_reminder.text()
+    assert symbol_text('◇', 12) + '&nbsp;agent' in window.field_reminder.text()
     assert COLORS["accent_default"] in window.field_reminder.text()
     assert window.catalogue.clip(ids[0])["metadata"] == {}
     window.submit()
@@ -2188,7 +2208,7 @@ def test_inferred_field_preview_and_history(window, application, tmp_path):
     document.setHtml(window.command_history.text())
     assert document.toPlainText() == "hh (Inferred: Agent = Chamber)"
     assert "font-size:11px" in window.command_history.text()
-    assert "✓&nbsp;agent" in window.field_reminder.text()
+    assert "✓</span>&nbsp;agent" in window.field_reminder.text()
 
     window.command.setText("jett tdf")
     window.submit()
