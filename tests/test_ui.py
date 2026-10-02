@@ -3068,6 +3068,42 @@ def test_session_arrow_navigation_and_tag_display(window, application, tmp_path)
     assert window.command.text() == "draft"
 
 
+def test_submitted_command_up_down_navigates_session_from_input(
+    window, application, tmp_path
+):
+    ids = add_clips(window, tmp_path)
+    folder_id = window.catalogue.folders()[0]["folder_id"]
+    second = tmp_path / "captures" / "second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(folder_id, [{"path": str(second), "game": "VALORANT"}])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids, replace=True)
+    window.panel("Editing")
+    window.command.setFocus()
+    window.command.setText("R4")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    assert window.command.text() == ""
+    assert application.focusWidget() is window.command
+
+    QTest.keyClick(window.command, Qt.Key.Key_Down)
+    assert window.current_id == ids[1]
+    assert application.focusWidget() is window.player
+    window.command.setFocus()
+    window.command.setText("R3")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    QTest.keyClick(window.command, Qt.Key.Key_Up)
+    assert window.current_id == ids[0]
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    assert window.catalogue.clip(ids[1])["rating"] == 3
+
+    window.command.setFocus()
+    window.command.setText("invalid command")
+    QTest.keyClick(window.command, Qt.Key.Key_Return)
+    QTest.keyClick(window.command, Qt.Key.Key_Down)
+    assert window.current_id == ids[0]
+    assert window.command.text() == "invalid command"
+
+
 def test_review_drafts_rating_and_panes(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")

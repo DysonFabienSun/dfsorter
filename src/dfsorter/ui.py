@@ -872,6 +872,7 @@ class Window(QMainWindow):
         self.command_separator_range = None
         self.command_separator_space_pending = False
         self.command_submitted_error = False
+        self.command_submitted_navigation = False
         self.command_saved_timer = QTimer(self)
         self.command_saved_timer.setSingleShot(True)
         self.command_saved_timer.setInterval(1200)
@@ -3098,6 +3099,7 @@ class Window(QMainWindow):
         if not self.ensure_range_complete():
             return
         self.command_submitted_error = False
+        self.command_submitted_navigation = False
         self.command_saved_timer.stop()
         self.submit_resume = False
         self.cancel_space()
@@ -3431,6 +3433,7 @@ class Window(QMainWindow):
                 history.append((text, result.inferred) if result.inferred else text)
                 del history[:-3]
             self.command.clear()
+            self.command_submitted_navigation = bool(text.strip())
             self.command_error.clear()
             self.command_error.hide()
             self.render_clip()
@@ -3441,6 +3444,7 @@ class Window(QMainWindow):
             self.update_command_state()
         except ValueError as error:
             self.submit_resume = False
+            self.command_submitted_navigation = False
             self.command_submitted_error = True
             self.update_command_state()
             self.error(error)
@@ -3570,6 +3574,7 @@ class Window(QMainWindow):
     def remember_draft(self, text):
         self.restored_command = None
         self.command_submitted_error = False
+        self.command_submitted_navigation = False
         self.command_saved_timer.stop()
         self.command_error.clear()
         self.command_error.hide()
@@ -3599,6 +3604,7 @@ class Window(QMainWindow):
             self.config_editor.break_history_group()
         if old is self.command and new is not self.command:
             self.submit_resume = False
+            self.command_submitted_navigation = False
         self.update_command_state()
 
     def command_playback_changed(self, state):
@@ -3988,6 +3994,15 @@ class Window(QMainWindow):
             self.review_mode()
             return True
         if focus is self.command:
+            if (
+                self.current_panel == "Editing"
+                and self.command_submitted_navigation
+                and not self.command.text()
+                and key in {Qt.Key.Key_Up, Qt.Key.Key_Down}
+                and modifiers == Qt.KeyboardModifier.NoModifier
+            ):
+                self.navigate(-1 if key == Qt.Key.Key_Up else 1)
+                return True
             if self.submit_resume and key not in {
                 Qt.Key.Key_Shift,
                 Qt.Key.Key_Control,
