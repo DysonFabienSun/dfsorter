@@ -884,15 +884,13 @@ def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     assert window.current_panel == "Home"
     assert window.selected_id(window.library) == ids[1]
     assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
-    assert window.catalogue.clip(ids[1])["triage"] == "keep"
+    assert window.catalogue.clip(ids[1])["triage"] is None
     assert window.catalogue.state("session") == session
     assert len(window.catalogue.undo_stack) == len(history) + 1
     window.undo()
     assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
     window.panel("Editing")
     window.switch_editing_clip(ids[1])
-    window.undo()
-    assert window.catalogue.clip(ids[1])["triage"] is None
     window.undo()
     assert window.catalogue.clip(ids[1])["mainline"] is None
     window.panel("Home")
@@ -977,11 +975,11 @@ def test_atomic_save_actions_return_to_browse(window, application, tmp_path, act
     assert window.current_panel == "Browse"
     assert window.browse.clip["clip_id"] == clip_id
     assert window.selected_id(window.library) == clip_id
-    assert window.catalogue.clip(clip_id)["triage"] == "keep"
+    assert window.catalogue.clip(clip_id)["triage"] is None
     assert window.catalogue.clip(clip_id)["mainline"] == "Edited clip"
 
 
-def test_atomic_shift_enter_requires_keep_metadata_or_discard(window, application, tmp_path):
+def test_atomic_shift_enter_preserves_explicit_verdict(window, application, tmp_path):
     root = tmp_path / "atomic-verdict"
     root.mkdir()
     path = root / "clip.mp4"
@@ -993,11 +991,14 @@ def test_atomic_shift_enter_requires_keep_metadata_or_discard(window, applicatio
     window.panel("Browse")
     window.start_atomic_edit(clip_id, "Browse")
     window.edit({"rating": 3})
-    assert not window.atomic_save_button.isEnabled()
+    assert window.atomic_save_button.isEnabled()
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
-    assert window.current_panel == "Editing"
-    assert window.catalogue.clip(clip_id)["rating"] is None
+    application.processEvents()
+    assert window.current_panel == "Browse"
+    assert window.catalogue.clip(clip_id)["rating"] == 3
+    assert window.catalogue.clip(clip_id)["triage"] is None
 
+    window.start_atomic_edit(clip_id, "Browse")
     window.edit({"triage": "discard"})
     assert window.atomic_save_button.isEnabled()
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
@@ -1005,6 +1006,59 @@ def test_atomic_shift_enter_requires_keep_metadata_or_discard(window, applicatio
     assert window.current_panel == "Browse"
     assert window.catalogue.clip(clip_id)["triage"] == "discard"
     assert window.catalogue.clip(clip_id)["rating"] == 3
+
+
+def test_atomic_save_preserves_existing_keep_and_membership(window, tmp_path):
+    root = tmp_path / "atomic-existing-keep"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+    project_id = window.catalogue.save_project("Project")
+    window.catalogue.set_state("active_project", project_id)
+    window.catalogue.patch(clip_id, {"triage": "keep"})
+
+    window.start_atomic_edit(clip_id, "Home")
+    window.edit({"rating": 2})
+    assert window.save_atomic_edit()
+    assert window.catalogue.clip(clip_id)["triage"] == "keep"
+    assert window.catalogue.member_ids(project_id) == set()
+
+
+def test_atomic_notice_replaces_rotating_tip(window, application, tmp_path):
+    root = tmp_path / "atomic-notice"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+
+    window.settings["editing_tips_enabled"] = False
+    window.start_atomic_edit(clip_id, "Home")
+    application.processEvents()
+    assert window.atomic_edit_notice.isVisible()
+    assert window.atomic_edit_notice.icon_name == "triangle-alert"
+    assert window.atomic_edit_notice.color_role == "status_warning"
+    assert "Save or Shift+Enter keeps the selected verdict" in window.atomic_edit_notice.message
+    assert window.atomic_edit_notice.font() == window.editing_tip.font()
+    assert type(window.atomic_edit_notice) is type(window.editing_tip)
+    assert not window.editing_tip.isVisible()
+    assert not window.tip_timer.isActive()
+
+    window.settings["editing_bottom_size"] = 11
+    window.update_editing_bottom_size()
+    assert window.atomic_edit_notice.font().pixelSize() == 11
+    window.settings["editing_bottom_size"] = 13
+    window.update_editing_bottom_size()
+    assert window.atomic_edit_notice.font().pixelSize() == 13
+
+    window.discard_atomic_edit()
+    window.panel("Home")
+    application.processEvents()
+    assert not window.atomic_edit_notice.isVisible()
 
 
 def test_atomic_entry_controls_and_context_target(window, application, tmp_path, monkeypatch):
@@ -1043,7 +1097,7 @@ def test_atomic_navigation_reverts_and_shift_enter_validates(
 
     window.start_atomic_edit(clip_id, "Home")
     window.edit({"rating": 3})
-    assert not window.atomic_save_button.isEnabled()
+    assert window.atomic_save_button.isEnabled()
     monkeypatch.setattr(window, "confirm_revert_atomic", lambda: False)
     window.panel("Config")
     assert window.current_panel == "Editing"
@@ -1114,7 +1168,7 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     window.save_atomic_edit()
     assert window.catalogue.member_ids(project_id) == {clip_id}
     assert len(window.catalogue.undo_stack) == len(history) + 1
-    assert len(window.editing_histories[clip_id].undo_stack) >= 2
+    assert len(window.editing_histories[clip_id].undo_stack) == 2
 
     window.start_atomic_edit(clip_id, "Home")
     window.command.setText("jett")

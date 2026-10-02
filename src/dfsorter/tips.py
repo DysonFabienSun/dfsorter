@@ -50,9 +50,11 @@ class TipLibrary:
 
 
 class TipWidget(QWidget):
-    def __init__(self, parent=None, size=12):
+    def __init__(self, parent=None, size=12, icon_name="info", color_role="accent_default"):
         super().__init__(parent)
         self.message = ""
+        self.icon_name = icon_name
+        self.color_role = color_role
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.set_tip_size(size)
 
@@ -69,7 +71,7 @@ class TipWidget(QWidget):
         self.update()
 
     def refresh_theme(self):
-        self.symbol = icon("info", COLORS["accent_default"], size=self.tip_size).pixmap(
+        self.symbol = icon(self.icon_name, COLORS[self.color_role], size=self.tip_size).pixmap(
             self.tip_size, self.tip_size
         )
         self.update()
@@ -84,7 +86,7 @@ class TipWidget(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.setPen(COLORS["accent_default"])
+        painter.setPen(COLORS[self.color_role])
         icon_width = self.tip_size
         spacing = 4
         available_text = max(0, self.width() - icon_width - spacing)

@@ -917,6 +917,17 @@ class Window(QMainWindow):
         fields_row.addWidget(self.field_reminder)
         self.editing_tip = TipWidget(size=self.editing_bottom_size())
         fields_row.addWidget(self.editing_tip, 1)
+        self.atomic_edit_notice = TipWidget(
+            size=self.editing_bottom_size(),
+            icon_name="triangle-alert",
+            color_role="status_warning",
+        )
+        self.atomic_edit_notice.set_message(
+            "Single-clip edit: Save or Shift+Enter keeps the selected verdict. "
+            "Use Keep, Discard, or Pending to change it."
+        )
+        self.atomic_edit_notice.hide()
+        fields_row.addWidget(self.atomic_edit_notice, 1)
         self.tip_timer = QTimer(self)
         self.tip_timer.setInterval(30_000)
         self.tip_timer.timeout.connect(self.rotate_tip)
@@ -1425,8 +1436,6 @@ class Window(QMainWindow):
         self.command_error.setVisible(bool(str(message)))
 
     def open_settings(self):
-        if self.atomic_edit:
-            return
         if getattr(self, "settings_dialog", None) is not None:
             self.settings_dialog.raise_()
             self.settings_dialog.activateWindow()
@@ -1486,6 +1495,7 @@ class Window(QMainWindow):
             icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12)
         )
         self.editing_tip.refresh_theme()
+        self.atomic_edit_notice.refresh_theme()
         self.update_theme_button()
         self.refresh_references()
         self.refresh_title_presentation()
@@ -1935,15 +1945,7 @@ class Window(QMainWindow):
             self.atomic_changed()
             and not self.command.text()
             and not self.has_pending_range()
-            and self.atomic_verdict_valid()
         )
-
-    def atomic_verdict_valid(self):
-        clip = self.atomic_edit.draft[0]
-        if clip["triage"] == "discard":
-            return True
-        game = self.registry.game(clip["game"])
-        return bool(game and has_review_metadata(clip, game))
 
     def save_atomic_edit(self):
         if not self.atomic_edit:
@@ -1955,29 +1957,10 @@ class Window(QMainWindow):
             return False
         if not self.atomic_changed():
             return False
-        clip = self.atomic_edit.draft[0]
-        if clip["triage"] != "discard":
-            game = self.registry.game(clip["game"])
-            if not game:
-                self.error("Assign a configured game before Keep, or explicitly Discard.")
-                return False
-            if not has_review_metadata(clip, game):
-                self.error("Cannot Keep: add at least one metadata field or mainline")
-                return False
         try:
             state = self.atomic_edit
-            draft = state.draft
-            before_verdict = self.editing_state(state.clip_id, state)
-            if clip["triage"] != "discard":
-                draft = self.catalogue.draft_snapshot(
-                    draft, {"triage": "keep"}, editing=True,
-                    active_project=self.catalogue.state("active_project"),
-                )
-            self.catalogue.commit_snapshot(state.baseline, draft)
+            self.catalogue.commit_snapshot(state.baseline, state.draft)
             history = self.editing_histories[state.clip_id]
-            if draft != state.draft:
-                state.draft = draft
-                state.edits.record(before_verdict, self.editing_state(state.clip_id, state))
             if state.edits.undo_stack:
                 previous = history.pending()
                 if previous and previous.after != state.edits.undo_stack[0].before:
@@ -2246,8 +2229,13 @@ class Window(QMainWindow):
         self.shortcut_hint.setVisible(name == "Editing")
         self.refresh_shortcut_hint()
         self.field_reminder.hide()
-        self.editing_tip.setVisible(name == "Editing" and bool(self.editing_tip.message)
-                                    and self.settings.get("editing_tips_enabled", True))
+        self.editing_tip.setVisible(
+            name == "Editing"
+            and bool(self.editing_tip.message)
+            and self.settings.get("editing_tips_enabled", True)
+            and not self.atomic_edit
+        )
+        self.atomic_edit_notice.setVisible(name == "Editing" and bool(self.atomic_edit))
         self.session_header.setVisible(name == "Editing")
         self.session_heading.setText("Single clip" if self.atomic_edit else "Session clips")
         self.next_undefined_button.setVisible(not self.atomic_edit)
@@ -3848,6 +3836,18 @@ class Window(QMainWindow):
                 self.refresh_library()
 
     def show_shortcuts(self):
+        if self.atomic_edit:
+            QMessageBox.information(
+                self,
+                "Single-clip Editing shortcuts",
+                "SINGLE-CLIP EDITING\n"
+                "Shift+Enter: Save and return to the originating clip (command bar must be empty)\n"
+                "Save and return to clip: Save the staged changes\n"
+                "Both actions retain the selected Keep, Discard, or Pending verdict. "
+                "Use the verdict buttons to change it.\n\n"
+                "Enter in the command bar submits metadata. Escape returns to review mode.",
+            )
+            return
         QMessageBox.information(
             self,
             "Review shortcuts",
@@ -4982,7 +4982,11 @@ class Window(QMainWindow):
         self.schedule_preload()
 
     def rotate_tip(self):
-        if self.current_panel != "Editing" or not self.settings.get("editing_tips_enabled", True):
+        if (
+            self.current_panel != "Editing"
+            or self.atomic_edit
+            or not self.settings.get("editing_tips_enabled", True)
+        ):
             self.tip_timer.stop()
             self.editing_tip.hide()
             return
@@ -4996,7 +5000,10 @@ class Window(QMainWindow):
             self.tip_timer.stop()
 
     def update_tips_enabled(self):
-        if self.settings.get("editing_tips_enabled", True):
+        if self.atomic_edit:
+            self.tip_timer.stop()
+            self.editing_tip.hide()
+        elif self.settings.get("editing_tips_enabled", True):
             self.rotate_tip()
         else:
             self.tip_timer.stop()
@@ -5008,6 +5015,7 @@ class Window(QMainWindow):
 
     def update_editing_bottom_size(self):
         self.editing_tip.set_tip_size(self.editing_bottom_size())
+        self.atomic_edit_notice.set_tip_size(self.editing_bottom_size())
         if self.current_panel == "Editing" and self.current_id:
             clip = self.effective_clip()
             self.render_field_reminder(clip, self.registry.game(clip["game"]))
