@@ -834,6 +834,18 @@ class ConfigEditor(QWidget):
         self.loading = True
         definition = self.draft.get("fields", {}).get(self.field_key, {}) if self.draft else {}
         reserved = self.field_key in {"kill", "clutch"}
+        if self.field_key == "kill":
+            self.reserved_note.setText(
+                "Kill count is a single number entered as XK, such as 3K. "
+                "DFSorter parses and displays the count automatically. "
+                "Its format and aliases cannot be edited."
+            )
+        elif self.field_key == "clutch":
+            self.reserved_note.setText(
+                "Clutch is a single opponent count entered as 1vX, such as 1v4. "
+                "It is available when this game includes the clutch field. "
+                "Its format and aliases cannot be edited."
+            )
         self.field_form.setRowVisible(self.reserved_note, reserved)
         self.field_form.setRowVisible(self.field_type, not reserved)
         self.field_form.setRowVisible(self.multiple, not reserved)

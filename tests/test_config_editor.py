@@ -122,6 +122,27 @@ def test_field_type_popup_shows_both_options_without_scrolling(editor_window):
         long_combo.close()
 
 
+def test_reserved_field_details_explain_syntax_and_remain_read_only(editor_window):
+    editor_window.panel("Config")
+    editor = editor_window.config_editor
+    select_game(editor, "Counter-strike 2.yaml")
+    editor.tabs.setCurrentIndex(1)
+
+    for field, syntax in (("kill", "3K"), ("clutch", "1v4")):
+        editor.fields.setCurrentRow(
+            next(index for index in range(editor.fields.count())
+                 if editor.fields.item(index).text() == field)
+        )
+        assert editor.reserved_note.isVisible()
+        assert syntax in editor.reserved_note.text()
+        assert not editor.field_type.isVisible()
+        assert not editor.multiple.isVisible()
+        assert not editor.prefixes.isVisible()
+        assert not editor.values.isVisible()
+        assert not editor.aliases.isVisible()
+        assert not editor.links.isVisible()
+
+
 def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
     application = QApplication.instance()
     editor_window.panel("Config")
