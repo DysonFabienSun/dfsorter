@@ -155,6 +155,74 @@ def test_enter_on_selected_last_row_creates_next_row(editor_window):
         rows.close()
 
 
+def test_row_actions_use_selected_cell(editor_window):
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit, QPushButton
+
+    application = QApplication.instance()
+    rows = Rows(["Alias", "Canonical value"], lambda: None)
+    rows.set_values([["first", "one"], ["second", "two"], ["third", "three"]])
+    rows.show()
+    rows.activateWindow()
+    application.processEvents()
+    try:
+        buttons = {button.text(): button for button in rows.findChildren(QPushButton)}
+        add, remove = buttons["Add row"], buttons["Remove row"]
+        assert not remove.isEnabled()
+        rows.table.setCurrentCell(0, 1)
+        assert remove.isEnabled()
+        QTest.mouseClick(add, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert rows.values() == [
+            ["first", "one"], ["", ""], ["second", "two"], ["third", "three"]
+        ]
+        assert rows.table.currentRow() == 1
+        assert isinstance(application.focusWidget(), QLineEdit)
+
+        rows.table.itemDelegate().commitData.emit(application.focusWidget())
+        rows.table.itemDelegate().closeEditor.emit(application.focusWidget())
+        rows.clear_selection()
+        rows.table.setCurrentCell(2, 0, QItemSelectionModel.SelectionFlag.NoUpdate)
+        assert not rows.table.selectedItems()
+        assert not remove.isEnabled()
+        rows.remove()
+        assert rows.table.rowCount() == 4
+        QTest.mouseClick(add, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert rows.values()[-1] == ["", ""]
+        rows.table.itemDelegate().commitData.emit(application.focusWidget())
+        rows.table.itemDelegate().closeEditor.emit(application.focusWidget())
+        rows.table.setCurrentCell(2, 1)
+        QTest.mouseClick(remove, Qt.MouseButton.LeftButton)
+        assert rows.values() == [["first", "one"], ["", ""], ["third", "three"], ["", ""]]
+    finally:
+        rows.close()
+
+
+def test_table_search_highlights_and_wraps_matches(editor_window):
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    rows = Rows(["Alias", "Canonical value"], lambda: None)
+    rows.set_values([["MP5", "Pistol"], ["Rifle", "mp5sd"], ["mp5k", "Shotgun"]])
+    rows.search.setText("Mp5")
+    assert rows.matches() == [(0, 0), (1, 1), (2, 0)]
+    assert rows.next_match.isEnabled() and rows.previous_match.isEnabled()
+
+    option = QStyleOptionViewItem()
+    delegate = rows.table.itemDelegate()
+    delegate.initStyleOption(option, rows.table.model().index(1, 1))
+    assert option.backgroundBrush.color().isValid()
+    rows.move_match(1)
+    assert (rows.table.currentRow(), rows.table.currentColumn()) == (0, 0)
+    rows.move_match(-1)
+    assert (rows.table.currentRow(), rows.table.currentColumn()) == (2, 0)
+    rows.search.setText("missing")
+    assert not rows.next_match.isEnabled() and not rows.previous_match.isEnabled()
+    rows.search.clear()
+    assert rows.matches() == []
+
+
 def test_field_type_popup_shows_both_options_without_scrolling(editor_window):
     application = QApplication.instance()
     editor_window.panel("Config")
@@ -466,6 +534,116 @@ def test_freeform_named_values_and_aliases_round_trip(editor_window):
     assert window.registry.game("Escape from Tarkov").fields["weapon"]["values"] == ["MP5"]
 
 
+def test_invalid_alias_marks_cell_and_disables_save(editor_window, monkeypatch):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    editor.fields.setCurrentRow(next(
+        index for index in range(editor.fields.count())
+        if editor.fields.item(index).text() == "weapon"
+    ))
+    editor.tabs.setCurrentIndex(1)
+    editor.aliases.add(["invalid_alias", "Missing value"])
+    item = editor.aliases.table.item(editor.aliases.table.rowCount() - 1, 1)
+
+    assert item.font().underline()
+    assert item.foreground().color().isValid()
+    assert "Missing value" in item.toolTip()
+    assert not editor.save_button.isEnabled()
+    assert "Missing value" in editor.validation_message.text()
+
+    prompts = []
+
+    def respond(dialog):
+        prompts.append((dialog.button(QMessageBox.StandardButton.Save).isEnabled(),
+                        dialog.informativeText()))
+        return QMessageBox.StandardButton.Cancel
+
+    monkeypatch.setattr(QMessageBox, "exec", respond)
+    window.panel("Home")
+    assert window.current_panel == "Config"
+    assert prompts and not prompts[0][0]
+    assert "Missing value" in prompts[0][1]
+
+    editor.aliases.table.setCurrentCell(item.row(), 1)
+    item.setText(editor.values.values()[0][0])
+    assert not item.font().underline()
+    assert editor.save_button.isEnabled()
+    assert not editor.validation_message.isVisible()
+
+
+def test_invalid_link_cells_marked_and_clear_live(editor_window):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    editor.fields.setCurrentRow(next(
+        index for index in range(editor.fields.count())
+        if editor.fields.item(index).text() == "weapon"
+    ))
+    editor.tabs.setCurrentIndex(1)
+    editor.links.add(["Missing source", "missing_field", "Missing target"])
+    row = editor.links.table.rowCount() - 1
+    assert all(editor.links.table.item(row, column).font().underline() for column in (0, 1))
+    assert not editor.save_button.isEnabled()
+
+    editor.links.table.item(row, 0).setText(editor.values.values()[0][0])
+    editor.links.table.item(row, 1).setText("map")
+    assert editor.links.table.item(row, 2).font().underline()
+    editor.links.table.item(row, 2).setText("Ascent")
+    assert all(not editor.links.table.item(row, column).font().underline() for column in range(3))
+    assert editor.save_button.isEnabled()
+
+
+def test_active_cell_validation_updates_while_typing(editor_window):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    editor.fields.setCurrentRow(next(
+        index for index in range(editor.fields.count())
+        if editor.fields.item(index).text() == "weapon"
+    ))
+    editor.tabs.setCurrentIndex(1)
+    table = editor.aliases.table
+    table.setCurrentCell(0, 1)
+    table.editItem(table.item(0, 1))
+    QApplication.instance().processEvents()
+    field = QApplication.focusWidget()
+    assert isinstance(field, QLineEdit)
+    QTest.keyClick(field, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClicks(field, "Invalid")
+    assert "Invalid" in editor.validation_message.text()
+    assert not editor.save_button.isEnabled()
+    assert field.font().underline()
+    editor.commit_table_edit()
+    QApplication.instance().processEvents()
+    editor.validate_draft()
+    assert table.item(0, 1).font().underline()
+
+
+def test_repair_yaml_validation_disables_save_until_valid(editor_window):
+    window = editor_window
+    target = window.root / "configs/games/VALORANT.yaml"
+    target.write_text("name: [broken\n", encoding="utf-8")
+    window.reload_configs()
+    window.panel("Config")
+    editor = window.config_editor
+    editor.refresh_files(select="VALORANT.yaml")
+    editor.recovery.setPlainText("name: [still broken\n")
+    assert not editor.save_button.isEnabled()
+    assert editor.validation_message.text()
+    editor.recovery.setPlainText(
+        "name: VALORANT\ncode: VAL\nfields: {kill: {}}\ndisplay_order: [kill, mainline]\n"
+    )
+    assert editor.save_button.isEnabled()
+    assert not editor.validation_message.text()
+
+
 def test_config_undo_crosses_save_without_writing_yaml(editor_window):
     window = editor_window
     window.panel("Config")
@@ -728,7 +906,7 @@ def test_used_field_removal_preserves_clip_metadata(editor_window, monkeypatch, 
     assert "agent" not in window.registry.game("VALORANT").fields
 
 
-def test_removed_enum_value_clears_dependent_alias_and_link(editor_window):
+def test_removed_enum_value_requires_dependent_alias_and_link_cleanup(editor_window):
     window = editor_window
     window.panel("Config")
     editor = window.config_editor
@@ -741,6 +919,18 @@ def test_removed_enum_value_clears_dependent_alias_and_link(editor_window):
         if values[0] == "Headhunter":
             editor.values.table.setCurrentCell(index, 0)
             editor.values.remove()
+            break
+    assert not editor.save_button.isEnabled()
+    assert "Headhunter" in editor.validation_message.text()
+    for index, values in enumerate(editor.aliases.values()):
+        if values[1] == "Headhunter":
+            editor.aliases.table.setCurrentCell(index, 0)
+            editor.aliases.remove()
+            break
+    for index, values in enumerate(editor.links.values()):
+        if values[0] == "Headhunter":
+            editor.links.table.setCurrentCell(index, 0)
+            editor.links.remove()
             break
     assert editor.save(), editor.status.text()
     game = window.registry.game("VALORANT")

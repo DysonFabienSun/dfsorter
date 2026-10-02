@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFontMetrics
+from PySide6.QtGui import QBrush, QColor, QFontMetrics, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from .config import GLOBAL_FIELDS
-from .config_store import GameFile, new_game_path
+from .config_store import GameFile, new_game_path, validate_candidate, yaml_parser
 from .history import EditHistory
 from .theme import COLORS, font, role
 from .widgets import heading, tool
@@ -58,10 +58,17 @@ def row(*widgets):
 
 
 class TableEditDelegate(QStyledItemDelegate):
-    def __init__(self, changed, add_row, parent):
+    def __init__(self, changed, add_row, search_text, parent):
         super().__init__(parent)
         self.changed = changed
         self.add_row = add_row
+        self.search_text = search_text
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        query = self.search_text().casefold()
+        if query and query in str(index.data() or "").casefold():
+            option.backgroundBrush = QBrush(QColor(COLORS["status_warning_soft"]))
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
@@ -83,6 +90,40 @@ class TableEditDelegate(QStyledItemDelegate):
             self.add_row()
             return True
         return super().eventFilter(watched, event)
+
+
+class ConfigTable(QTableWidget):
+    def __init__(self, columns, changed, parent=None):
+        super().__init__(0, columns, parent)
+        self.changed = changed
+
+    def dropEvent(self, event):
+        if event.source() is not self or self.currentRow() < 0:
+            event.ignore()
+            return
+        source = self.currentRow()
+        index = self.indexAt(event.position().toPoint())
+        target = index.row() if index.isValid() else self.rowCount()
+        if self.dropIndicatorPosition() == QAbstractItemView.DropIndicatorPosition.BelowItem:
+            target += 1
+        if target > source:
+            target -= 1
+        self.move_row(source, target)
+        event.acceptProposedAction()
+
+    def move_row(self, source, target):
+        if source == target:
+            return
+        column = self.currentColumn()
+        blocked = self.blockSignals(True)
+        items = [self.takeItem(source, offset) for offset in range(self.columnCount())]
+        self.removeRow(source)
+        self.insertRow(target)
+        for offset, item in enumerate(items):
+            self.setItem(target, offset, item)
+        self.setCurrentCell(target, column)
+        self.blockSignals(blocked)
+        self.changed()
 
 
 class GameListDelegate(QStyledItemDelegate):
@@ -136,14 +177,21 @@ class Rows(QWidget):
         body = QVBoxLayout(self)
         body.setContentsMargins(0, 0, 0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.table = QTableWidget(0, len(headings))
-        self.table.setItemDelegate(TableEditDelegate(changed, self.add, self.table))
+        self.table = ConfigTable(len(headings), self.rows_changed)
+        self.table.setItemDelegate(
+            TableEditDelegate(changed, self.add, lambda: self.search.text(), self.table)
+        )
         self.table.setHorizontalHeaderLabels(headings)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setHighlightSections(False)
         self.table.verticalHeader().hide()
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setDragEnabled(True)
+        self.table.setAcceptDrops(True)
+        self.table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.table.setDragDropOverwriteMode(False)
+        self.table.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.SelectedClicked
@@ -158,15 +206,65 @@ class Rows(QWidget):
         )
         self.table.viewport().installEventFilter(self)
         self.table.installEventFilter(self)
-        self.table.itemChanged.connect(lambda _: changed())
+        self.table.itemChanged.connect(lambda _: self.rows_changed())
         body.addWidget(self.table)
-        body.addLayout(row(action("Add row", self.add), action("Remove row", self.remove)))
+        self.remove_button = action("Remove row", self.remove)
+        self.remove_button.setEnabled(False)
+        self.table.itemSelectionChanged.connect(self.update_remove_button)
+        self.search = QLineEdit()
+        self.search.setProperty("configRowSearch", True)
+        self.search.setFixedHeight(self.remove_button.sizeHint().height())
+        self.search.setPlaceholderText("Search rows")
+        self.search.textChanged.connect(self.update_search)
+        self.previous_match = tool("chevron-up", "Previous match", lambda: self.move_match(-1))
+        self.next_match = tool("chevron-down", "Next match", lambda: self.move_match(1))
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(4)
+        actions.addWidget(action("Add row", self.add))
+        actions.addWidget(self.remove_button)
+        actions.addWidget(self.search, 1)
+        actions.addWidget(self.previous_match)
+        actions.addWidget(self.next_match)
+        body.addLayout(actions)
         self.hint = QLabel(hint)
         self.hint.setWordWrap(True)
         role(self.hint, "secondary")
         self.hint.setVisible(bool(hint))
         body.addWidget(self.hint)
         self.changed = changed
+        self.update_search()
+
+    def rows_changed(self):
+        self.changed()
+        self.update_search()
+
+    def matches(self):
+        query = self.search.text().casefold()
+        if not query:
+            return []
+        return [
+            (row, column)
+            for row in range(self.table.rowCount())
+            for column in range(self.table.columnCount())
+            if query in self.table.item(row, column).text().casefold()
+        ]
+
+    def update_search(self):
+        matches = self.matches()
+        self.previous_match.setEnabled(bool(matches))
+        self.next_match.setEnabled(bool(matches))
+        self.table.viewport().update()
+
+    def move_match(self, direction):
+        matches = self.matches()
+        if not matches:
+            return
+        current = (self.table.currentRow(), self.table.currentColumn())
+        position = matches.index(current) if current in matches else (-1 if direction > 0 else 0)
+        row, column = matches[(position + direction) % len(matches)]
+        self.table.setCurrentCell(row, column)
+        self.table.scrollToItem(self.table.item(row, column))
 
     def eventFilter(self, watched, event):
         if (
@@ -177,7 +275,7 @@ class Rows(QWidget):
             and self.table.currentRow() == self.table.rowCount() - 1
             and self.table.isEnabled()
         ):
-            self.add()
+            self.add(append=True)
             return True
         if (
             watched is self.table.viewport()
@@ -187,20 +285,55 @@ class Rows(QWidget):
             and not self.table.indexAt(event.position().toPoint()).isValid()
         ):
             self.table.setFocus()
-            self.add()
+            self.add(append=True)
             return True
         return super().eventFilter(watched, event)
 
     def values(self):
-        return [
-            [
-                self.table.item(index, column).text().strip()
-                if self.table.item(index, column)
-                else ""
-                for column in range(self.table.columnCount())
-            ]
-            for index in range(self.table.rowCount())
-        ]
+        return [[value.strip() for value in entry] for entry in self.raw_values()]
+
+    def set_invalid_cells(self, errors):
+        blocked = self.table.blockSignals(True)
+        editor = QApplication.focusWidget()
+        active = (
+            (self.table.currentRow(), self.table.currentColumn())
+            if isinstance(editor, QLineEdit) and self.table.isAncestorOf(editor)
+            and editor.isVisible() else None
+        )
+        for row in range(self.table.rowCount()):
+            for column in range(self.table.columnCount()):
+                if (row, column) == active:
+                    continue
+                item = self.table.item(row, column)
+                invalid = errors.get((row, column))
+                if item.font().underline() != bool(invalid) or item.toolTip() != (invalid or ""):
+                    item.setForeground(
+                        QBrush(QColor(COLORS["status_danger"])) if invalid else QBrush()
+                    )
+                    item_font = item.font()
+                    item_font.setUnderline(bool(invalid))
+                    item.setFont(item_font)
+                    item.setToolTip(invalid or "")
+        self.table.blockSignals(blocked)
+        if active is not None:
+            invalid = errors.get(active)
+            palette = editor.palette()
+            palette.setColor(
+                QPalette.ColorRole.Text,
+                QColor(COLORS["status_danger" if invalid else "text_primary"]),
+            )
+            editor.setPalette(palette)
+            if editor.font().underline() != bool(invalid):
+                cursor = editor.cursorPosition()
+                selection_start = editor.selectionStart()
+                selection_length = len(editor.selectedText())
+                editor_font = editor.font()
+                editor_font.setUnderline(bool(invalid))
+                editor.setFont(editor_font)
+                if selection_start >= 0:
+                    editor.setSelection(selection_start, selection_length)
+                else:
+                    editor.setCursorPosition(cursor)
 
     def raw_values(self):
         result = [
@@ -222,16 +355,21 @@ class Rows(QWidget):
             self.add(values_row)
         self.table.blockSignals(False)
         self.clear_selection()
+        self.update_search()
 
     def clear_selection(self):
         self.table.clearSelection()
         self.table.setCurrentItem(None)
 
-    def add(self, values_row=None):
+    def update_remove_button(self):
+        self.remove_button.setEnabled(bool(self.table.selectedItems()))
+
+    def add(self, values_row=None, *, append=False):
         begin_edit = not isinstance(values_row, (tuple, list))
         if begin_edit:
             values_row = []
-        index = self.table.rowCount()
+        selected = self.table.selectedItems() if begin_edit and not append else []
+        index = selected[0].row() + 1 if selected else self.table.rowCount()
         blocked = self.table.blockSignals(True)
         self.table.insertRow(index)
         for column in range(self.table.columnCount()):
@@ -243,16 +381,20 @@ class Rows(QWidget):
         if begin_edit:
             self.table.setCurrentCell(index, 0)
         self.table.blockSignals(blocked)
+        if begin_edit:
+            self.update_remove_button()
         self.changed()
+        self.update_search()
         if begin_edit:
             self.table.setFocus()
             self.table.editItem(self.table.item(index, 0))
 
     def remove(self):
-        index = self.table.currentRow()
-        if index >= 0:
-            self.table.removeRow(index)
+        selected = self.table.selectedItems()
+        if selected:
+            self.table.removeRow(selected[0].row())
             self.changed()
+            self.update_search()
 
 
 class ConfigEditor(QWidget):
@@ -320,6 +462,11 @@ class ConfigEditor(QWidget):
         body.addWidget(self.status)
         self.revert_button = action("Revert", self.revert)
         actions = row(action("Open YAML folder", window.open_configs), self.revert_button)
+        self.validation_message = QLabel()
+        self.validation_message.setWordWrap(True)
+        role(self.validation_message, "error")
+        self.validation_message.hide()
+        actions.addWidget(self.validation_message, 1)
         self.save_button = action("Save", self.save)
         role(self.save_button, "primary")
         actions.addWidget(self.save_button)
@@ -515,9 +662,70 @@ class ConfigEditor(QWidget):
         name = self.source.path.name
         content = self.state_content(self.last_state)
         self.dirty = self.source.digest is None or content != self.state_content(self.saved_states[name])
-        self.save_button.setEnabled(self.dirty)
+        self.validate_draft()
+        self.save_button.setEnabled(self.dirty and not self.validation_message.text())
         self.revert_button.setEnabled(content != self.state_content(self.initial_states[name]))
         self.window.update_history_controls()
+
+    def validate_draft(self):
+        errors = {self.aliases: {}, self.links: {}}
+        if self.tabs.currentIndex() != 3 and self.field_key in self.draft.get("fields", {}):
+            fields = self.draft["fields"]
+            canonical = {entry[0] for entry in self.values.values() if entry[0]}
+            for row, (alias, value) in enumerate(self.aliases.values()):
+                if alias and value and value not in canonical:
+                    errors[self.aliases][(row, 1)] = f"Unknown canonical value: {value}"
+            for row, (source, target, value) in enumerate(self.links.values()):
+                if not (source or target or value):
+                    continue
+                if not source:
+                    errors[self.links][(row, 0)] = "Link source value is required"
+                elif self.field_type.currentText() == "enum" and source not in canonical:
+                    errors[self.links][(row, 0)] = f"Unknown source value: {source}"
+                if not target:
+                    errors[self.links][(row, 1)] = "Link target field is required"
+                elif target not in fields:
+                    errors[self.links][(row, 1)] = f"Unknown target field: {target}"
+                if not value:
+                    errors[self.links][(row, 2)] = "Link target value is required"
+                elif target in {"kill", "clutch"}:
+                    try:
+                        number = int(value)
+                        if number < (0 if target == "kill" else 1):
+                            raise ValueError
+                    except ValueError:
+                        errors[self.links][(row, 2)] = f"Invalid {target} link value: {value}"
+                elif target in fields and fields[target].get("type") == "enum":
+                    target_values = (
+                        {entry[0] for entry in self.values.values() if entry[0]}
+                        if target == self.field_key else set(fields[target].get("values", []))
+                    )
+                    if value not in target_values:
+                        errors[self.links][(row, 2)] = f"Unknown {target} value: {value}"
+        for rows, invalid in errors.items():
+            rows.set_invalid_cells(invalid)
+        try:
+            if self.tabs.currentIndex() == 3:
+                candidate = yaml_parser().load(self.recovery.toPlainText())
+                if not isinstance(candidate, dict):
+                    raise ValueError("Game YAML must contain a mapping")
+            else:
+                candidate = self.collect()
+            if (
+                self.source.digest is not None
+                and isinstance(self.source.document, dict)
+                and candidate.get("name") != self.source.document.get("name")
+            ):
+                raise ValueError("Canonical names of existing games cannot be changed")
+            error = next((message for invalid in errors.values() for message in invalid.values()), "")
+            if not error:
+                validate_candidate(self.directory, self.source.path.name, candidate)
+        except Exception as failure:
+            error = str(failure)
+        self.validation_message.setText(error)
+        self.validation_message.setToolTip(error)
+        self.validation_message.setVisible(bool(error))
+        return error
 
     def restore_state(self, state):
         self.cancel_revert()
@@ -678,6 +886,7 @@ class ConfigEditor(QWidget):
         self.commit_table_edit()
         if not self.dirty:
             return True
+        self.validate_draft()
         choice = QMessageBox(self)
         choice.setWindowTitle("Unsaved configuration")
         choice.setText("Save changes to the current game configuration?")
@@ -687,8 +896,13 @@ class ConfigEditor(QWidget):
             | QMessageBox.StandardButton.Cancel
         )
         choice.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if self.validation_message.text():
+            choice.button(QMessageBox.StandardButton.Save).setEnabled(False)
+            choice.setInformativeText(self.validation_message.text())
         result = choice.exec()
         if result == QMessageBox.StandardButton.Save:
+            if self.validation_message.text():
+                return False
             return self.save()
         if result == QMessageBox.StandardButton.Discard:
             self.reload_saved()
@@ -899,6 +1113,7 @@ class ConfigEditor(QWidget):
         if not self.loading:
             self.last_state = self.history_state()
             self.break_history_group()
+            self.update_dirty()
 
     def field_type_changed(self):
         self.update_field_rows()
@@ -930,10 +1145,12 @@ class ConfigEditor(QWidget):
         self.aliases.setToolTip("Accepted shorthand mapped to a configured canonical value.")
         self.field_form.setRowVisible(self.links, not reserved)
 
-    def capture_field(self):
-        if not self.field_key or self.field_key not in self.draft.get("fields", {}):
+    def capture_field(self, draft=None):
+        if draft is None:
+            draft = self.draft
+        if not self.field_key or self.field_key not in draft.get("fields", {}):
             return
-        old = self.draft["fields"][self.field_key]
+        old = draft["fields"][self.field_key]
         if self.field_key in {"kill", "clutch"}:
             definition = {
                 key: value
@@ -966,7 +1183,7 @@ class ConfigEditor(QWidget):
                 raise ValueError(
                     "Each inference link needs a source, target field, and target value"
                 )
-            destination = self.draft["fields"].get(target, {})
+            destination = draft["fields"].get(target, {})
             if target in {"kill", "clutch"}:
                 try:
                     value = int(value)
@@ -982,7 +1199,7 @@ class ConfigEditor(QWidget):
             definition["links"] = links
         else:
             definition.pop("links", None)
-        self.draft["fields"][self.field_key] = definition
+        draft["fields"][self.field_key] = definition
 
     def add_field(self):
         before = self.history_state()
@@ -1041,9 +1258,8 @@ class ConfigEditor(QWidget):
         self.mark_dirty()
 
     def collect(self):
-        self.commit_table_edit()
-        self.capture_field()
         draft = deepcopy(self.draft)
+        self.capture_field(draft)
         draft["name"] = self.name.text().strip()
         draft["code"] = self.code.text().strip()
         draft["command_example"] = self.example.text()
@@ -1059,38 +1275,6 @@ class ConfigEditor(QWidget):
             if self.suggested.item(i).checkState() == Qt.CheckState.Checked
         ]
         draft.pop("required_for_export", None)
-        if self.source.digest is not None and isinstance(self.source.document, dict):
-            previous = self.source.draft().get("fields", {})
-            for key in set(previous) & set(draft["fields"]):
-                removed = set(previous[key].get("values", [])) - set(
-                    draft["fields"][key].get("values", [])
-                )
-                if not removed:
-                    continue
-                definition = draft["fields"][key]
-                definition["aliases"] = {
-                    alias: value
-                    for alias, value in definition.get("aliases", {}).items()
-                    if value not in removed
-                }
-                for field, other in draft["fields"].items():
-                    links = other.get("links", {})
-                    if field == key:
-                        for value in removed:
-                            links.pop(value, None)
-                    for source_value, targets in list(links.items()):
-                        if key in targets:
-                            target = targets[key]
-                            if isinstance(target, list):
-                                targets[key] = [value for value in target if value not in removed]
-                                if not targets[key]:
-                                    del targets[key]
-                            elif target in removed:
-                                del targets[key]
-                        if not targets:
-                            del links[source_value]
-                    if not links:
-                        other.pop("links", None)
         return draft
 
     def impact(self, draft):
@@ -1131,6 +1315,9 @@ class ConfigEditor(QWidget):
         try:
             self.commit_table_edit()
             self.break_history_group()
+            self.validate_draft()
+            if self.validation_message.text():
+                raise ValueError(self.validation_message.text())
             if self.tabs.currentIndex() == 3:
                 self.source.save(None, self.directory, raw_text=self.recovery.toPlainText())
             else:

@@ -958,14 +958,24 @@ Share and Project Export appear in a top-navigation Output Jobs dropdown with pe
 
 Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
 
-Edits remain drafts until Save. Leaving a dirty draft offers Save, Discard or Cancel. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
+Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 
 Fields exposes values and value aliases for both ordinary field types. The values row
 is labelled **Enum values** for enum fields and **Named values** for freeform fields.
 Freeform named values are optional shortcuts; arbitrary prefixed input remains accepted.
 Switching between these types retains the value and alias rows and their contents.
-Add row or double-clicking empty table space adds a row and immediately focuses and
-edits its first cell. Clicking an
+An alias canonical value must match a listed value for both types. Invalid alias values
+and inference link source values, target fields, or target values are red and underlined
+in their respective cells, with an explanatory tooltip. Removing a canonical value
+leaves dependent aliases and links visible for correction; invalid references block Save.
+Add row inserts below the selected cell's row, or appends when no cell is selected.
+Double-clicking empty table space appends a row. Both actions immediately focus and
+edit the new row's first cell. Remove row is available only while a cell is selected.
+Dragging a cell reorders its entire row within that table, preserving all column values.
+Each table has a search field and previous/next match arrows after its row buttons on
+the same line. Search highlights every cell containing a case-insensitive substring
+without filtering rows; the arrows select matches in table order and wrap at the ends.
+Clicking an
 already-selected cell or double-clicking an existing cell edits it; Tab commits the
 current cell and moves to the next cell. Enter on the last row adds a new row and
 opens its first cell for editing; Enter on earlier rows commits without adding a row.
@@ -977,7 +987,7 @@ Table typing marks the configuration as changed immediately. Navigation includes
 active cell's uncommitted text in the Save / Discard / Cancel prompt; Save captures it,
 Discard restores the loaded configuration, and Cancel retains the draft in Config.
 
-Removing a field or canonical enum value used by clips shows affected counts and requires confirmation. Stored clip metadata is retained, including values hidden by a removed field. Dependent aliases and inference links are removed from the saved definition when their field or canonical value is removed. Config history is separate from clip history and restores editor drafts without writing YAML files.
+Removing a field or canonical enum value used by clips shows affected counts and requires confirmation. Stored clip metadata is retained, including values hidden by a removed field. Removing a field removes links targeting it. Removing a canonical value leaves dependent aliases and inference links in the draft for correction before Save. Config history is separate from clip history and restores editor drafts without writing YAML files.
 
 ---
 

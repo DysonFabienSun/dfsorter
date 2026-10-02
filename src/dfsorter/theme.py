@@ -299,6 +299,8 @@ def stylesheet():
         QSpinBox::down-arrow { image: url("%(combo_chevron)s"); width: 12px; height: 12px; }
         QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(border_strong)s; }
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
+        QLineEdit[configRowSearch="true"] { padding-top: 3px; padding-bottom: 5px; }
+        QLineEdit[configRowSearch="true"]:focus { padding-top: 2px; padding-bottom: 4px; }
         QComboBox:focus { padding: 3px 27px 3px 7px; }
         QComboBox#browseShareMode:focus { padding-right: 19px; }
         QLineEdit#command[validationState="valid"] { background: %(component_command_valid)s; }
