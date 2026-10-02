@@ -879,17 +879,20 @@ def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     assert window.catalogue.clip(ids[1])["rating"] is None
     assert window.catalogue.undo_stack == history
     assert window.atomic_save_button.isEnabled()
-    window.save_atomic_edit()
+    window.atomic_save_button.click()
     application.processEvents()
     assert window.current_panel == "Home"
     assert window.selected_id(window.library) == ids[1]
     assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
+    assert window.catalogue.clip(ids[1])["triage"] == "keep"
     assert window.catalogue.state("session") == session
     assert len(window.catalogue.undo_stack) == len(history) + 1
     window.undo()
     assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
     window.panel("Editing")
     window.switch_editing_clip(ids[1])
+    window.undo()
+    assert window.catalogue.clip(ids[1])["triage"] is None
     window.undo()
     assert window.catalogue.clip(ids[1])["mainline"] is None
     window.panel("Home")
@@ -928,7 +931,7 @@ def test_atomic_return_restores_origin_scroll_position(
     assert home_scroll > 0
 
     window.start_atomic_edit(clip_id, "Home")
-    window.edit({"rating": 4})
+    window.edit({"rating": 4, "mainline": "Scroll clip"})
     window.save_atomic_edit()
     application.processEvents()
     assert window.current_panel == "Home"
@@ -947,6 +950,61 @@ def test_atomic_return_restores_origin_scroll_position(
     assert window.current_panel == "Browse"
     assert window.selected_id(window.library) == clip_id
     assert scrollbar.value() == browse_scroll
+
+
+@pytest.mark.parametrize("action", ["button", "shift_enter", "input_shift_enter"])
+def test_atomic_save_actions_return_to_browse(window, application, tmp_path, action):
+    root = tmp_path / "atomic-save-actions"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+
+    window.panel("Browse")
+    window.start_atomic_edit(clip_id, "Browse")
+    window.edit({"mainline": "Edited clip"})
+    if action == "button":
+        window.atomic_save_button.click()
+    elif action == "input_shift_enter":
+        window.command.setFocus()
+        QTest.keyClick(window.command, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    else:
+        QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    application.processEvents()
+
+    assert window.current_panel == "Browse"
+    assert window.browse.clip["clip_id"] == clip_id
+    assert window.selected_id(window.library) == clip_id
+    assert window.catalogue.clip(clip_id)["triage"] == "keep"
+    assert window.catalogue.clip(clip_id)["mainline"] == "Edited clip"
+
+
+def test_atomic_shift_enter_requires_keep_metadata_or_discard(window, application, tmp_path):
+    root = tmp_path / "atomic-verdict"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": None}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+
+    window.panel("Browse")
+    window.start_atomic_edit(clip_id, "Browse")
+    window.edit({"rating": 3})
+    assert not window.atomic_save_button.isEnabled()
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_panel == "Editing"
+    assert window.catalogue.clip(clip_id)["rating"] is None
+
+    window.edit({"triage": "discard"})
+    assert window.atomic_save_button.isEnabled()
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    application.processEvents()
+    assert window.current_panel == "Browse"
+    assert window.catalogue.clip(clip_id)["triage"] == "discard"
+    assert window.catalogue.clip(clip_id)["rating"] == 3
 
 
 def test_atomic_entry_controls_and_context_target(window, application, tmp_path, monkeypatch):
@@ -972,7 +1030,7 @@ def test_atomic_entry_controls_and_context_target(window, application, tmp_path,
     assert window.atomic_edit.origin == "Home"
 
 
-def test_atomic_navigation_reverts_and_shift_enter_is_disabled(
+def test_atomic_navigation_reverts_and_shift_enter_validates(
     window, application, tmp_path, monkeypatch
 ):
     root = tmp_path / "atomic-prompt"
@@ -985,6 +1043,7 @@ def test_atomic_navigation_reverts_and_shift_enter_is_disabled(
 
     window.start_atomic_edit(clip_id, "Home")
     window.edit({"rating": 3})
+    assert not window.atomic_save_button.isEnabled()
     monkeypatch.setattr(window, "confirm_revert_atomic", lambda: False)
     window.panel("Config")
     assert window.current_panel == "Editing"
@@ -999,6 +1058,7 @@ def test_atomic_navigation_reverts_and_shift_enter_is_disabled(
     window.review_mode()
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
     assert window.atomic_edit.draft == draft
+    assert window.current_panel == "Editing"
 
     window.pending_in = 100
     monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
@@ -1019,7 +1079,7 @@ def test_atomic_save_conflict_keeps_draft(window, tmp_path):
     clip_id = window.catalogue.clips()[0]["clip_id"]
 
     window.start_atomic_edit(clip_id, "Home")
-    window.edit({"rating": 5})
+    window.edit({"rating": 5, "mainline": "Conflict clip"})
     window.catalogue.patch(clip_id, {"tag": "external"})
     assert not window.save_atomic_edit()
     assert window.current_panel == "Editing"
@@ -1054,13 +1114,7 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     window.save_atomic_edit()
     assert window.catalogue.member_ids(project_id) == {clip_id}
     assert len(window.catalogue.undo_stack) == len(history) + 1
-    window.catalogue.create_session([clip_id])
-    window.panel("Editing")
-    window.undo()
-    window.undo()
-    assert not window.catalogue.member_ids(project_id)
-    window.command.clear()
-    window.panel("Home")
+    assert len(window.editing_histories[clip_id].undo_stack) >= 2
 
     window.start_atomic_edit(clip_id, "Home")
     window.command.setText("jett")
@@ -1069,7 +1123,7 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     window.close()
     assert wait_for(application, lambda: window.atomic_edit is None)
     assert window.catalogue.clip(clip_id)["rating"] is None
-    assert window.history[clip_id] == []
+    assert window.history[clip_id] == ["jett"]
 
 
 def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch):

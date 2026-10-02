@@ -1231,7 +1231,9 @@ class Window(QMainWindow):
         self.working_title.setTextFormat(Qt.TextFormat.RichText)
         self.working_title.setObjectName("workingTitle")
         title_row.addWidget(self.working_title, 1)
-        self.atomic_save_button = button("Save", self.save_atomic_edit)
+        self.atomic_save_button = button(
+            "Save and return to clip", lambda: self.save_atomic_edit()
+        )
         self.atomic_revert_button = button("Revert", self.revert_atomic_edit)
         role(self.atomic_revert_button, "danger")
         self.atomic_save_button.hide()
@@ -1921,9 +1923,17 @@ class Window(QMainWindow):
             self.atomic_changed()
             and not self.command.text()
             and not self.has_pending_range()
+            and self.atomic_verdict_valid()
         )
 
-    def save_atomic_edit(self, return_to_origin=True):
+    def atomic_verdict_valid(self):
+        clip = self.atomic_edit.draft[0]
+        if clip["triage"] == "discard":
+            return True
+        game = self.registry.game(clip["game"])
+        return bool(game and has_review_metadata(clip, game))
+
+    def save_atomic_edit(self):
         if not self.atomic_edit:
             return False
         if self.command.text():
@@ -1931,10 +1941,31 @@ class Window(QMainWindow):
             return False
         if not self.ensure_range_complete():
             return False
+        if not self.atomic_changed():
+            return False
+        clip = self.atomic_edit.draft[0]
+        if clip["triage"] != "discard":
+            game = self.registry.game(clip["game"])
+            if not game:
+                self.error("Assign a configured game before Keep, or explicitly Discard.")
+                return False
+            if not has_review_metadata(clip, game):
+                self.error("Cannot Keep: add at least one metadata field or mainline")
+                return False
         try:
             state = self.atomic_edit
-            self.catalogue.commit_snapshot(state.baseline, state.draft)
+            draft = state.draft
+            before_verdict = self.editing_state(state.clip_id, state)
+            if clip["triage"] != "discard":
+                draft = self.catalogue.draft_snapshot(
+                    draft, {"triage": "keep"}, editing=True,
+                    active_project=self.catalogue.state("active_project"),
+                )
+            self.catalogue.commit_snapshot(state.baseline, draft)
             history = self.editing_histories[state.clip_id]
+            if draft != state.draft:
+                state.draft = draft
+                state.edits.record(before_verdict, self.editing_state(state.clip_id, state))
             if state.edits.undo_stack:
                 previous = history.pending()
                 if previous and previous.after != state.edits.undo_stack[0].before:
@@ -1942,11 +1973,9 @@ class Window(QMainWindow):
                 history.undo_stack.extend(state.edits.undo_stack)
                 history.redo_stack = state.edits.redo_stack
             self.history[state.clip_id] = deepcopy(state.history)
-            origin = state.origin
             self.atomic_edit = None
             self.current_id = None
-            if return_to_origin:
-                self.return_from_atomic_edit(origin, state.clip_id, state.scroll_position)
+            self.return_from_atomic_edit(state.origin, state.clip_id, state.scroll_position)
             return True
         except ValueError as error:
             self.error(error)
@@ -3475,6 +3504,7 @@ class Window(QMainWindow):
     @editing_action
     def advance_review(self):
         if self.atomic_edit:
+            self.save_atomic_edit()
             return
         if self.current_panel == "Browse":
             return
@@ -3695,7 +3725,7 @@ class Window(QMainWindow):
         pairs = (
             [("Space", "Play/pause"), ("I/O", "Range"), ("Enter", "Metadata")]
             + (
-                [("Save/Revert", "Exit")]
+                [("Shift+Enter", "Save and return")]
                 if self.atomic_edit
                 else [("Shift+Enter", "Verdict + next")]
             )
@@ -4077,7 +4107,7 @@ class Window(QMainWindow):
                 if modifiers == Qt.KeyboardModifier.NoModifier:
                     self.submit()
                 elif modifiers == Qt.KeyboardModifier.ShiftModifier:
-                    if not self.atomic_edit and not event.isAutoRepeat():
+                    if not event.isAutoRepeat():
                         self.advance_review()
                 return True
         if text_editing:
@@ -4090,8 +4120,7 @@ class Window(QMainWindow):
             return super().eventFilter(watched, event)
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
-                if not self.atomic_edit:
-                    self.advance_review()
+                self.advance_review()
             elif modifiers == Qt.KeyboardModifier.ControlModifier and not event.isAutoRepeat():
                 self.add_to_project_next()
             elif modifiers == Qt.KeyboardModifier.NoModifier:
