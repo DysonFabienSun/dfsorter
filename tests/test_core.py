@@ -77,6 +77,30 @@ def test_delta_force_operations_config(registry):
     }
 
 
+def test_apex_weapon_roster_and_shortcuts(registry):
+    game = registry.game("Apex Legends")
+    weapon = game.fields["weapon"]
+    assert len(weapon["values"]) == 30
+    assert weapon["multiple"] is True
+    assert weapon["aliases"] == {
+        "r301": "R-301", "r99": "R-99", "car": "C.A.R.", "lstar": "L-STAR",
+        "devo": "Devotion", "g7": "G7 Scout", "3030": "30-30 Repeater",
+        "crifle": "Charge Rifle", "ev8": "EVA-8", "mozam": "Mozambique",
+        "pk": "Peacekeeper", "re45": "RE-45", "smark": "Sniper's Mark",
+    }
+    assert "P2020" in weapon["values"]
+    assert parse_command("wpn:30-30 repeater", game.name, registry) == {
+        "metadata": {"weapon": ["30-30 Repeater"]},
+    }
+    assert parse_command("wraith r301 3030 smark R4", game.name, registry) == {
+        "metadata": {
+            "legend": "Wraith",
+            "weapon": ["R-301", "30-30 Repeater", "Sniper's Mark"],
+        },
+        "rating": 4,
+    }
+
+
 @pytest.mark.parametrize("code, valid", [("D", False), ("DF", True), ("DFO", True), ("DFOR", False)])
 def test_game_display_code_length(tmp_path, code, valid):
     raw = {"name": "Example", "code": code, "fields": {"kill": {}},

@@ -16,6 +16,7 @@
 
 - Never generate `build/DFSorter-Windows-x64.zip` on this device, including for tagged releases. The release CI/CD workflow builds the ZIP and creates the release draft when a version tag is pushed.
 - Maintain release game defaults in `configs/shipped/`, separate from editable preferences in `configs/games/`. Sync selected game changes explicitly before release. Always ship `configs/tips/` as tip defaults.
+- The programmer also uses DFSorter and keeps personal game settings in `configs/games/`. When shipping configuration changes, copy only games changed within the current task's scope into `configs/shipped/`. Do not synchronize unrelated game configs or overwrite their personal differences; for example, the active Escape from Tarkov config contains a personal `mp5sd` setup.
 
 ## Version Tag Commits
 
