@@ -320,6 +320,84 @@ class Catalogue:
         self.undo_stack.clear()
         self.redo_stack.clear()
 
+    def remove_unavailable(self, clip_ids):
+        clip_ids = set(clip_ids)
+        if not clip_ids:
+            return
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            rows = database.execute(
+                "SELECT clip_id, source_path FROM clips WHERE clip_id IN ("
+                + ",".join("?" for _ in clip_ids) + ")",
+                tuple(clip_ids),
+            ).fetchall()
+            if len(rows) != len(clip_ids) or any(
+                Path(row["source_path"]).is_file() for row in rows
+            ):
+                raise ValueError("Clip availability changed. Review the list again.")
+            self._purge_clips(database, clip_ids)
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+    def reassociate_unavailable(self, matches, destination):
+        destination = Path(normalized(destination))
+        if not destination.is_dir():
+            raise ValueError("Replacement folder is unavailable")
+        matches = dict(matches)
+        if not matches:
+            return
+        folders = self.folders()
+        linked_folder = next(
+            (folder for folder in folders if destination.is_relative_to(Path(folder["path"]))),
+            None,
+        )
+        if linked_folder is None and any(
+            Path(folder["path"]).is_relative_to(destination) for folder in folders
+        ):
+            raise ValueError("Replacement folder overlaps a registered capture folder")
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            rows = database.execute(
+                "SELECT clip_id, source_path FROM clips WHERE clip_id IN ("
+                + ",".join("?" for _ in matches) + ")",
+                tuple(matches),
+            ).fetchall()
+            if len(rows) != len(matches):
+                raise ValueError("Clip list changed. Review the matches again.")
+            old_paths = {row["clip_id"]: row["source_path"] for row in rows}
+            target_paths = [normalized(path) for _old, path, _size in matches.values()]
+            if len({path.casefold() for path in target_paths}) != len(target_paths) or any(
+                old_paths[clip_id] != old
+                or Path(old).is_file()
+                or not Path(path).is_file()
+                or (size is not None and Path(path).stat().st_size != size)
+                or Path(path).parent != destination
+                for clip_id, (old, path, size) in matches.items()
+            ):
+                raise ValueError("Source availability changed. Review the matches again.")
+            existing = database.execute(
+                "SELECT clip_id, source_path FROM clips"
+            ).fetchall()
+            occupied = {row["source_path"].casefold(): row["clip_id"] for row in existing}
+            if any(
+                occupied.get(path.casefold()) not in (None, clip_id)
+                for clip_id, path in zip(matches, target_paths)
+            ):
+                raise ValueError("Replacement files already belong to other catalogue clips")
+            if linked_folder is None:
+                folder_id = uuid4().hex
+                database.execute(
+                    "INSERT INTO folders VALUES (?,?,1,NULL)", (folder_id, str(destination))
+                )
+            else:
+                folder_id = linked_folder["folder_id"]
+            for clip_id, path in zip(matches, target_paths):
+                database.execute("DELETE FROM media_cache WHERE path IN (?,?)", (old_paths[clip_id], path))
+                database.execute("UPDATE clips SET source_path=? WHERE clip_id=?", (path, clip_id))
+                database.execute("DELETE FROM sources WHERE clip_id=?", (clip_id,))
+                database.execute("INSERT INTO sources VALUES (?,?)", (folder_id, clip_id))
+                database.execute("DELETE FROM deleted_sources WHERE clip_id=?", (clip_id,))
+
     def remove_folder(self, folder_id, purge=True):
         with self.connection() as database:
             database.execute("BEGIN IMMEDIATE")

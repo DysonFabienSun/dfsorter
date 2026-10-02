@@ -960,6 +960,75 @@ def test_remove_unlinked_preserves_surviving_session_position(catalogue, clips, 
     assert source.read_bytes() == b"untouched"
 
 
+def test_remove_unavailable_keeps_available_clips_and_updates_references(catalogue, clips):
+    missing = clips[0]
+    surviving = clips[1]
+    catalogue.create_session([missing["clip_id"], surviving["clip_id"]])
+    project = catalogue.save_project("Saved")
+    catalogue.patch(missing["clip_id"], {}, membership=(project, True))
+    Path(missing["source_path"]).unlink()
+
+    with pytest.raises(ValueError, match="availability changed"):
+        catalogue.remove_unavailable([surviving["clip_id"]])
+    backup = catalogue.backup()
+    catalogue.remove_unavailable([missing["clip_id"]])
+
+    assert catalogue.state("session") == {"ids": [surviving["clip_id"]], "index": 0}
+    assert not catalogue.member_ids(project)
+    assert surviving["clip_id"] in {item["clip_id"] for item in catalogue.clips()}
+    assert missing["clip_id"] in {item["clip_id"] for item in Catalogue(backup).clips()}
+
+
+def test_reassociate_unavailable_moves_only_matched_clip(catalogue, clips, tmp_path):
+    missing = clips[0]
+    surviving = clips[1]
+    original = surviving["source_path"]
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    target = replacement / Path(missing["source_path"]).name
+    target.write_bytes(Path(missing["source_path"]).read_bytes())
+    Path(missing["source_path"]).unlink()
+    catalogue.patch(missing["clip_id"], {"mainline": "Retained"})
+    catalogue.create_session([missing["clip_id"]])
+
+    catalogue.reassociate_unavailable(
+        {missing["clip_id"]: (missing["source_path"], str(target), None)}, replacement
+    )
+
+    assert catalogue.clip(missing["clip_id"])["source_path"] == str(target.resolve())
+    assert catalogue.clip(missing["clip_id"])["mainline"] == "Retained"
+    assert catalogue.clip(surviving["clip_id"])["source_path"] == original
+    assert catalogue.state("session")["ids"] == [missing["clip_id"]]
+    assert str(replacement.resolve()) in {folder["path"] for folder in catalogue.folders()}
+
+
+def test_reassociate_rejects_existing_catalogue_identity(catalogue, clips, tmp_path):
+    missing = clips[0]
+    Path(missing["source_path"]).unlink()
+    target = Path(clips[1]["source_path"])
+    with pytest.raises(ValueError, match="already belong"):
+        catalogue.reassociate_unavailable(
+            {missing["clip_id"]: (missing["source_path"], str(target), None)}, target.parent
+        )
+    assert catalogue.clip(missing["clip_id"])["source_path"] == missing["source_path"]
+
+
+def test_reassociate_rejects_file_changed_after_preview(catalogue, clips, tmp_path):
+    missing = clips[0]
+    Path(missing["source_path"]).unlink()
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    target = replacement / Path(missing["source_path"]).name
+    target.write_bytes(b"changed")
+
+    with pytest.raises(ValueError, match="availability changed"):
+        catalogue.reassociate_unavailable(
+            {missing["clip_id"]: (missing["source_path"], str(target), 4)}, replacement
+        )
+    assert catalogue.clip(missing["clip_id"])["source_path"] == missing["source_path"]
+    assert str(replacement.resolve()) not in {folder["path"] for folder in catalogue.folders()}
+
+
 def test_unquoted_multiword_enum(registry):
     assert parse_command("Tour de Force 3k", "VALORANT", registry)["metadata"] == {
         "weapon": ["Tour de Force"],

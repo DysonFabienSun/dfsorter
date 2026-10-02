@@ -66,9 +66,14 @@ class VerdictBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.counts = (0, 0, 0)
+        self.reference_total = None
         self.setFixedHeight(16)
         self.setMinimumWidth(120)
         self.setAccessibleName("No clips")
+
+    def set_reference_total(self, total):
+        self.reference_total = total
+        self.update()
 
     def set_counts(self, keep, discard, pending):
         self.counts = (keep, discard, pending)
@@ -80,18 +85,25 @@ class VerdictBar(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        path = QPainterPath()
-        path.addRoundedRect(self.rect().adjusted(0, 0, -1, -1), 5, 5)
-        painter.setClipPath(path)
-        painter.fillRect(self.rect(), QColor(COLORS["surface_pressed"]))
         total = sum(self.counts)
+        if self.reference_total is not None:
+            if not total or not self.reference_total:
+                return
+            bar_width = min(self.width(), max(3, round(self.width() * total / self.reference_total)))
+        else:
+            bar_width = self.width()
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(0, 0, bar_width, self.height()),
+            min(5, bar_width / 2),
+            min(5, bar_width / 2),
+        )
+        painter.setClipPath(path)
+        painter.fillRect(0, 0, bar_width, self.height(), QColor(COLORS["surface_pressed"]))
         if not total:
             return
-        widths = [round(self.width() * count / total) for count in self.counts]
-        for index, count in enumerate(self.counts):
-            if count and widths[index] == 0:
-                widths[index] = 1
-        widths[-1] += self.width() - sum(widths)
+        edges = [round(bar_width * sum(self.counts[:index]) / total) for index in range(4)]
+        widths = [right - left for left, right in zip(edges, edges[1:])]
         left = 0
         for width, color in zip(
             widths,

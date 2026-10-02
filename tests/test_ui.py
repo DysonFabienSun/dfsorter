@@ -42,8 +42,9 @@ from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS, FONT_SIZES, symbol_text
 from dfsorter.ui import ROOT, Window, style_application
+from dfsorter.unavailable_dialog import UnavailableClipsDialog
 from dfsorter.update_ui import UpdateController
-from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate
+from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate, VerdictBar
 
 
 @pytest.fixture(scope="module")
@@ -364,11 +365,81 @@ def test_session_library_overview_defaults_and_does_not_change_filters(
         "last",
     ]
     summary = window.findChild(QWidget, "overviewSummary")
+    games = window.findChildren(QWidget, "overviewGame")
+    assert [game.findChild(QLabel).text() for game in games] == ["VALORANT", "Uncategorized"]
+    summary_bar = summary.findChild(VerdictBar)
+    game_bars = [game.findChild(VerdictBar) for game in games]
+    assert summary_bar.height() == 16
+    assert all(bar.height() == 12 and bar.reference_total == 3 for bar in game_bars)
+    assert summary_bar.width() == game_bars[0].width()
+    game_image = game_bars[0].grab().toImage()
+    scaled_width = round(game_bars[0].width() * 2 / 3)
+    assert game_image.pixelColor(scaled_width - 3, 6) == QColor(COLORS["status_danger"])
+    assert game_image.pixelColor(scaled_width + 2, 6) != QColor(COLORS["status_danger"])
     assert any("0.03 GB" in label.text() for label in summary.findChildren(QLabel))
     assert "3 clips · 2 processed (67%)" in [label.text() for label in summary.findChildren(QLabel)]
     selected = window.clip_filter.selected_values()
     window.set_overview_period("7 days")
     assert window.clip_filter.selected_values() == selected
+
+
+def test_session_overview_reports_unavailable_files_in_all_time(window, application, tmp_path):
+    root = tmp_path / "overview-missing"
+    root.mkdir()
+    available = root / "available.mp4"
+    missing = root / "missing.mp4"
+    available.write_bytes(b"clip")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(
+        folder,
+        [{"path": str(available), "game": "VALORANT"},
+         {"path": str(missing), "game": "VALORANT"}],
+    )
+    window.panel("Session")
+    application.processEvents()
+
+    summary = window.findChild(QWidget, "overviewSummary")
+    assert "1 clips · 0 processed (0%)" in [
+        label.text() for label in summary.findChildren(QLabel)
+    ]
+    assert window.overview_undated.text() == (
+        "1 clip file is missing or unreachable (excluded)."
+    )
+    assert window.overview_undated.isVisible()
+
+
+def test_verdict_bar_scales_game_total_and_keeps_tiny_game_visible(application):
+    bar = VerdictBar()
+    bar.setFixedHeight(12)
+    bar.set_reference_total(100)
+    bar.set_counts(25, 15, 10)
+    bar.resize(200, 12)
+    bar.show()
+    application.processEvents()
+
+    image = bar.grab().toImage()
+    assert image.pixelColor(10, 6) == QColor(COLORS["status_success"])
+    assert image.pixelColor(65, 6) == QColor(COLORS["status_danger"])
+    assert image.pixelColor(90, 6) == QColor(COLORS["text_muted"])
+    assert image.pixelColor(110, 6) != QColor(COLORS["status_success"])
+    assert image.pixelColor(110, 6) != QColor(COLORS["status_danger"])
+    assert image.pixelColor(110, 6) != QColor(COLORS["text_muted"])
+
+    bar.set_counts(0, 0, 1)
+    bar.set_reference_total(301)
+    application.processEvents()
+    image = bar.grab().toImage()
+    assert image.pixelColor(1, 6) == QColor(COLORS["text_muted"])
+    assert image.pixelColor(4, 6) != QColor(COLORS["text_muted"])
+
+    bar.resize(300, 12)
+    bar.set_counts(25, 15, 10)
+    bar.set_reference_total(100)
+    application.processEvents()
+    image = bar.grab().toImage()
+    assert image.pixelColor(149, 6) == QColor(COLORS["text_muted"])
+    assert image.pixelColor(151, 6) != QColor(COLORS["text_muted"])
+    bar.close()
 
 
 def test_session_pane_top_rows_preserve_heading_and_toolbar_insets(window, application):
@@ -1619,6 +1690,34 @@ def test_settings_preserves_capture_folder_case(window, tmp_path):
     settings = SettingsDialog(window)
     assert str(captures.resolve()) in window.folders.item(0).text()
     settings.close()
+
+
+def test_manage_unavailable_dialog_groups_paths_and_dismisses_one_row(
+    window, application, tmp_path
+):
+    root = tmp_path / "old"
+    root.mkdir()
+    (root / "A").mkdir()
+    folder_id = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder_id, [
+        {"path": str(root / "root.mp4"), "game": "VALORANT"},
+        {"path": str(root / "A" / "child.mp4"), "game": "VALORANT"},
+    ])
+    dialog = UnavailableClipsDialog(window)
+    dialog.show()
+    application.processEvents()
+
+    buttons = [button.text() for button in dialog.findChildren(QPushButton)]
+    assert buttons.count("Do nothing") == 2
+    assert buttons.count("Delete…") == 2
+    assert buttons.count("Reassociate…") == 2
+    assert any("1 video · 0 Keep · 0 Discard · 1 Pending" in label.text()
+               for label in dialog.findChildren(QLabel))
+    dialog.dismiss(str(root / "A"))
+    application.processEvents()
+    assert str(root / "A") in dialog.dismissed
+    assert len(window.catalogue.clips()) == 2
+    dialog.close()
 
 
 def test_playback_preferences_persist(window, application):
@@ -4491,6 +4590,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
         "Reset clip metadata…",
         "Edit tag…",
         "Delete rejected originals…",
+        "Manage unavailable clips…",
         "Reset window and panes",
         "Exit",
     } <= actions.keys()

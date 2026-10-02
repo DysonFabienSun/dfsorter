@@ -160,6 +160,8 @@ spin-box height with a 1 px top and 3 px bottom margin so each complete frame si
 above its checkbox text. Shift the value text 1 px upward within the frame for even vertical
 padding. Keep this styling consistent in unified and separate Browse, Editing and Export rows.
 
+Manage unavailable clips uses a scrollable dialog with one two-line group per immediate original parent folder. Keep the full path visible or wrapped with its full value in a tooltip; align Do nothing, Delete…, and Reassociate… on that path row. Use muted secondary text for the composition, date and cached-size row. Avoid selection-only actions and per-clip checkboxes; each group action names its scope and destructive confirmation exposes affected full paths.
+
 System resolves through Qt's operating-system color-scheme API and updates while DFSorter is
 running when the system scheme changes. DFSorter still uses the palettes above; System does
 not delegate its component design to the platform. A sun/moon icon button appears between
@@ -383,8 +385,7 @@ Retain 22 px section headings and the 16 px Projects heading. The Projects pane 
 remaining center width. Opening Session preserves the clip-library pane's current width;
 the center pane gives up the width needed by Projects.
 Scroll the overview vertically when its rows exceed the available height while keeping Session
-setup visible at the bottom. Use visible compact segmented period controls, 16 px proportional
-verdict bars, exact text counts, and represented source size beneath each bar. Keep uses success green, Discard danger red and Pending
+setup visible at the bottom. Use visible compact segmented period controls, a 16 px full-width aggregate verdict bar and 12 px variable-length game verdict bars, exact text counts, and represented source size beneath each bar. Keep uses success green, Discard danger red and Pending
 muted gray; color is never the only state indicator. The aggregate row is visually stronger
 than game rows without turning individual statistics into cards.
 

@@ -1,6 +1,7 @@
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from stat import S_ISREG
 
 PERIOD_DAYS = {
     "7 days": 7,
@@ -77,7 +78,16 @@ def library_overview(clips, media_info, period="All time", current_time=None, st
     counts = {}
     sizes = Counter()
     undated = 0
+    unavailable = 0
     for clip in clips:
+        try:
+            source = clip["source_path"]
+            stamp = stat_for(source) if stat_for else Path(source).stat()
+        except OSError:
+            stamp = None
+        if stamp is None or not S_ISREG(stamp.st_mode):
+            unavailable += 1
+            continue
         captured = capture_datetime(clip, media_info, stat_for)
         if captured is None:
             undated += 1
@@ -88,12 +98,7 @@ def library_overview(clips, media_info, period="All time", current_time=None, st
         game = clip["game"] or "Uncategorized"
         state = clip["triage"] or "pending"
         counts.setdefault(game, Counter())[state] += 1
-        try:
-            source = clip["source_path"]
-            stamp = stat_for(source) if stat_for else Path(source).stat()
-            sizes[game] += stamp.st_size if stamp else 0
-        except OSError:
-            pass
+        sizes[game] += stamp.st_size
 
     total = Counter()
     for game_counts in counts.values():
@@ -102,8 +107,8 @@ def library_overview(clips, media_info, period="All time", current_time=None, st
         counts.items(),
         key=lambda item: (
             item[0] == "Uncategorized",
-            -item[1]["pending"],
+            -sum(item[1].values()),
             item[0].casefold(),
         ),
     )
-    return total, rows, undated, sizes
+    return total, rows, undated, unavailable, sizes

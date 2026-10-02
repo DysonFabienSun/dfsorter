@@ -111,6 +111,7 @@ from .theme import (
 )
 from .thumbnails import ThumbnailCache
 from .tips import TipLibrary, TipWidget
+from .unavailable_dialog import UnavailableClipsDialog
 from .update_ui import UpdateController
 from .widgets import (
     CLIP_ROLE,
@@ -1134,7 +1135,7 @@ class Window(QMainWindow):
         self.overview_rows = QVBoxLayout()
         self.overview_rows.setSpacing(12)
         overview_layout.addLayout(self.overview_rows)
-        self.overview_empty = QLabel("No dated clips captured in this period.")
+        self.overview_empty = QLabel("No available clips captured in this period.")
         role(self.overview_empty, "muted")
         self.overview_empty.hide()
         overview_layout.addWidget(self.overview_empty)
@@ -1366,6 +1367,7 @@ class Window(QMainWindow):
             ("Edit tag…", self.edit_tag, None),
             None,
             ("Delete rejected originals…", self.delete_rejected, None),
+            ("Manage unavailable clips…", self.manage_unavailable_clips, None),
             ("Reset window and panes", self.reset_layout, None),
             None,
             ("Exit", self.close, "Ctrl+Q"),
@@ -1503,6 +1505,16 @@ class Window(QMainWindow):
             ),
             lambda candidates: QTimer.singleShot(0, lambda: self.review_deletion(candidates)),
         )
+
+    def manage_unavailable_clips(self):
+        if self.atomic_edit:
+            return
+        if self.worker is not None:
+            self.error("Wait for the current operation to finish")
+            return
+        dialog = UnavailableClipsDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
 
     def review_deletion(self, candidates):
         if self.current_panel == "Browse":
@@ -2499,7 +2511,7 @@ class Window(QMainWindow):
 
     def refresh_library_overview(self, clips=None):
         clips = clips if clips is not None else self.catalogue.clips()
-        total, rows, undated, sizes = library_overview(
+        total, rows, undated, unavailable, sizes = library_overview(
             clips, self.media_info, self.overview_period, stat_for=self.source_stat
         )
         while self.overview_rows.count():
@@ -2509,16 +2521,25 @@ class Window(QMainWindow):
                 widget.setParent(None)
                 widget.deleteLater()
         self.add_overview_row("All games", total, sum(sizes.values()), emphasized=True)
+        aggregate_total = sum(total.values())
         for game, counts in rows:
-            self.add_overview_row(game, counts, sizes[game])
+            self.add_overview_row(game, counts, sizes[game], reference_total=aggregate_total)
         self.overview_empty.setVisible(not sum(total.values()))
         finite = PERIOD_DAYS[self.overview_period] is not None
-        self.overview_undated.setVisible(finite and bool(undated))
-        self.overview_undated.setText(
-            f"{undated} clips have no usable capture date and are not included."
-        )
+        exclusions = []
+        if unavailable:
+            noun = "file is" if unavailable == 1 else "files are"
+            exclusions.append(f"{unavailable} clip {noun} missing or unreachable (excluded)")
+        if undated:
+            noun = "file lacks" if undated == 1 else "files lack"
+            treatment = "excluded from this period" if finite else "included in All time"
+            exclusions.append(
+                f"{undated} available clip {noun} a usable capture date ({treatment})"
+            )
+        self.overview_undated.setVisible(bool(exclusions))
+        self.overview_undated.setText("; ".join(exclusions) + ".")
 
-    def add_overview_row(self, name, counts, size, *, emphasized=False):
+    def add_overview_row(self, name, counts, size, *, emphasized=False, reference_total=None):
         keep = counts["keep"]
         discard = counts["discard"]
         pending = counts["pending"]
@@ -2542,13 +2563,20 @@ class Window(QMainWindow):
         heading.addWidget(progress)
         layout.addLayout(heading)
         bar = VerdictBar()
+        if not emphasized:
+            bar.setFixedHeight(12)
+            bar.set_reference_total(reference_total)
         bar.set_counts(keep, discard, pending)
         layout.addWidget(bar)
-        details = QLabel(
-            f"{keep} Keep · {discard} Discard · {pending} Pending · {storage_gb(size)}"
-        )
-        role(details, "muted")
-        layout.addWidget(details)
+        details = QHBoxLayout()
+        verdicts = QLabel(f"{keep} Keep · {discard} Discard · {pending} Pending")
+        role(verdicts, "muted")
+        details.addWidget(verdicts)
+        details.addStretch()
+        storage = QLabel(storage_gb(size))
+        role(storage, "muted")
+        details.addWidget(storage)
+        layout.addLayout(details)
         self.overview_rows.addWidget(row)
 
     def render_card(self, item, clip):
