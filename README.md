@@ -1,6 +1,6 @@
 # DFSorter
 
-DFSorter is a portable Windows app for reviewing gameplay recordings. It catalogues clips, helps organize them into projects, and can share selected ranges or copy project clips for export. Original recordings stay in their existing folders.
+DFSorter is a portable Windows app for browsing gameplay recordings and triaging clips for montage editing. It tracks ShadowPlay, Medal, OBS, and other capture folders as new clips arrive, with searchable playback, mixed audio tracks, and sharing of whole clips or selected ranges. For montage work, Sessions provide a review queue for Keep/Discard decisions, descriptions, tags, and project organization. DFSorter catalogs original recordings by reference rather than duplicating them; Share and Export create output files only when requested.
 
 Functionalities:
 
