@@ -9,6 +9,6 @@ tips:
   - Command alias ghost expansions can be switched on or off in Settings → General → Editing.
   - Accepted abbreviations can be changed in the game configuration.
   - Each game's command bar example can be changed in Config → Identity.
-  - Hover over a field marker to see accepted values and aliases.
+  - Forgot a field's options? Hover over its marker for accepted values and aliases.
   - If 12 px field markers and tips are too small, try 13 px in Settings → General → Editing.
   - An unfinished command remains available when returning to a clip during the same application run.
