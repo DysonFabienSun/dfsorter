@@ -167,6 +167,13 @@ Supported ordinary field types are:
 - `enum`: value must resolve to one of the configured canonical values or aliases.
 - `freeform`: value is user-supplied text and does not need to exist in a predefined vocabulary.
 
+Freeform fields may also declare optional canonical `values` and value `aliases` for
+commands without a field prefix. These named shortcuts do not restrict arbitrary
+prefixed input; aliases must target a configured canonical value.
+Canonical values and value aliases must not coincide case-insensitively with field
+names, field prefixes, or global clip field names within the same game configuration.
+Validate this on configuration load, reload, and Save, for both enum and freeform fields.
+
 Any ordinary field may additionally specify:
 
 - `multiple: false` for a scalar value;
@@ -792,7 +799,7 @@ Changing a clip away from Keep does not automatically delete existing project me
 
 Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Double-clicking a Home or Session clip opens that clip in Browse. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
 
-Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation, catalogue Undo/Redo and permanent source deletion are unavailable. Native text-field undo remains available.
+Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation and permanent source deletion are unavailable. Undo/Redo reverses staged Editing actions in memory, including commands, individual I/O presses and membership changes. Native text-field undo remains available. Saving retains the staged action history for that clip; discarding drops the staged history.
 
 Place atomic-only **Save** and red **Revert** actions beside the working title. Save is disabled until the staged snapshot differs from its baseline and remains blocked while command text is unsubmitted or an In/Out range is incomplete or invalid. Save verifies that the persisted clip identity, editable fields and relevant memberships still match the baseline, then writes the complete staged snapshot and memberships in one transaction, updates modification time once, and adds exactly one catalogue undo operation. A conflict keeps the draft open. A snapshot equal to its baseline performs no write. Atomic Save does not require Keep/export completeness.
 
@@ -949,36 +956,64 @@ Share and Project Export appear in a top-navigation Output Jobs dropdown with pe
 
 Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
 
-Edits remain drafts until Save. Revert restores the loaded file; leaving a dirty draft offers Save, Discard or Cancel. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
+Edits remain drafts until Save. Leaving a dirty draft offers Save, Discard or Cancel. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 
-Removing a field or canonical enum value used by clips shows affected counts and requires confirmation. Stored clip metadata is retained, including values hidden by a removed field. Dependent aliases and inference links are removed from the saved definition when their field or canonical value is removed. Configuration file changes are outside catalogue Undo/Redo.
+Fields exposes values and value aliases for both ordinary field types. The values row
+is labelled **Enum values** for enum fields and **Named values** for freeform fields.
+Freeform named values are optional shortcuts; arbitrary prefixed input remains accepted.
+Switching between these types retains the value and alias rows and their contents.
+Add row or double-clicking empty table space adds a row and immediately focuses and
+edits its first cell. Clicking an
+already-selected cell or double-clicking an existing cell edits it; Tab commits the
+current cell and moves to the next cell. Only one cell across the editor tables is
+selected at a time. Clicking another table or outside the tables clears the previous
+selection; row action buttons retain the selection so Remove row can act on it.
+Fields shows a brief instruction for table entry.
+Table typing marks the configuration as changed immediately. Navigation includes the
+active cell's uncommitted text in the Save / Discard / Cancel prompt; Save captures it,
+Discard restores the loaded configuration, and Cancel retains the draft in Config.
+
+Removing a field or canonical enum value used by clips shows affected counts and requires confirmation. Stored clip metadata is retained, including values hidden by a removed field. Dependent aliases and inference links are removed from the saved definition when their field or canonical value is removed. Config history is separate from clip history and restores editor drafts without writing YAML files.
 
 ---
 
 ## 18. Undo and Redo
 
-Undo/redo is intentionally narrow.
+Toolbar Undo/Redo is available only in Editing and Config. Each button independently
+reflects the active clip or game history; available actions use `text.secondary` and
+unavailable actions use `text.disabled`. Other pages cannot invoke these histories.
+Focused text inputs retain native typing undo/redo. Histories exist only for this
+application run; new edits clear the active history's redo branch.
 
-Navigation Undo and Redo icons independently reflect their catalogue history stacks: available actions use `text.secondary`; unavailable actions use `text.disabled`. Refresh availability after edits, undo/redo, and history clearing. Preserve native text-input undo/redo.
+Editing uses a separate history per clip, retained across clip and panel switches.
+One submitted command or button action is one step, covering structured metadata,
+mainline, description, tag, game, rating, verdict, reset and project membership.
+Each In or Out press is a step, including unfinished ranges. Navigation itself is
+not undone, and undo never changes another clip or the current Session position.
+Undoing a command restores metadata and its visible command history; its original
+text returns to an empty command box. An existing draft is preserved. Redo removes
+restored command text only if it has not been edited. Staged single-clip Editing uses
+its own temporary history without writing catalogue changes until Save. Changes to
+clip state outside its history invalidate stale actions rather than overwrite newer state.
 
-The normal undo stack covers user metadata operations performed during the current application run, including:
+Config uses a separate history per game, retained across Save and game switches.
+Consecutive typing in one focused input is grouped into one step; row actions,
+field changes, checkboxes and reordering are individual steps. Incomplete table
+entries and YAML repair drafts are included. Save is not an undo step or a history
+boundary. Undo/Redo of previously saved changes modifies only the current draft;
+Save is required to update the YAML. Discard restores the saved history checkpoint.
 
-- structured metadata changes;
-- mainline/description edits;
-- rating changes;
-- triage changes;
-- project membership changes where practical;
-- In/Out marker changes.
+Config Revert restores the configuration first loaded for that game during this
+application run as an unsaved draft, including changes already saved this run.
+For a new game its initial creation draft is the baseline. Revert is enabled only
+when the current contents differ from that baseline. Pressing Revert replaces it
+with a red **Confirm revert** button in the same position. Clicking it restores the
+baseline as an undoable draft action. An outside click, Escape, typing or navigation
+cancels confirmation and restores the ordinary Revert button. Revert never writes
+YAML; applying the restored draft requires Save.
 
-Undo/redo does not need to cover:
-
-- source-file copies;
-- capture-folder deletion/purge;
-- source-path migration;
-- project export;
-- Share;
-- external YAML edits;
-- other filesystem operations.
+Undo/Redo does not cover filesystem operations, external YAML edits, project
+creation/deletion/renaming, exports, Share, scanning or playback controls.
 
 Destructive catalogue operations outside the normal undo model require explicit confirmation.
 

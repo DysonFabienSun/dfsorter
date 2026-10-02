@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
+from functools import wraps
 from pathlib import Path
 from uuid import uuid4
 
@@ -80,6 +81,7 @@ from .config_editor import ConfigEditor
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .folder_preview_dialog import FolderPreviewDialog
+from .history import EditHistory
 from .output import prepare_export_manifest, run_export_manifest, safe_stem, share_clip, validate
 from .overview import (
     PERIOD_DAYS,
@@ -130,6 +132,33 @@ from .widgets import (
 )
 
 
+def editing_action(function):
+    """Record one user action, including nested edits and navigation after a verdict."""
+    @wraps(function)
+    def record(self, *args, **kwargs):
+        enabled = self.current_panel == "Editing" and self.current_id is not None
+        outer = enabled and self._editing_action_depth == 0
+        if outer:
+            clip_id, atomic = self.current_id, self.atomic_edit
+            history = self.editing_history()
+            before = self.editing_state(clip_id, atomic)
+            command = self.command.text() if function.__name__ == "submit" else None
+        self._editing_action_depth += 1
+        try:
+            return function(self, *args, **kwargs)
+        finally:
+            self._editing_action_depth -= 1
+            if outer:
+                after = self.editing_state(clip_id, atomic)
+                previous = history.pending()
+                if previous and previous.after != before:
+                    history.undo_stack.clear()
+                    history.redo_stack.clear()
+                history.record(before, after, command=command)
+                self.update_history_controls()
+    return record
+
+
 @dataclass
 class AtomicEditState:
     clip_id: str
@@ -140,6 +169,7 @@ class AtomicEditState:
     history: list[str | tuple[str, list[tuple[str, object]]]] = dataclass_field(
         default_factory=list
     )
+    edits: EditHistory = dataclass_field(default_factory=EditHistory)
 
 
 class Worker(QThread):
@@ -422,6 +452,9 @@ class Window(QMainWindow):
         self.library_page_switch = False
         self.atomic_edit = None
         self.history = defaultdict(list)
+        self.editing_histories = defaultdict(EditHistory)
+        self._editing_action_depth = 0
+        self.restored_command = None
         self.drafts = {}
         self.pane_overrides = {}
         self.space_down = False
@@ -1786,6 +1819,22 @@ class Window(QMainWindow):
     def effective_memberships(self):
         return self.effective_snapshot()[1]
 
+    def editing_history(self):
+        return self.atomic_edit.edits if self.atomic_edit else self.editing_histories[self.current_id]
+
+    def editing_state(self, clip_id, atomic=None):
+        snapshot = atomic.draft if atomic else self.catalogue.snapshot(clip_id)
+        fields = (
+            "clip_id", "game", "triage", "rating", "tag", "mainline", "description",
+            "metadata", "in_ms", "out_ms",
+        )
+        return deepcopy({
+            "snapshot": ({key: snapshot[0][key] for key in fields}, snapshot[1]),
+            "pending": (self.pending_in, self.pending_out)
+            if clip_id == self.current_id else (None, None),
+            "history": atomic.history if atomic else self.history[clip_id],
+        })
+
     def show_clip_context_menu(self, position):
         item = self.library.itemAt(position)
         if item is None or self.current_panel == "Editing":
@@ -1844,6 +1893,7 @@ class Window(QMainWindow):
                 self.library.verticalScrollBar().value(),
             ),
         )
+        self.atomic_edit.history = deepcopy(self.history[clip_id])
         self.current_id = clip_id
         self.panel("Editing")
 
@@ -1871,6 +1921,14 @@ class Window(QMainWindow):
         try:
             state = self.atomic_edit
             self.catalogue.commit_snapshot(state.baseline, state.draft)
+            history = self.editing_histories[state.clip_id]
+            if state.edits.undo_stack:
+                previous = history.pending()
+                if previous and previous.after != state.edits.undo_stack[0].before:
+                    history.undo_stack.clear()
+                history.undo_stack.extend(state.edits.undo_stack)
+                history.redo_stack = state.edits.redo_stack
+            self.history[state.clip_id] = deepcopy(state.history)
             origin = state.origin
             self.atomic_edit = None
             self.current_id = None
@@ -2023,11 +2081,8 @@ class Window(QMainWindow):
                 self.refresh_library()
             return
         if self.current_panel == "Config" and name != "Config":
-            was_dirty = self.config_editor.dirty
             if not self.config_editor.confirm_discard():
                 return
-            if was_dirty:
-                self.config_editor.revert()
         if self.atomic_edit and self.current_panel == "Editing" and name != "Editing":
             if not self.confirm_revert_atomic():
                 return
@@ -3302,6 +3357,7 @@ class Window(QMainWindow):
             )
         )
 
+    @editing_action
     def edit(self, patch, **kwargs):
         if self.current_panel == "Browse":
             return
@@ -3319,6 +3375,7 @@ class Window(QMainWindow):
         except (ValueError, OSError) as error:
             self.error(error)
 
+    @editing_action
     def submit(self):
         if self.current_panel == "Browse":
             return
@@ -3357,6 +3414,7 @@ class Window(QMainWindow):
             self.update_command_state()
             self.error(error)
 
+    @editing_action
     def add_to_project_next(self):
         if self.atomic_edit:
             return
@@ -3379,6 +3437,7 @@ class Window(QMainWindow):
         except (ValueError, OSError) as error:
             self.error(error)
 
+    @editing_action
     def advance_review(self):
         if self.atomic_edit:
             return
@@ -3478,6 +3537,7 @@ class Window(QMainWindow):
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
+        self.restored_command = None
         self.command_submitted_error = False
         self.command_saved_timer.stop()
         self.command_error.clear()
@@ -3504,6 +3564,8 @@ class Window(QMainWindow):
         )
 
     def command_focus_changed(self, old, new):
+        if hasattr(self, "config_editor"):
+            self.config_editor.break_history_group()
         if old is self.command and new is not self.command:
             self.submit_resume = False
         self.update_command_state()
@@ -3681,6 +3743,7 @@ class Window(QMainWindow):
         )
         self.projects_toggle.raise_()
 
+    @editing_action
     def edit_tag(self):
         if self.current_panel == "Browse":
             return
@@ -4106,6 +4169,7 @@ class Window(QMainWindow):
     def mark_out(self):
         self.mark_range_point("out")
 
+    @editing_action
     def mark_range_point(self, endpoint):
         if self.current_panel == "Browse":
             self.browse.mark(endpoint)
@@ -4126,6 +4190,7 @@ class Window(QMainWindow):
             return
         self.save_range(start, end)
 
+    @editing_action
     def save_range(self, start, end):
         if self.current_panel == "Browse":
             return
@@ -4202,6 +4267,7 @@ class Window(QMainWindow):
             self.refresh_references()
             self.refresh_library()
 
+    @editing_action
     def membership(self, include):
         if self.current_panel == "Browse":
             return
@@ -4275,6 +4341,7 @@ class Window(QMainWindow):
             raise ValueError("Select a clip first")
         return self.effective_clip() if self.atomic_edit else self.catalogue.clip(clip_id)
 
+    @editing_action
     def change_game(self):
         if self.current_panel == "Browse":
             return
@@ -4306,6 +4373,7 @@ class Window(QMainWindow):
         except ValueError as error:
             self.error(error)
 
+    @editing_action
     def reset_metadata(self):
         if self.current_panel == "Browse":
             return
@@ -4340,9 +4408,13 @@ class Window(QMainWindow):
             self.error(error)
 
     def update_history_controls(self):
-        allowed = self.current_panel != "Browse" and not self.atomic_edit
-        self.undo_button.setEnabled(allowed and bool(self.catalogue.undo_stack))
-        self.redo_button.setEnabled(allowed and bool(self.catalogue.redo_stack))
+        history = None
+        if self.current_panel == "Config" and hasattr(self, "config_editor"):
+            history = self.config_editor.edit_history()
+        elif self.current_panel == "Editing" and self.current_id:
+            history = self.editing_history()
+        self.undo_button.setEnabled(bool(history and history.undo_stack))
+        self.redo_button.setEnabled(bool(history and history.redo_stack))
         for action in getattr(self, "browse_write_actions", []):
             action.setEnabled(
                 self.current_panel != "Browse"
@@ -4353,13 +4425,51 @@ class Window(QMainWindow):
             )
 
     def undo(self, redo=False):
-        if self.current_panel == "Browse" or self.atomic_edit:
+        if self.current_panel == "Config":
+            self.config_editor.undo(redo)
             return
-        self.catalogue.undo(redo)
-        self.refresh_references()
-        self.refresh_library()
-        if self.current_panel == "Editing":
+        if self.current_panel != "Editing" or not self.current_id:
+            return
+        history = self.editing_history()
+        operation = history.pending(redo)
+        if operation is None:
+            return
+        expected = operation.before if redo else operation.after
+        target = operation.after if redo else operation.before
+        if self.editing_state(self.current_id, self.atomic_edit) != expected:
+            history.undo_stack.clear()
+            history.redo_stack.clear()
+            self.update_history_controls()
+            self.error("Clip state changed outside this history; previous edits can no longer be undone.")
+            return
+        try:
+            snapshot = self.effective_snapshot()
+            restored = (dict(snapshot[0], **target["snapshot"][0]), target["snapshot"][1])
+            if self.atomic_edit:
+                self.atomic_edit.draft = deepcopy(restored)
+                self.atomic_edit.history = deepcopy(target["history"])
+            else:
+                self.catalogue.commit_snapshot(snapshot, restored)
+                self.history[self.current_id] = deepcopy(target["history"])
+            self.pending_in, self.pending_out = target["pending"]
+            self.player.seek.pending_in, self.player.seek.pending_out = target["pending"]
+            history.finish(redo)
+            if operation.command:
+                if not redo and not self.command.text():
+                    self.command.setText(operation.command)
+                    self.restored_command = (self.current_id, operation.command)
+                elif redo and self.restored_command == (self.current_id, operation.command):
+                    self.command.clear()
+            self.range_block_message = ""
+            self.command_error.clear()
+            self.command_error.hide()
+            self.submit_resume = False
+            self.command_saved_timer.stop()
+            self.refresh_references()
+            self.refresh_library()
             self.render_clip()
+        except (ValueError, OSError) as error:
+            self.error(error)
 
     def background(self, function, done, label="Working…", *, quiet=False):
         if self.close_requested:

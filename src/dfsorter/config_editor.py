@@ -3,9 +3,11 @@
 import re
 from copy import deepcopy
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
+    QAbstractItemDelegate,
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFormLayout,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -30,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from .config import GLOBAL_FIELDS
 from .config_store import GameFile, new_game_path
+from .history import EditHistory
 from .theme import role
 from .widgets import heading
 
@@ -49,22 +53,66 @@ def row(*widgets):
     return layout
 
 
+class TableEditDelegate(QStyledItemDelegate):
+    def __init__(self, changed, parent):
+        super().__init__(parent)
+        self.changed = changed
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if isinstance(editor, QLineEdit):
+            editor.textEdited.connect(lambda _text: self.changed())
+        return editor
+
+
 class Rows(QWidget):
-    def __init__(self, headings, changed, parent=None):
+    def __init__(self, headings, changed, parent=None, hint=""):
         super().__init__(parent)
         body = QVBoxLayout(self)
         body.setContentsMargins(0, 0, 0, 0)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.table = QTableWidget(0, len(headings))
+        self.table.setItemDelegate(TableEditDelegate(changed, self.table))
         self.table.setHorizontalHeaderLabels(headings)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setHighlightSections(False)
         self.table.verticalHeader().hide()
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.AnyKeyPressed
+        )
         self.table.setFixedHeight(128)
+        self.table.setToolTip(
+            "add row or double-click empty table space to start a new entry; "
+            "click a selected cell or double-click a cell to edit it."
+        )
+        self.table.viewport().installEventFilter(self)
         self.table.itemChanged.connect(lambda _: changed())
         body.addWidget(self.table)
         body.addLayout(row(action("Add row", self.add), action("Remove row", self.remove)))
+        self.hint = QLabel(hint)
+        self.hint.setWordWrap(True)
+        role(self.hint, "secondary")
+        self.hint.setVisible(bool(hint))
+        body.addWidget(self.hint)
         self.changed = changed
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is self.table.viewport()
+            and event.type() == QEvent.Type.MouseButtonDblClick
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.table.isEnabled()
+            and not self.table.indexAt(event.position().toPoint()).isValid()
+        ):
+            self.table.setFocus()
+            self.add()
+            return True
+        return super().eventFilter(watched, event)
 
     def values(self):
         return [
@@ -77,17 +125,37 @@ class Rows(QWidget):
             for index in range(self.table.rowCount())
         ]
 
+    def raw_values(self):
+        result = [
+            [self.table.item(row, column).text() if self.table.item(row, column) else ""
+             for column in range(self.table.columnCount())]
+            for row in range(self.table.rowCount())
+        ]
+        editor = QApplication.focusWidget()
+        if isinstance(editor, QLineEdit) and self.table.isAncestorOf(editor):
+            row, column = self.table.currentRow(), self.table.currentColumn()
+            if row >= 0 and column >= 0:
+                result[row][column] = editor.text()
+        return result
+
     def set_values(self, values):
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         for values_row in values:
             self.add(values_row)
         self.table.blockSignals(False)
+        self.clear_selection()
+
+    def clear_selection(self):
+        self.table.clearSelection()
+        self.table.setCurrentItem(None)
 
     def add(self, values_row=None):
-        if not isinstance(values_row, (tuple, list)):
+        begin_edit = not isinstance(values_row, (tuple, list))
+        if begin_edit:
             values_row = []
         index = self.table.rowCount()
+        blocked = self.table.blockSignals(True)
         self.table.insertRow(index)
         for column in range(self.table.columnCount()):
             self.table.setItem(
@@ -95,8 +163,13 @@ class Rows(QWidget):
                 column,
                 QTableWidgetItem(str(values_row[column]) if column < len(values_row) else ""),
             )
-        self.table.setCurrentCell(index, 0)
+        if begin_edit:
+            self.table.setCurrentCell(index, 0)
+        self.table.blockSignals(blocked)
         self.changed()
+        if begin_edit:
+            self.table.setFocus()
+            self.table.editItem(self.table.item(index, 0))
 
     def remove(self):
         index = self.table.currentRow()
@@ -114,6 +187,12 @@ class ConfigEditor(QWidget):
         self.draft = None
         self.field_key = None
         self.dirty = False
+        self.histories = {}
+        self.initial_states = {}
+        self.saved_states = {}
+        self.saved_histories = {}
+        self.last_state = None
+        self.revert_armed = False
         self.loading = False
         self.sidebar_header = QWidget(window.left)
         self.sidebar_header.setObjectName("configSidebarHeader")
@@ -160,6 +239,11 @@ class ConfigEditor(QWidget):
         role(self.save_button, "primary")
         actions.addWidget(self.save_button)
         body.addLayout(actions)
+        QApplication.instance().installEventFilter(self)
+        for rows in self.findChildren(Rows):
+            rows.table.itemSelectionChanged.connect(
+                lambda rows=rows: self.select_table(rows)
+            )
         self.refresh_files()
 
     def build_identity(self):
@@ -207,16 +291,32 @@ class ConfigEditor(QWidget):
         form.addRow("", self.reserved_note)
         form.addRow("Type", self.field_type)
         form.addRow("", self.multiple)
-        self.prefixes = Rows(["Input prefix"], self.mark_dirty)
+        self.table_edit_hint = QLabel(
+            "add row or double-click empty table space to start a new entry; "
+            "click a selected cell or double-click a cell to edit it. "
+            "tab moves to the next cell. click outside the tables to clear the selection."
+        )
+        self.table_edit_hint.setWordWrap(True)
+        role(self.table_edit_hint, "secondary")
+        form.addRow("", self.table_edit_hint)
+        self.prefixes = Rows(
+            ["Input prefix"], self.mark_dirty,
+            hint="field names already work as prefixes. add abbreviations here, such as wpn for weapon.",
+        )
         self.values = Rows(["Canonical value"], self.mark_dirty)
-        self.aliases = Rows(["Alias", "Canonical value"], self.mark_dirty)
+        self.aliases = Rows(
+            ["Alias", "Canonical value"], self.mark_dirty,
+            hint="map shorthand to a value listed above, such as mp5navy → mp5. "
+            "values and aliases are case-insensitive and cannot match field names or prefixes.",
+        )
         self.links = Rows(["Source value", "Target field", "Target value"], self.mark_dirty)
         form.addRow("Prefix aliases", self.prefixes)
         form.addRow("Enum values", self.values)
         form.addRow("Value aliases", self.aliases)
         form.addRow("Inference links", self.links)
         hint = QLabel(
-            "Use one link row per target value. Repeated target fields build a multiple-value link."
+            "a source value can fill another field automatically. use one link row per target value. "
+            "repeated target fields build a multiple-value link; explicit or existing values take priority."
         )
         hint.setWordWrap(True)
         role(hint, "secondary")
@@ -266,11 +366,198 @@ class ConfigEditor(QWidget):
         role(self.status, "error" if error else "secondary")
         self.status.setVisible(bool(value))
 
+    def edit_history(self):
+        if self.source is None:
+            return None
+        return self.histories.setdefault(self.source.path.name, EditHistory())
+
+    def break_history_group(self):
+        history = self.edit_history()
+        if history:
+            history.group = None
+
+    @staticmethod
+    def definition_state(definition):
+        links = [
+            [str(source), target, str(part)]
+            for source, targets in definition.get("links", {}).items()
+            for target, value in targets.items()
+            for part in (value if isinstance(value, list) else [value])
+        ]
+        return {
+            "extra": {key: deepcopy(value) for key, value in definition.items()
+                      if key not in {"type", "multiple", "prefixes", "values", "aliases", "links"}},
+            "type": definition.get("type", "enum"),
+            "multiple": bool(definition.get("multiple", False)),
+            "prefixes": [[value] for value in definition.get("prefixes", [])],
+            "values": [[value] for value in definition.get("values", [])],
+            "aliases": [[key, value] for key, value in definition.get("aliases", {}).items()],
+            "links": links,
+        }
+
+    def history_state(self):
+        repair = not self.tabs.isTabEnabled(0)
+        definition = {} if repair else self.draft.get("fields", {}).get(self.field_key, {})
+        field = self.definition_state(definition)
+        field.update({
+            "type": self.field_type.currentText(), "multiple": self.multiple.isChecked(),
+            **{key: getattr(self, key).raw_values()
+               for key in ("prefixes", "values", "aliases", "links")},
+        })
+        return deepcopy({
+            "draft": self.draft, "field_key": self.field_key, "field": field,
+            "name": self.name.text(), "code": self.code.text(), "example": self.example.text(),
+            "game_aliases": self.game_aliases.raw_values(),
+            "order": [(self.order.item(index).text(), self.order.item(index).checkState())
+                      for index in range(self.order.count())],
+            "suggested": [(self.suggested.item(index).text(), self.suggested.item(index).checkState())
+                          for index in range(self.suggested.count())],
+            "repair": repair, "yaml": self.recovery.toPlainText(),
+            "tab": self.tabs.currentIndex(),
+        })
+
+    def state_content(self, state):
+        if state["repair"]:
+            return {"yaml": state["yaml"]}
+        fields = {key: self.definition_state(value)
+                  for key, value in state["draft"].get("fields", {}).items()}
+        if state["field_key"] in fields and state["field_key"] not in {"kill", "clutch"}:
+            fields[state["field_key"]] = state["field"]
+        return {**{key: state[key] for key in
+                   ("name", "code", "example", "game_aliases", "order", "suggested")},
+                "fields": fields}
+
+    def update_dirty(self):
+        if self.source is None or self.loading:
+            return
+        name = self.source.path.name
+        content = self.state_content(self.last_state)
+        self.dirty = self.source.digest is None or content != self.state_content(self.saved_states[name])
+        self.save_button.setEnabled(self.dirty)
+        self.revert_button.setEnabled(content != self.state_content(self.initial_states[name]))
+        self.window.update_history_controls()
+
+    def restore_state(self, state):
+        self.cancel_revert()
+        self.commit_table_edit()
+        self.loading = True
+        self.draft = deepcopy(state["draft"])
+        if state["repair"]:
+            self.recovery.setPlainText(state["yaml"])
+            for index in range(3):
+                self.tabs.setTabEnabled(index, False)
+            self.tabs.setTabEnabled(3, True)
+            self.tabs.setTabVisible(3, True)
+            self.tabs.setCurrentIndex(3)
+            self.loading = False
+            self.last_state = self.history_state()
+            self.update_dirty()
+            return
+        self.show_draft()
+        for index in range(self.fields.count()):
+            if self.fields.item(index).text() == state["field_key"]:
+                self.fields.setCurrentRow(index)
+                break
+        self.field_type.setCurrentText(state["field"]["type"])
+        self.multiple.setChecked(state["field"]["multiple"])
+        for key in ("prefixes", "values", "aliases", "links"):
+            getattr(self, key).set_values(state["field"][key])
+        self.name.setText(state["name"])
+        self.code.setText(state["code"])
+        self.example.setText(state["example"])
+        self.game_aliases.set_values(state["game_aliases"])
+        for key in ("order", "suggested"):
+            widget = getattr(self, key)
+            widget.clear()
+            for text, checked in state[key]:
+                item = QListWidgetItem(text)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(checked)
+                widget.addItem(item)
+        self.recovery.setPlainText(state["yaml"])
+        for index in range(3):
+            self.tabs.setTabEnabled(index, not state["repair"])
+        self.tabs.setTabEnabled(3, state["repair"])
+        self.tabs.setTabVisible(3, state["repair"])
+        self.tabs.setCurrentIndex(state["tab"])
+        self.update_field_rows()
+        self.loading = False
+        self.last_state = self.history_state()
+        self.update_dirty()
+
+    def undo(self, redo=False):
+        self.commit_table_edit()
+        self.break_history_group()
+        history = self.edit_history()
+        operation = history.pending(redo) if history else None
+        if operation:
+            self.restore_state(operation.after if redo else operation.before)
+            history.finish(redo)
+            self.window.update_history_controls()
+
+    def cancel_revert(self):
+        if not self.revert_armed:
+            return
+        self.revert_armed = False
+        self.revert_button.setText("Revert")
+        role(self.revert_button, "secondary")
+
+    def select_table(self, selected):
+        if not selected.table.selectedItems():
+            return
+        focus = QApplication.focusWidget()
+        if focus is not None and not selected.table.isAncestorOf(focus):
+            self.commit_table_edit()
+        for rows in self.findChildren(Rows):
+            if rows is not selected:
+                rows.clear_selection()
+
+    def eventFilter(self, watched, event):
+        if (
+            self.isVisible()
+            and event.type() == QEvent.Type.MouseButtonPress
+            and isinstance(watched, QWidget)
+        ):
+            tables = self.findChildren(Rows)
+            target = next(
+                (rows for rows in tables
+                 if watched is rows.table or rows.table.isAncestorOf(watched)),
+                None,
+            )
+            # Row actions need the current cell until their clicked signal runs.
+            row_action = isinstance(watched, QPushButton) and any(
+                rows.isAncestorOf(watched) for rows in tables
+            )
+            if not row_action:
+                focus = QApplication.focusWidget()
+                if target is None or focus is None or not target.table.isAncestorOf(focus):
+                    self.commit_table_edit()
+                for rows in tables:
+                    if rows is not target:
+                        rows.clear_selection()
+                if target is not None and watched is target.table.viewport():
+                    if not target.table.indexAt(event.position().toPoint()).isValid():
+                        self.commit_table_edit()
+                        target.clear_selection()
+        if self.revert_armed:
+            if event.type() == QEvent.Type.MouseButtonPress and watched is not self.revert_button:
+                self.cancel_revert()
+            elif event.type() == QEvent.Type.KeyPress:
+                self.cancel_revert()
+                if event.key() == Qt.Key.Key_Escape:
+                    return True
+        return super().eventFilter(watched, event)
+
     def mark_dirty(self, *_):
         if not self.loading and self.source is not None:
-            self.dirty = True
-            self.save_button.setEnabled(True)
-            self.revert_button.setEnabled(True)
+            self.cancel_revert()
+            state = self.history_state()
+            if self.last_state and self.state_content(state) != self.state_content(self.last_state):
+                focus = QApplication.focusWidget()
+                group = focus if isinstance(focus, (QLineEdit, QPlainTextEdit)) else None
+                self.edit_history().record(self.last_state, state, group=group)
+            self.last_state = state
+            self.update_dirty()
 
     def refresh_files(self, select=None):
         self.games.blockSignals(True)
@@ -295,6 +582,8 @@ class ConfigEditor(QWidget):
             self.revert_button.setEnabled(False)
 
     def confirm_discard(self):
+        self.cancel_revert()
+        self.commit_table_edit()
         if not self.dirty:
             return True
         choice = QMessageBox(self)
@@ -310,9 +599,20 @@ class ConfigEditor(QWidget):
         if result == QMessageBox.StandardButton.Save:
             return self.save()
         if result == QMessageBox.StandardButton.Discard:
-            self.dirty = False
+            self.reload_saved()
             return True
         return False
+
+    def commit_table_edit(self):
+        editor = QApplication.focusWidget()
+        if isinstance(editor, QLineEdit):
+            for rows in self.findChildren(Rows):
+                if rows.table.isAncestorOf(editor):
+                    rows.table.itemDelegate().commitData.emit(editor)
+                    rows.table.itemDelegate().closeEditor.emit(
+                        editor, QAbstractItemDelegate.EndEditHint.NoHint
+                    )
+                    break
 
     def select_game(self, item, previous):
         if item is None:
@@ -336,9 +636,11 @@ class ConfigEditor(QWidget):
         self.load_game(filename)
 
     def load_game(self, filename):
+        self.cancel_revert()
         self.loading = True
         self.message("")
         self.source = None
+        self.draft = {}
         try:
             self.source = GameFile(self.directory / filename)
             self.draft = self.source.draft()
@@ -367,10 +669,14 @@ class ConfigEditor(QWidget):
             self.tabs.setCurrentIndex(3)
             self.message(str(error), True)
         self.tabs.setEnabled(True)
-        self.dirty = False
-        self.save_button.setEnabled(False)
-        self.revert_button.setEnabled(False)
         self.loading = False
+        self.last_state = self.history_state()
+        self.saved_states[filename] = deepcopy(self.last_state)
+        self.initial_states.setdefault(filename, deepcopy(self.last_state))
+        self.break_history_group()
+        if filename not in self.saved_histories:
+            self.saved_histories[filename] = deepcopy(self.edit_history())
+        self.update_dirty()
 
     def show_draft(self):
         self.name.setText(self.draft.get("name", ""))
@@ -446,6 +752,7 @@ class ConfigEditor(QWidget):
         self.suggested.blockSignals(False)
 
     def select_field(self, item, previous):
+        was_loading = self.loading
         if not self.loading and previous is not None:
             try:
                 self.capture_field()
@@ -463,13 +770,14 @@ class ConfigEditor(QWidget):
         self.field_form.setRowVisible(self.reserved_note, reserved)
         self.field_form.setRowVisible(self.field_type, not reserved)
         self.field_form.setRowVisible(self.multiple, not reserved)
+        self.field_form.setRowVisible(self.table_edit_hint, not reserved)
         self.field_type.setCurrentText(definition.get("type", "enum"))
         self.multiple.setChecked(bool(definition.get("multiple", False)))
         self.field_type.setEnabled(not reserved and bool(item))
         self.multiple.setEnabled(not reserved and bool(item))
         self.prefixes.setEnabled(not reserved and bool(item))
-        self.values.setEnabled(not reserved and bool(item) and definition.get("type") == "enum")
-        self.aliases.setEnabled(not reserved and bool(item) and definition.get("type") == "enum")
+        self.values.setEnabled(not reserved and bool(item))
+        self.aliases.setEnabled(not reserved and bool(item))
         self.links.setEnabled(not reserved and bool(item))
         self.prefixes.set_values([[value] for value in definition.get("prefixes", [])])
         self.values.set_values([[value] for value in definition.get("values", [])])
@@ -483,24 +791,39 @@ class ConfigEditor(QWidget):
                     link_rows.append([source, target, part])
         self.links.set_values(link_rows)
         self.update_field_rows()
-        self.loading = False
+        self.loading = was_loading
+        if not self.loading:
+            self.last_state = self.history_state()
+            self.break_history_group()
 
     def field_type_changed(self):
-        kind = self.field_type.currentText()
-        self.values.setEnabled(kind == "enum")
-        self.aliases.setEnabled(kind == "enum")
         self.update_field_rows()
         self.mark_dirty()
 
     def update_field_rows(self):
         reserved = self.field_key in {"kill", "clutch"}
         self.field_form.setRowVisible(self.prefixes, not reserved)
-        self.field_form.setRowVisible(
-            self.values, not reserved and self.field_type.currentText() == "enum"
+        self.field_form.setRowVisible(self.values, not reserved)
+        self.field_form.setRowVisible(self.aliases, not reserved)
+        freeform = self.field_type.currentText() == "freeform"
+        self.field_form.labelForField(self.values).setText(
+            "Named values" if freeform else "Enum values"
         )
-        self.field_form.setRowVisible(
-            self.aliases, not reserved and self.field_type.currentText() == "enum"
+        self.values.setToolTip(
+            "Optional named values accepted without a field prefix. "
+            "Other text remains accepted with a field prefix."
+            if freeform else "Canonical values accepted for this field."
         )
+        self.values.hint.setText(
+            "optional shortcuts: add mp5 to accept mp5 without a prefix. "
+            "other weapons still accept weapon:othergun."
+            if freeform and self.field_key == "weapon" else
+            "optional named values work without a prefix. other text remains accepted with a prefix."
+            if freeform else
+            "list accepted values in their stored spelling. commands accept these values without a prefix."
+        )
+        self.values.hint.show()
+        self.aliases.setToolTip("Accepted shorthand mapped to a configured canonical value.")
         self.field_form.setRowVisible(self.links, not reserved)
         self.field_form.setRowVisible(self.link_hint, not reserved)
 
@@ -526,11 +849,12 @@ class ConfigEditor(QWidget):
             prefixes = [entry[0] for entry in self.prefixes.values() if entry[0]]
             if prefixes:
                 definition["prefixes"] = prefixes
-            if self.field_type.currentText() == "enum":
-                definition["values"] = [entry[0] for entry in self.values.values() if entry[0]]
-                aliases = {key: value for key, value in self.aliases.values() if key}
-                if aliases:
-                    definition["aliases"] = aliases
+            values = [entry[0] for entry in self.values.values() if entry[0]]
+            if values or self.field_type.currentText() == "enum":
+                definition["values"] = values
+            aliases = {key: value for key, value in self.aliases.values() if key}
+            if aliases:
+                definition["aliases"] = aliases
         links = {}
         for source, target, value in self.links.values():
             if not (source or target or value):
@@ -558,6 +882,7 @@ class ConfigEditor(QWidget):
         self.draft["fields"][self.field_key] = definition
 
     def add_field(self):
+        before = self.history_state()
         key, accepted = QInputDialog.getText(self, "New field", "Stable field key:")
         if not accepted:
             return
@@ -578,9 +903,11 @@ class ConfigEditor(QWidget):
         self.fields.addItem(key)
         self.fields.setCurrentRow(self.fields.count() - 1)
         self.refresh_order()
+        self.last_state = before
         self.mark_dirty()
 
     def remove_field(self):
+        before = self.history_state()
         key = self.field_key
         if not key or key == "kill":
             self.message("The reserved kill field cannot be removed.", True)
@@ -597,6 +924,7 @@ class ConfigEditor(QWidget):
                 definition.pop("links", None)
         self.fields.takeItem(self.fields.currentRow())
         self.refresh_order()
+        self.last_state = before
         self.mark_dirty()
 
     def move_order(self, offset):
@@ -610,6 +938,7 @@ class ConfigEditor(QWidget):
         self.mark_dirty()
 
     def collect(self):
+        self.commit_table_edit()
         self.capture_field()
         draft = deepcopy(self.draft)
         draft["name"] = self.name.text().strip()
@@ -697,6 +1026,8 @@ class ConfigEditor(QWidget):
         if self.source is None:
             return False
         try:
+            self.commit_table_edit()
+            self.break_history_group()
             if self.tabs.currentIndex() == 3:
                 self.source.save(None, self.directory, raw_text=self.recovery.toPlainText())
             else:
@@ -720,9 +1051,14 @@ class ConfigEditor(QWidget):
                         return False
                 self.source.save(draft, self.directory)
             filename = self.source.path.name
+            history = self.edit_history()
+            operation = history.pending()
             self.dirty = False
             self.window.reload_configs()
             self.refresh_files(select=filename)
+            if operation:
+                operation.after = deepcopy(self.last_state)
+            self.saved_histories[filename] = deepcopy(history)
             self.message("Configuration saved.")
             return True
         except Exception as error:
@@ -730,8 +1066,26 @@ class ConfigEditor(QWidget):
             return False
 
     def revert(self):
+        self.commit_table_edit()
+        if self.source is None or not self.revert_button.isEnabled():
+            return
+        if not self.revert_armed:
+            self.revert_armed = True
+            self.revert_button.setText("Confirm revert")
+            role(self.revert_button, "danger")
+            return
+        before = self.history_state()
+        self.restore_state(self.initial_states[self.source.path.name])
+        self.edit_history().record(before, self.last_state)
+        self.window.update_history_controls()
+        self.message("Initial configuration restored as a draft. Save to apply it.")
+
+    def reload_saved(self):
+        self.cancel_revert()
         if self.source is None:
             return
+        filename = self.source.path.name
+        self.histories[filename] = deepcopy(self.saved_histories.get(filename, EditHistory()))
         if self.source.digest is None:
             self.refresh_files()
         else:
@@ -777,7 +1131,10 @@ class ConfigEditor(QWidget):
         self.tabs.setCurrentIndex(0)
         self.tabs.setEnabled(True)
         self.loading = False
-        self.dirty = True
-        self.save_button.setEnabled(True)
-        self.revert_button.setEnabled(True)
+        filename = self.source.path.name
+        self.last_state = self.history_state()
+        self.histories[filename] = EditHistory()
+        self.initial_states[filename] = deepcopy(self.last_state)
+        self.saved_states[filename] = deepcopy(self.last_state)
+        self.update_dirty()
         self.message("New game draft. Add a three-character uppercase display code before saving.")

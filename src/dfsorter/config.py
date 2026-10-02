@@ -103,6 +103,12 @@ class Registry:
             if not isinstance(field_links, dict):
                 raise ValueError(f"{key}: links must be a mapping")
             links[key] = field_links
+        reserved_names = {*fields, *prefixes, *GLOBAL_FIELDS}
+        for token, (field, _value) in values.items():
+            if token in reserved_names:
+                raise ValueError(
+                    f"{field}: value or alias '{token}' conflicts with a field name or prefix"
+                )
         order = raw["display_order"]
         suggested = raw.get("suggested_fields", raw.get("required_for_export", []))
         if not isinstance(order, list) or not isinstance(suggested, list):

@@ -814,7 +814,13 @@ def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     assert window.catalogue.state("session") == session
     assert len(window.catalogue.undo_stack) == len(history) + 1
     window.undo()
+    assert window.catalogue.clip(ids[1])["mainline"] == "Atomic title"
+    window.panel("Editing")
+    window.switch_editing_clip(ids[1])
+    window.undo()
     assert window.catalogue.clip(ids[1])["mainline"] is None
+    window.panel("Home")
+    session = window.catalogue.state("session")
 
     window.start_atomic_edit(ids[0], "Browse")
     window.edit({"tag": "temporary"})
@@ -975,8 +981,13 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     window.save_atomic_edit()
     assert window.catalogue.member_ids(project_id) == {clip_id}
     assert len(window.catalogue.undo_stack) == len(history) + 1
+    window.catalogue.create_session([clip_id])
+    window.panel("Editing")
+    window.undo()
     window.undo()
     assert not window.catalogue.member_ids(project_id)
+    window.command.clear()
+    window.panel("Home")
 
     window.start_atomic_edit(clip_id, "Home")
     window.command.setText("jett")
@@ -2317,6 +2328,127 @@ def test_reject_then_enter_is_one_shot(window, application, tmp_path):
     assert not window.reject_enter_armed
     QTest.keyClick(window.player, Qt.Key.Key_Return)
     assert application.focusWidget() is window.command
+
+
+def test_editing_undo_restores_commands_and_preserves_existing_drafts(window, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.panel("Editing")
+    window.command.setText("jett")
+    window.submit()
+    window.undo()
+    assert window.catalogue.clip(ids[0])["metadata"] == {}
+    assert window.history[ids[0]] == []
+    assert window.command.text() == "jett"
+    window.undo(True)
+    assert window.catalogue.clip(ids[0])["metadata"] == {"agent": "Jett"}
+    assert window.history[ids[0]] == ["jett"]
+    assert window.command.text() == ""
+    window.command.setText("vandal")
+    window.undo()
+    assert window.command.text() == "vandal"
+    window.undo(True)
+    assert window.command.text() == "vandal"
+    window.edit({"rating": 4})
+    window.undo()
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    window.undo(True)
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+
+
+def test_editing_undo_is_per_clip_and_disabled_on_other_pages(window, tmp_path):
+    ids = add_clips(window, tmp_path)
+    second = tmp_path / "captures/second.mp4"
+    second.write_bytes(b"test")
+    window.catalogue.ingest(window.catalogue.folders()[0]["folder_id"],
+                            [{"path": str(second), "game": "VALORANT"}])
+    second_id = next(clip["clip_id"] for clip in window.catalogue.clips()
+                     if clip["clip_id"] != ids[0])
+    window.catalogue.create_session([ids[0], second_id], replace=True)
+    window.panel("Editing")
+    window.edit({"rating": 4})
+    window.switch_editing_clip(second_id)
+    assert not window.undo_button.isEnabled()
+    window.edit({"rating": 2})
+    window.undo()
+    assert window.catalogue.clip(second_id)["rating"] is None
+    assert window.catalogue.clip(ids[0])["rating"] == 4
+    window.switch_editing_clip(ids[0])
+    window.undo()
+    assert window.catalogue.clip(ids[0])["rating"] is None
+    project = window.catalogue.save_project("Clip history")
+    window.catalogue.set_state("active_project", project)
+    window.add_to_project_next()
+    assert window.current_id == second_id
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    window.switch_editing_clip(ids[0])
+    session = window.catalogue.state("session")
+    window.undo()
+    assert window.catalogue.member_ids(project) == set()
+    assert window.catalogue.state("session") == session
+    window.panel("Home")
+    assert not window.undo_button.isEnabled() and not window.redo_button.isEnabled()
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_editing_undo_covers_each_range_press(window, tmp_path, monkeypatch, staged):
+    ids = add_clips(window, tmp_path)
+    if staged:
+        window.start_atomic_edit(ids[0], "Home")
+    else:
+        window.panel("Editing")
+    position = [100]
+    monkeypatch.setattr(window.player.media, "position", lambda: position[0])
+    window.mark_in()
+    assert window.pending_in == 100
+    window.undo()
+    assert window.pending_in is None
+    window.undo(True)
+    assert window.pending_in == 100
+    position[0] = 500
+    window.mark_out()
+    assert window.effective_clip()["in_ms"] == 100
+    assert window.effective_clip()["out_ms"] == 500
+    window.undo()
+    assert window.effective_clip()["in_ms"] is None
+    assert window.pending_in == 100
+    assert window.pending_out is None
+    window.undo(True)
+    assert window.effective_clip()["out_ms"] == 500
+    assert window.pending_in is None
+    if staged:
+        assert window.catalogue.clip(ids[0])["in_ms"] is None
+        window.discard_atomic_edit()
+
+
+def test_staged_undo_keeps_changes_in_draft_and_covers_membership(window, tmp_path):
+    clip_id = add_clips(window, tmp_path)[0]
+    project = window.catalogue.save_project("Undo project")
+    window.refresh_references()
+    window.start_atomic_edit(clip_id, "Home")
+    for index in range(window.projects.count()):
+        if window.projects.item(index).data(Qt.ItemDataRole.UserRole) == project:
+            window.projects.setCurrentRow(index)
+            break
+    window.membership(True)
+    window.undo()
+    assert project not in window.effective_memberships()
+    window.undo(True)
+    assert project in window.effective_memberships()
+    window.command.setText("jett")
+    window.submit()
+    window.undo()
+    assert window.effective_clip()["metadata"] == {}
+    assert window.command.text() == "jett"
+    assert window.atomic_edit.history == []
+    window.undo(True)
+    assert window.command.text() == ""
+    assert window.effective_clip()["metadata"] == {"agent": "Jett"}
+    assert window.catalogue.clip(clip_id)["metadata"] == {}
+    assert window.catalogue.member_ids(project) == set()
+    window.edit({"triage": "keep"})
+    window.undo()
+    assert window.effective_clip()["triage"] is None
+    window.discard_atomic_edit()
 
 
 def test_command_validation_colors_and_save_feedback(window, application, tmp_path):
@@ -4605,7 +4737,7 @@ def test_history_controls_availability(window, tmp_path):
     available(True, True)
     window.edit({"rating": 3})
     available(True, False)
-    while window.catalogue.undo_stack:
+    while window.editing_history().undo_stack:
         window.undo()
     window.panel("Home")
     project = window.catalogue.save_project("History controls")
@@ -4613,7 +4745,7 @@ def test_history_controls_availability(window, tmp_path):
     window.projects.setCurrentRow(0)
     window.library.setCurrentRow(0)
     window.membership(True)
-    available(True, False)
+    available(False, False)
     window.catalogue.delete_project(project)
     window.refresh_references()
     available(False, False)

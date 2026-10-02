@@ -480,7 +480,7 @@ hints and technical explanations remain readable but tertiary. Rating stars reta
 gold semantic family. Compact clip-list labels use their separate five-step scale and always
 retain the explicit `R1`–`R5` text cue.
 
-Atomic single-clip Editing preserves this composition. Put compact **Save** and red **Revert** actions on the working-title row, aligned to its top/right edge. Hide Add to project + Next; disable Previous/Next and catalogue Undo/Redo. Membership Add/Remove remains in the Projects pane while global project mutations are disabled.
+Atomic single-clip Editing preserves this composition. Put compact **Save** and red **Revert** actions on the working-title row, aligned to its top/right edge. Hide Add to project + Next; disable Previous/Next; Undo/Redo applies to staged clip actions. Membership Add/Remove remains in the Projects pane while global project mutations are disabled.
 
 Place new panel information in an existing row where practical. A new row can cause conspicuous vertical movement when its content appears or disappears.
 
@@ -494,6 +494,13 @@ single Save action is primary; Revert, Reload and row actions remain secondary. 
 tables legible in Light and Dark without adding decorative cards merely to occupy space.
 Config's Game configurations heading uses the shared 22 px section-heading row with a
 24 px file-cog icon, aligned to the Home and Session workspace heading inset.
+Config Revert changes in place to a red Confirm revert button while confirmation is armed, using the shared danger role. Outside interaction restores its secondary appearance.
+Config tables use consistent header typography regardless of column selection. Brief
+wrapping notes beneath tables use the shared secondary-text role to explain command syntax.
+Selection highlights only the current cell, with at most one table selection across
+the editor. Empty table space and clicks outside tables clear the selection; row
+action buttons retain it. Clicking a selected cell opens its editor. Double-clicking
+empty table space adds a row and opens its first cell for editing.
 
 ## 7. Qt implementation patterns
 

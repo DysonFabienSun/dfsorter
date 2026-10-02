@@ -19,6 +19,32 @@ from dfsorter.output import (
 from dfsorter.parsing import parse_command, parse_command_details, preview_command, query_clips
 
 
+@pytest.mark.parametrize("kind", ["enum", "freeform"])
+@pytest.mark.parametrize("token", ["WEAPON", "MAP", "WPN", "KILL", "TAG"])
+@pytest.mark.parametrize("as_alias", [False, True])
+def test_config_rejects_value_field_name_and_prefix_collisions(tmp_path, kind, token, as_alias):
+    definition = {"type": kind, "values": ["MP5" if as_alias else token]}
+    if as_alias:
+        definition["aliases"] = {token: "MP5"}
+    raw = {
+        "name": "Example", "code": "EXM",
+        "fields": {
+            "weapon": definition,
+            "map": {"type": "freeform", "prefixes": ["wpn"]},
+        },
+        "display_order": ["weapon", "map", "mainline"],
+    }
+    registry = Registry(tmp_path, {"Example.yaml": raw})
+    assert registry.game("Example") is None
+    assert len(registry.errors) == 1
+    assert "conflicts with a field name or prefix" in registry.errors[0]
+
+
+def test_shipped_game_configs_have_no_collisions(registry):
+    assert not registry.errors
+    assert len(registry.games) == len(list(registry.directory.glob("*.yaml")))
+
+
 @pytest.mark.parametrize(
     "text,state,patch",
     [

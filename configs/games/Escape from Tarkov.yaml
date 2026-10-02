@@ -8,9 +8,14 @@ fields:
     type: freeform
     multiple: true
     prefixes: [wpn]
+    values:
+    - mp5sd
+    aliases:
+      mp5: mp5sd
   map:
     type: enum
-    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab, Woods, Terminal, Labyrinth]
+    values: [Customs, Factory, Ground Zero, Interchange, Lighthouse, Reserve, Shoreline, Streets of Tarkov, The Lab,
+        Woods, Terminal, Labyrinth]
     aliases: {streets: Streets of Tarkov, labs: The Lab, lab: The Lab, labrys: Labyrinth}
 display_order: [kill, map, weapon, mainline]
 suggested_fields: []
