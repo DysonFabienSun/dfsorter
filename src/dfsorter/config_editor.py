@@ -366,19 +366,15 @@ class ConfigEditor(QWidget):
             hint="Map shorthand to a value listed above, such as mp5navy → mp5. "
             "Values and aliases are case-insensitive and cannot match field names or prefixes.",
         )
-        self.links = Rows(["Source value", "Target field", "Target value"], self.mark_dirty)
+        self.links = Rows(
+            ["Source value", "Target field", "Target value"], self.mark_dirty,
+            hint="A source value can fill another field automatically. Use one link row per target value. "
+            "Repeated target fields build a multiple-value link; explicit or existing values take priority.",
+        )
         form.addRow("Prefix aliases", self.prefixes)
         form.addRow("Enum values", self.values)
         form.addRow("Value aliases", self.aliases)
         form.addRow("Inference links", self.links)
-        hint = QLabel(
-            "A source value can fill another field automatically. Use one link row per target value. "
-            "Repeated target fields build a multiple-value link; explicit or existing values take priority."
-        )
-        hint.setWordWrap(True)
-        role(hint, "secondary")
-        self.link_hint = hint
-        form.addRow("", hint)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(detail)
@@ -904,7 +900,6 @@ class ConfigEditor(QWidget):
         self.values.hint.show()
         self.aliases.setToolTip("Accepted shorthand mapped to a configured canonical value.")
         self.field_form.setRowVisible(self.links, not reserved)
-        self.field_form.setRowVisible(self.link_hint, not reserved)
 
     def capture_field(self):
         if not self.field_key or self.field_key not in self.draft.get("fields", {}):

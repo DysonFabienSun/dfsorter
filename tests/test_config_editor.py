@@ -143,6 +143,23 @@ def test_reserved_field_details_explain_syntax_and_remain_read_only(editor_windo
         assert not editor.links.isVisible()
 
 
+def test_inference_link_note_has_no_blank_row_below_it(editor_window):
+    application = QApplication.instance()
+    editor_window.panel("Config")
+    editor = editor_window.config_editor
+    select_game(editor, "Counter-strike 2.yaml")
+    editor.fields.setCurrentRow(
+        next(index for index in range(editor.fields.count())
+             if editor.fields.item(index).text() == "weapon")
+    )
+    editor.tabs.setCurrentIndex(1)
+    application.processEvents()
+
+    assert editor.links.hint.isVisible()
+    assert editor.links.hint.height() == editor.links.hint.heightForWidth(editor.links.hint.width())
+    assert editor.links.hint.geometry().bottom() == editor.links.height() - 1
+
+
 def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
     application = QApplication.instance()
     editor_window.panel("Config")
