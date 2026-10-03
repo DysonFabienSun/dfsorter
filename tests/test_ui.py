@@ -2200,6 +2200,28 @@ def add_clips(window, tmp_path, valid=False, codec="libx264"):
     return ids
 
 
+def test_editing_f_maximizes_only_in_review_mode(window, application, tmp_path):
+    add_clips(window, tmp_path)
+    window.panel("Editing")
+    application.processEvents()
+    window.showNormal()
+    window.review_mode()
+
+    QTest.keyClick(window.player, Qt.Key.Key_F)
+    assert window.isMaximized()
+    assert application.focusWidget() is not window.command
+    assert window.command.text() == ""
+
+    QTest.keyClick(window.player, Qt.Key.Key_F)
+    assert window.isMaximized()
+
+    window.showNormal()
+    window.command.setFocus()
+    QTest.keyClick(window.command, Qt.Key.Key_F)
+    assert not window.isMaximized()
+    assert window.command.text() == "f"
+
+
 def test_keyboard_and_session_ui(window, application, tmp_path):
     assert not window.nav["Editing"].isEnabled()
     ids = add_clips(window, tmp_path)
@@ -2209,7 +2231,7 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     shortcut_document.setHtml(window.shortcut_hint.text())
     assert shortcut_document.toPlainText() == (
         "Space Play/pause · I/O Range · Enter Metadata · "
-        "Shift+Enter Verdict + next · ? All shortcuts"
+        "Shift+Enter Verdict + next · F Maximize · ? All shortcuts"
     )
     window.command.setFocus()
     window.command.setText("jett vandal R4")

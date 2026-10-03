@@ -3748,7 +3748,7 @@ class Window(QMainWindow):
                 if self.atomic_edit
                 else [("Shift+Enter", "Verdict + next")]
             )
-            + [("?", "All shortcuts")]
+            + [("F", "Maximize"), ("?", "All shortcuts")]
         )
         key_style = f'color:{COLORS["text_primary"]}; font-weight:600'
         action_style = f'color:{COLORS["text_muted"]}'
@@ -3864,13 +3864,14 @@ class Window(QMainWindow):
                 "Save and return to clip: Save the staged changes\n"
                 "Both actions retain the selected Keep, Discard, or Pending verdict. "
                 "Use the verdict buttons to change it.\n\n"
+                "F in review mode maximizes the window.\n"
                 "Enter in the command bar submits metadata. Escape returns to review mode.",
             )
             return
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\n/ or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “ -- ” separator\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “ -- ” separator\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def update_library_hover_row(self, hovered=None):
@@ -4152,6 +4153,14 @@ class Window(QMainWindow):
                 editor.redo()
                 return True
             return super().eventFilter(watched, event)
+        if (
+            self.current_panel == "Editing"
+            and key == Qt.Key.Key_F
+            and modifiers == Qt.KeyboardModifier.NoModifier
+        ):
+            if not event.isAutoRepeat() and not self.isMaximized():
+                self.showMaximized()
+            return True
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
                 self.advance_review()
