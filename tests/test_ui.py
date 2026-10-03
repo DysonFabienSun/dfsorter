@@ -12,7 +12,7 @@ import PySide6
 import pytest
 import yaml
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
-from PySide6.QtGui import QColor, QCursor, QKeyEvent, QMouseEvent, QTextDocument
+from PySide6.QtGui import QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -41,10 +41,11 @@ from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS, FONT_SIZES, symbol_text
+from dfsorter.tips import TipWidget
 from dfsorter.ui import ROOT, Window, style_application
 from dfsorter.unavailable_dialog import UnavailableClipsDialog
 from dfsorter.update_ui import UpdateController
-from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate, VerdictBar
+from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate, VerdictBar, icon
 
 
 @pytest.fixture(scope="module")
@@ -176,6 +177,81 @@ def test_editing_tips_setting_persists(window, application):
     assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["editing_tips_enabled"] is False
     assert not window.tip_timer.isActive()
     dialog.close()
+
+
+@pytest.mark.parametrize(
+    "icon_name,color_role",
+    [
+        ("info-tip", "accent_default"),
+        ("triangle-alert", "status_warning"),
+    ],
+)
+def test_editing_tip_uses_widget_dpr_for_both_icons(
+    application, monkeypatch, close_window, icon_name, color_role
+):
+    tip = TipWidget(size=12, icon_name=icon_name, color_role=color_role)
+    tip.set_message("Tip")
+    tip.resize(100, 15)
+    tip.show()
+    application.processEvents()
+    assert tip.symbol.devicePixelRatio() == tip.devicePixelRatioF()
+
+    monkeypatch.setattr(tip, "devicePixelRatioF", lambda: 1.25)
+    tip.repaint()
+    assert tip.symbol_dpr == 1.25
+    assert tip.symbol.size() == QSize(round(tip.tip_size * 1.25), round(tip.tip_size * 1.25))
+    assert tip.symbol.devicePixelRatio() == 1.25
+    assert icon(icon_name, COLORS[color_role], size=12, dpr=1.25).availableSizes() == [
+        QSize(15, 15)
+    ]
+    monkeypatch.undo()
+    close_window(tip, application)
+
+
+@pytest.mark.parametrize("icon_name,detail_row", [("info-tip", 3), ("triangle-alert", 8)])
+def test_small_tip_icon_retains_punctuation(application, icon_name, detail_row):
+    image = icon(icon_name, size=12, dpr=1).pixmap(QSize(12, 12), 1.0).toImage()
+    coverage = sum(image.pixelColor(column, detail_row).alpha() for column in (5, 6))
+    assert coverage >= 90
+
+
+@pytest.mark.parametrize("icon_name", ["info-tip", "triangle-alert"])
+@pytest.mark.parametrize("ratio", [1.0, 1.25])
+def test_tip_paint_preserves_bitmap_with_parent_offset(
+    application, monkeypatch, close_window, icon_name, ratio
+):
+    parent = QWidget()
+    parent.resize(220, 50)
+    tip = TipWidget(parent, icon_name=icon_name)
+    tip.set_message("Tip")
+    monkeypatch.setattr(tip, "devicePixelRatioF", lambda: ratio)
+    for size in (11, 12, 13):
+        tip.set_tip_size(size)
+        for height in (19, 20):
+            tip.setGeometry(7, 9, 200, height)
+            image = QImage(
+                round(parent.width() * ratio),
+                round(parent.height() * ratio),
+                QImage.Format.Format_ARGB32_Premultiplied,
+            )
+            image.setDevicePixelRatio(ratio)
+            image.fill(Qt.GlobalColor.transparent)
+            parent.render(image)
+            text_width = tip.fontMetrics().horizontalAdvance(tip.message)
+            left = round((tip.x() + tip.width() - size - 4 - text_width) * ratio)
+            top = round((tip.y() + height / 2) * ratio - tip.symbol.height() / 2)
+            expected = QImage(tip.symbol.size(), image.format())
+            expected.fill(image.pixelColor(0, 0))
+            source = tip.symbol.toImage()
+            source.setDevicePixelRatio(1)
+            painter = QPainter(expected)
+            painter.drawImage(0, 0, source)
+            painter.end()
+            actual = image.copy(left, top, tip.symbol.width(), tip.symbol.height())
+            actual.setDevicePixelRatio(1)
+            assert actual == expected, (size, height, ratio)
+    monkeypatch.undo()
+    close_window(parent, application)
 
 
 def test_editing_bottom_size_setting_updates_row_without_rotating(window, tmp_path):

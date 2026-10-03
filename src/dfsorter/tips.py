@@ -3,7 +3,7 @@
 import random
 
 import yaml
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QPointF, QSize, Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -50,7 +50,7 @@ class TipLibrary:
 
 
 class TipWidget(QWidget):
-    def __init__(self, parent=None, size=12, icon_name="info", color_role="accent_default"):
+    def __init__(self, parent=None, size=12, icon_name="info-tip", color_role="accent_default"):
         super().__init__(parent)
         self.message = ""
         self.icon_name = icon_name
@@ -71,9 +71,10 @@ class TipWidget(QWidget):
         self.update()
 
     def refresh_theme(self):
-        self.symbol = icon(self.icon_name, COLORS[self.color_role], size=self.tip_size).pixmap(
-            self.tip_size, self.tip_size
-        )
+        self.symbol_dpr = self.devicePixelRatioF()
+        self.symbol = icon(
+            self.icon_name, COLORS[self.color_role], size=self.tip_size, dpr=self.symbol_dpr
+        ).pixmap(QSize(self.tip_size, self.tip_size), self.symbol_dpr)
         self.update()
 
     def sizeHint(self):
@@ -84,8 +85,9 @@ class TipWidget(QWidget):
     def paintEvent(self, event):
         if not self.message:
             return
+        if self.symbol_dpr != self.devicePixelRatioF():
+            self.refresh_theme()
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.setPen(COLORS[self.color_role])
         icon_width = self.tip_size
         spacing = 4
@@ -95,11 +97,13 @@ class TipWidget(QWidget):
         )
         text_width = self.fontMetrics().horizontalAdvance(display)
         left = max(0, self.width() - icon_width - spacing - text_width)
-        painter.drawPixmap(
-            QRectF(left, (self.height() - self.tip_size) / 2, self.tip_size, self.tip_size),
-            self.symbol,
-            QRectF(self.symbol.rect()),
+        transform = painter.deviceTransform()
+        origin = transform.map(
+            QPointF(left, (self.height() - self.symbol.deviceIndependentSize().height()) / 2)
         )
+        inverse, _ = transform.inverted()
+        origin = inverse.map(QPointF(round(origin.x()), round(origin.y())))
+        painter.drawPixmap(origin, self.symbol)
         painter.drawText(
             left + icon_width + spacing, 0, text_width, self.height(),
             Qt.AlignmentFlag.AlignVCenter, display,

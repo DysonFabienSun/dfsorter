@@ -247,7 +247,7 @@ def tag_prefix(clip, rich=False, on_video=False, size_role="library_title"):
 
 
 @lru_cache(maxsize=128)
-def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0):
+def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0, dpr=None):
     result = QIcon()
     source = (ICONS / f"{name}.svg").read_bytes()
     for mode, state, tint in [
@@ -261,22 +261,22 @@ def icon(name, color=None, fill=False, size=24, y_offset=0, right_padding=0):
         data = source.replace(b"currentColor", tint.encode())
         if fill:
             data = data.replace(b'fill="none"', f'fill="{tint}"'.encode())
-        for scale in (1, 2, 3):
-            rendered = QPixmap((size + right_padding) * scale * 3, size * scale * 3)
+        for scale in (dpr,) if dpr is not None else (1, 2, 3):
+            pixel_width = round((size + right_padding) * scale)
+            pixel_height = round(size * scale)
+            rendered = QPixmap(pixel_width * 3, pixel_height * 3)
             rendered.fill(Qt.GlobalColor.transparent)
             painter = QPainter(rendered)
             if y_offset:
                 painter.translate(0, y_offset * scale * 3)
-            QSvgRenderer(data).render(
-                painter, QRectF(0, 0, size * scale * 3, size * scale * 3)
+            QSvgRenderer(data).render(painter, QRectF(0, 0, pixel_height * 3, pixel_height * 3))
+            painter.end()
+            pixmap = rendered.scaled(
+                pixel_width,
+                pixel_height,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
-            painter.end()
-            pixmap = QPixmap((size + right_padding) * scale, size * scale)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            painter.drawPixmap(pixmap.rect(), rendered, rendered.rect())
-            painter.end()
             pixmap.setDevicePixelRatio(scale)
             result.addPixmap(pixmap, mode, state)
     return result
