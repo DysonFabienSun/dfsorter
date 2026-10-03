@@ -613,6 +613,52 @@ def test_invalid_alias_marks_cell_and_disables_save(editor_window, monkeypatch):
     assert not editor.validation_message.isVisible()
 
 
+@pytest.mark.parametrize("table_name,duplicate,existing", [
+    ("values", "vandal", "Vandal"),
+    ("prefixes", "WPN", "wpn"),
+    ("aliases", "HH", "hh"),
+])
+def test_duplicate_config_entry_marks_cell_and_blocks_save(
+    editor_window, table_name, duplicate, existing
+):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    editor.fields.setCurrentRow(next(
+        index for index in range(editor.fields.count())
+        if editor.fields.item(index).text() == "weapon"
+    ))
+    editor.tabs.setCurrentIndex(1)
+    rows = getattr(editor, table_name)
+    assert any(entry[0] == existing for entry in rows.values())
+    entry = [duplicate, "Headhunter"] if table_name == "aliases" else [duplicate]
+    rows.add(entry)
+    item = rows.table.item(rows.table.rowCount() - 1, 0)
+
+    assert item.font().underline()
+    assert "Duplicate" in item.toolTip()
+    assert not editor.save_button.isEnabled()
+    assert "Duplicate" in editor.validation_message.text()
+    assert not editor.save()
+
+    item.setText("uniqueentry")
+    assert not item.font().underline()
+    assert editor.save_button.isEnabled()
+    assert not editor.validation_message.text()
+
+
+def test_new_weapon_field_starts_with_wpn_prefix(editor_window, monkeypatch):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("New Game", True))
+    editor.new_game()
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("weapon", True))
+    editor.add_field()
+    assert editor.prefixes.values() == [["wpn"]]
+
+
 def test_invalid_link_cells_marked_and_clear_live(editor_window):
     window = editor_window
     window.panel("Config")

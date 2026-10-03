@@ -80,8 +80,8 @@ class Registry:
                     "clutch",
                 }:
                     raise ValueError(f"Invalid or reserved prefix: {prefix}")
-                if folded in prefixes and prefixes[folded] != key:
-                    raise ValueError(f"Ambiguous prefix: {prefix}")
+                if folded in prefixes:
+                    raise ValueError(f"Duplicate prefix: {prefix}")
                 prefixes[folded] = key
             canonical = definition.get("values", [])
             if definition["type"] == "enum" and not canonical:
@@ -94,8 +94,8 @@ class Registry:
                     raise ValueError(f"{alias}: unknown canonical value {value}")
                 folded = alias.casefold()
                 target = (key, value)
-                if folded in values and values[folded] != target:
-                    raise ValueError(f"Ambiguous alias: {alias}")
+                if folded in values:
+                    raise ValueError(f"Duplicate value or alias: {alias}")
                 if re.fullmatch(r"(\d+k|1v\d+|r[1-6])", folded):
                     raise ValueError(f"Alias conflicts with reserved token: {alias}")
                 values[folded] = target

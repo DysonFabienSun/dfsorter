@@ -15,6 +15,7 @@ fields:
   weapon:
     type: enum
     multiple: true
+    prefixes: [wpn]
     values: [Classic, Shorty, Frenzy, Ghost, Bandit, Sheriff, Stinger, Spectre, Bucky, Judge, Bulldog, Guardian, Warden, Phantom, Vandal, Marshal, Outlaw, Operator, Ares, Odin, Headhunter, Tour de Force, Bladestorm, Showstopper, Overdrive, Nanoswarm]
     aliases: {hh: Headhunter, op: Operator, awp: Operator, tdf: Tour de Force, nano: Nanoswarm}
     links:

@@ -686,11 +686,31 @@ class ConfigEditor(QWidget):
         self.window.update_history_controls()
 
     def validate_draft(self):
-        errors = {self.aliases: {}, self.links: {}}
+        errors = {self.prefixes: {}, self.values: {}, self.aliases: {}, self.links: {}}
         if self.tabs.currentIndex() != 3 and self.field_key in self.draft.get("fields", {}):
             fields = self.draft["fields"]
             canonical = {entry[0] for entry in self.values.values() if entry[0]}
+            seen_prefixes = {self.field_key.casefold()}
+            for row, (prefix,) in enumerate(self.prefixes.values()):
+                if prefix:
+                    folded = prefix.casefold()
+                    if folded in seen_prefixes:
+                        errors[self.prefixes][(row, 0)] = f"Duplicate prefix alias: {prefix}"
+                    seen_prefixes.add(folded)
+            seen_values = set()
+            for row, (value,) in enumerate(self.values.values()):
+                if value:
+                    folded = value.casefold()
+                    if folded in seen_values:
+                        errors[self.values][(row, 0)] = f"Duplicate named value: {value}"
+                    seen_values.add(folded)
+            seen_aliases = set(seen_values)
             for row, (alias, value) in enumerate(self.aliases.values()):
+                if alias:
+                    folded = alias.casefold()
+                    if folded in seen_aliases:
+                        errors[self.aliases][(row, 0)] = f"Duplicate value alias: {alias}"
+                    seen_aliases.add(folded)
                 if alias and value and value not in canonical:
                     errors[self.aliases][(row, 1)] = f"Unknown canonical value: {value}"
             for row, (source, target, value) in enumerate(self.links.values()):
@@ -1249,7 +1269,10 @@ class ConfigEditor(QWidget):
         except ValueError as error:
             self.message(str(error), True)
             return
-        self.draft["fields"][key] = {} if key == "clutch" else {"type": "enum", "values": []}
+        definition = {} if key == "clutch" else {"type": "enum", "values": []}
+        if key == "weapon":
+            definition["prefixes"] = ["wpn"]
+        self.draft["fields"][key] = definition
         self.fields.addItem(key)
         self.fields.setCurrentRow(self.fields.count() - 1)
         self.refresh_order()

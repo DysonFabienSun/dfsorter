@@ -965,6 +965,7 @@ case-insensitively. Filtering does not switch or discard the open game draft, ev
 its list item is hidden. Clearing search restores the full list.
 Game rows show the current YAML file size after code and field count on the second line,
 using B below 1,024 bytes and KB at or above 1,024 bytes (1 KB = 1,024 B).
+New weapon fields include `wpn` as a prefix alias by default.
 
 Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 
@@ -976,6 +977,8 @@ An alias canonical value must match a listed value for both types. Invalid alias
 and inference link source values, target fields, or target values are red and underlined
 in their respective cells, with an explanatory tooltip. Removing a canonical value
 leaves dependent aliases and links visible for correction; invalid references block Save.
+Duplicate values, prefix aliases, and value alias names are invalid case-insensitively;
+their cells show the same error styling and block Save.
 Add row inserts below the selected cell's row, or appends when no cell is selected.
 Double-clicking empty table space appends a row. Both actions immediately focus and
 edit the new row's first cell. Remove row is available only while a cell is selected.
