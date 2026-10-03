@@ -70,7 +70,7 @@ The full normalized source path is the determinant of source identity. Stored pa
 
 Path migration tools may update a clip's stored source path while preserving its stable internal ID and all metadata, project memberships, and session references.
 
-A missing source file does **not** cause its database entry to be deleted. It remains in the catalogue in an unavailable state until the source returns, is migrated, or the user explicitly purges the catalogue entry.
+After a successful scan of an enabled capture folder, a missing source with no saved clip metadata or project membership is removed from the catalogue. Game assignment and cached media information alone do not protect it. Clips with saved metadata or project membership remain unavailable until the source returns, is migrated, or the catalogue entry is explicitly purged. A Session reference alone does not protect an otherwise empty clip.
 
 Removing a capture folder requires explicit confirmation and removes its catalogue entries, cached media information, and project/session references. Save a database backup first. Original source files are never deleted. Pause scanning is the reversible alternative that retains the folder and its clips.
 
@@ -476,7 +476,7 @@ Progress reports discovery, cache reuse, inspection, warnings and catalogue upda
 throttled during each phase. Startup/manual scan controls remain modal until cleanup finishes; refresh views
 once after applying results. Log traversal, inspection and database timings separately,
 plus UI refresh time and cache/probe counts. Migration and purge invalidate affected
-cache entries; missing sources retain catalogue records. Source files are never modified.
+cache entries; missing sources with saved information retain catalogue records. Source files are never modified.
 No hashing or filesystem watchers are introduced. Replacements preserving both
 size and mtime require explicit reinspection.
 
@@ -484,7 +484,7 @@ The import workflow is managed from Home and discovers source media while adding
 
 Capture folders are persisted across application runs. Successful scheduled or focus-triggered scans do not post status-bar messages; failures still do.
 
-On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, missing-source entries and frozen Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available. Additionally, request quiet incremental scans every 30 seconds and when the application regains focus. Coalesce requests and defer while another background operation or modal dialog is active; retry after it finishes. Quiet scans use the same inspection cache and enabled-folder rules without modal progress or error dialogs. Report failures in the status bar. Preserve selection, viewport anchor, playback, temporary Browse fields and frozen Session membership/order when refreshing results.
+On each application startup, automatically rescan all enabled capture folders once, after the UI is initialized, using the existing cancellable background scan. Disabled folders remain excluded. Preserve existing clip identities, metadata, protected missing-source entries and surviving Session membership/order. Report folder errors without preventing other folders from being scanned. With no enabled folders, do nothing. Manual Refresh/Rescan remains available. Additionally, request quiet incremental scans every 30 seconds and when the application regains focus. Coalesce requests and defer while another background operation or modal dialog is active; retry after it finishes. Quiet scans use the same inspection cache and enabled-folder rules without modal progress or error dialogs. Report failures in the status bar. Preserve selection, viewport anchor, playback, temporary Browse fields and surviving Session membership/order when refreshing results.
 
 Closing the application during a background operation requests cancellation and closes the window automatically after the worker stops. When Share or Project Export jobs are queued or running, first confirm that exiting will cancel them; declining keeps the application open. Confirmed exit cancels queued jobs, waits for running jobs to clean up, then closes. Do not restart automatic scans or show scan results while closure is pending.
 
@@ -520,11 +520,11 @@ When the selected folder's name resolves to a game, show a highlighted tip sugge
 
 ### 11.3 Missing Files and Folder Migration
 
-A missing file or temporarily disconnected drive is treated as unavailable, not deleted.
+A temporarily disconnected or untraversable capture folder does not trigger catalogue cleanup. Only a completed scan of an available capture folder removes missing clips without saved metadata or project membership. Scanning excludes records marked as explicitly deleted through DFSorter. Automatically detected game and media information do not count as saved metadata. The Home folder row shows a separate red per-game count of entries removed since launch; new and deleted counts are never netted.
 
 Settings → Manage unavailable clips… opens a scrollable review of catalogue clips whose original files are missing or unreachable, grouped by each clip's immediate original parent folder. Each folder row shows Do nothing, Delete…, and Reassociate…; a second row shows clip count, verdict and game composition, known cached capture-date range, and known cached logical size with coverage. Do nothing dismisses the row for the current window only. Delete confirms the removal of only the currently unavailable records in that row, including their metadata and references, after a catalogue backup; source files are never deleted. Reassociate selects a replacement for that row's immediate folder and matches filenames directly inside it, rejecting known cached size mismatches. Preview matched, absent, and mismatched clips before applying. Apply only matched clips, preserve their metadata and project/session references, and leave unmatched paths unchanged. Register or reuse the destination for future scans without changing paths of already available clips.
 
-Source disappearance must never automatically remove clip metadata.
+Source disappearance must never automatically remove clips with saved metadata or project membership.
 
 Relink folder… updates source paths while retaining stable clip IDs and all metadata/project/session references; it never moves files. Before confirmation, validate the destination and source-identity collisions and show the destination, affected clip count, files found and files that will become unavailable. Invalidate affected inspection caches after relinking.
 
@@ -1076,7 +1076,6 @@ The following are outside the initial scope unless separately specified later:
 - cloud synchronization;
 - multi-user support;
 - source-file content hashing;
-- automatic deletion of missing source entries.
 
 ---
 

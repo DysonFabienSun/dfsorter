@@ -343,6 +343,7 @@ compact typographic group rather than raw diagnostic-looking text. The folder pa
 scanning state, total clips, and folder size are secondary; detected-game counts are tertiary.
 Show newly discovered clip size in the same cyan accent as new clip counts. Align labels and
 values consistently and use spacing before introducing containers.
+Show per-game removed-entry counts since launch in `status.danger`, separate from cyan new counts.
 A quiet surface group is acceptable when multiple folders need stronger separation, but do not
 turn every statistic into a card. The explanatory sentence remains tertiary and wraps.
 Place Game configs… immediately after Add folder… in the capture-folder control row. Give all

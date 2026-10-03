@@ -749,8 +749,11 @@ class CaptureFolderDelegate(QStyledItemDelegate):
             for position, detail in enumerate(game_details):
                 prefix = ("   " if position else "") + detail["text"]
                 new_text = f" ({detail['new']} new)" if detail["new"] else ""
+                deleted_text = (
+                    f" ({detail['deleted']} deleted)" if detail.get("deleted") else ""
+                )
                 remaining = right - detail_left
-                combined = prefix + new_text
+                combined = prefix + new_text + deleted_text
                 if detail_metrics.horizontalAdvance(combined) > remaining:
                     painter.setPen(QColor(COLORS["text_muted"]))
                     painter.drawText(
@@ -776,6 +779,14 @@ class CaptureFolderDelegate(QStyledItemDelegate):
                         new_text,
                     )
                     detail_left += detail_metrics.horizontalAdvance(new_text)
+                if deleted_text:
+                    painter.setPen(QColor(COLORS["status_danger"]))
+                    painter.drawText(
+                        QRect(detail_left, detail_top, right - detail_left, detail_metrics.height()),
+                        Qt.AlignmentFlag.AlignVCenter,
+                        deleted_text,
+                    )
+                    detail_left += detail_metrics.horizontalAdvance(deleted_text)
         else:
             painter.setPen(QColor(COLORS["text_muted"]))
             painter.drawText(

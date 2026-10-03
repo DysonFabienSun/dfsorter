@@ -1797,8 +1797,8 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         "summary_new": "",
         "details": "VALORANT: 2 (2 new)   Escape from Tarkov: 1 (1 new)",
         "game_details": [
-            {"text": "VALORANT: 2", "new": 2},
-            {"text": "Escape from Tarkov: 1", "new": 1},
+            {"text": "VALORANT: 2", "new": 2, "deleted": 0},
+            {"text": "Escape from Tarkov: 1", "new": 1, "deleted": 0},
         ],
     }
     assert second_data["status"] == "Paused"
@@ -1837,7 +1837,26 @@ def test_home_folder_new_counts_use_opening_catalogue_baseline(window, applicati
     assert data["summary"].endswith("0.04 GB")
     assert data["summary_new"] == " (+0.01 GB new)"
     assert data["details"] == "VALORANT: 2 (1 new)"
-    assert data["game_details"] == [{"text": "VALORANT: 2", "new": 1}]
+    assert data["game_details"] == [{"text": "VALORANT: 2", "new": 1, "deleted": 0}]
+
+
+def test_home_shows_deleted_and_new_counts_separately(window, application, tmp_path):
+    folder = tmp_path / "captures"
+    folder.mkdir()
+    folder_id = window.catalogue.add_folder(folder, forced_game="VALORANT")
+    deleted = folder / "deleted.mp4"
+    deleted.write_bytes(b"video")
+    window.catalogue.ingest(folder_id, [{"path": str(deleted), "game": "VALORANT"}])
+    deleted.unlink()
+    added = folder / "added.mp4"
+    added.write_bytes(b"video")
+    window.rescan(quiet=True)
+    assert wait_for(application, lambda: window.worker is None and len(window.catalogue.clips()) == 1)
+    data = window.folders.item(0).data(FOLDER_ROLE)
+    assert data["details"] == "VALORANT: 1 (1 new) (1 deleted)"
+    assert data["game_details"] == [
+        {"text": "VALORANT: 1", "new": 1, "deleted": 1},
+    ]
 
 
 def test_home_removes_folder_entries_after_confirmation(window, application, tmp_path, monkeypatch):

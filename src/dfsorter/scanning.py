@@ -140,6 +140,7 @@ class ScanCoordinator:
 
     def run(self, folders):
         results, errors = [], []
+        deleted = []
         if not self.executable:
             errors.append("ffprobe unavailable; uncached media metadata cannot be inspected")
             self.metrics["warnings"] += 1
@@ -148,7 +149,8 @@ class ScanCoordinator:
                 found = self.folder(folder)
                 self.report("Updating catalogue", True)
                 started = time.perf_counter()
-                self.catalogue.ingest(folder["folder_id"], found, self.cancelled)
+                removed = self.catalogue.ingest(folder["folder_id"], found, self.cancelled)
+                deleted.extend((folder["folder_id"], game) for _clip_id, game in removed)
                 self.metrics["database"] += time.perf_counter() - started
                 self.metrics["updates"] += len(found)
                 results.extend(found)
@@ -159,5 +161,6 @@ class ScanCoordinator:
                 errors.append(str(error))
                 self.metrics["warnings"] += 1
         self.report("Scan finished", True)
+        self.metrics["deleted"] = deleted
         logging.info("Scan metrics: %s", self.metrics)
         return results, errors, self.metrics

@@ -87,6 +87,42 @@ def test_cache_lifecycle(catalogue, registry, clips, monkeypatch):
     assert not restarted.media_cache()
 
 
+def test_scan_removes_only_empty_externally_missing_clips(catalogue, registry, clips, monkeypatch):
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: None)
+    folder = catalogue.folders()[0]
+    project = catalogue.save_project("Protected")
+    catalogue.patch(clips[1]["clip_id"], {"tag": "saved"})
+    catalogue.patch(clips[2]["clip_id"], {}, membership=(project, True))
+    catalogue.create_session([clips[0]["clip_id"]])
+    for clip in clips:
+        Path(clip["source_path"]).unlink()
+
+    _found, _errors, metrics = ScanCoordinator(catalogue, registry).run([folder])
+
+    assert metrics["deleted"] == [(folder["folder_id"], "VALORANT")]
+    assert {clip["clip_id"] for clip in catalogue.clips()} == {
+        clips[1]["clip_id"], clips[2]["clip_id"]
+    }
+    assert catalogue.state("session") is None
+    assert catalogue.member_ids(project) == {clips[2]["clip_id"]}
+    assert not ScanCoordinator(catalogue, registry).run([folder])[2]["deleted"]
+
+
+def test_scan_does_not_clean_unavailable_folder_or_explicit_deletion(
+    catalogue, registry, clips, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: None)
+    folder = catalogue.folders()[0]
+    with catalogue.connection() as database:
+        database.execute("INSERT INTO deleted_sources VALUES (?)", (clips[0]["clip_id"],))
+    Path(clips[0]["source_path"]).unlink()
+    assert not ScanCoordinator(catalogue, registry).run([folder])[2]["deleted"]
+    assert len(catalogue.clips()) == 3
+    unavailable = dict(folder, path=str(tmp_path / "disconnected"))
+    assert not ScanCoordinator(catalogue, registry).run([unavailable])[2]["deleted"]
+    assert len(catalogue.clips()) == 3
+
+
 def test_failure_expiry_change_and_purge(catalogue, registry, clips, monkeypatch):
     monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
     monkeypatch.setattr(

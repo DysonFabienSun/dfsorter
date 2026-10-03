@@ -455,6 +455,7 @@ class Window(QMainWindow):
             self.settings["theme"] = "light"
         apply_theme(QApplication.instance(), self.settings["theme"])
         self.opening_clip_ids = {clip["clip_id"] for clip in self.catalogue.clips()}
+        self.deleted_clip_counts = Counter()
         self.current_id = None
         self.current_panel = "Home"
         self.library_newest = False
@@ -2376,6 +2377,10 @@ class Window(QMainWindow):
                 for clip_id in ids
                 if clip_id not in self.opening_clip_ids
             )
+            deleted_counts = Counter({
+                game: count for (deleted_folder, game), count in self.deleted_clip_counts.items()
+                if deleted_folder == folder["folder_id"]
+            })
             folder_bytes = self.folder_sizes.get(folder["path"])
             size_text = (
                 storage_gb(folder_bytes)
@@ -2396,14 +2401,20 @@ class Window(QMainWindow):
                 {
                     "text": f"{name}: {count}",
                     "new": new_counts[name],
+                    "deleted": deleted_counts[name],
                 }
                 for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
             ]
             games = "   ".join(
                 detail["text"]
                 + (f" ({detail['new']} new)" if detail["new"] else "")
+                + (f" ({detail['deleted']} deleted)" if detail["deleted"] else "")
                 for detail in game_details
             )
+            for name, count in sorted(deleted_counts.items()):
+                if name not in counts:
+                    game_details.append({"text": f"{name}: 0", "new": 0, "deleted": count})
+                    games += ("   " if games else "") + f"{name}: 0 ({count} deleted)"
             text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · {size_text}{new_size_text}\n"
             text += games or "No detected games"
             item = QListWidgetItem(text)
@@ -4753,6 +4764,7 @@ class Window(QMainWindow):
         def done(result):
             found, errors, metrics = result
             started = time.perf_counter()
+            self.deleted_clip_counts.update(metrics["deleted"])
             self.catalogue.hidden_deleted_ids()
             self.remember_media(found)
             self.refresh_references()

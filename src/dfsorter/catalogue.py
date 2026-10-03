@@ -250,7 +250,9 @@ class Catalogue:
             )
 
     def ingest(self, folder_id, discovered, cancelled=lambda: False):
+        removed = []
         with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
             for item in discovered:
                 if cancelled():
                     raise InterruptedError("Scan cancelled")
@@ -274,6 +276,37 @@ class Catalogue:
                 database.execute("INSERT OR IGNORE INTO sources VALUES (?,?)", (folder_id, clip_id))
             if cancelled():
                 raise InterruptedError("Scan cancelled")
+            discovered_paths = {os.path.normcase(normalized(item["path"])) for item in discovered}
+            candidates = database.execute(
+                "SELECT clips.* FROM clips JOIN sources USING(clip_id) "
+                "WHERE sources.folder_id=? AND NOT EXISTS "
+                "(SELECT 1 FROM members WHERE members.clip_id=clips.clip_id) AND NOT EXISTS "
+                "(SELECT 1 FROM deleted_sources WHERE deleted_sources.clip_id=clips.clip_id) "
+                "AND triage IS NULL AND rating IS NULL AND tag IS NULL "
+                "AND mainline IS NULL AND description IS NULL AND metadata='{}' "
+                "AND in_ms IS NULL AND out_ms IS NULL",
+                (folder_id,),
+            ).fetchall()
+            for clip in candidates:
+                if cancelled():
+                    raise InterruptedError("Scan cancelled")
+                path = clip["source_path"]
+                if os.path.normcase(path) in discovered_paths:
+                    continue
+                try:
+                    Path(path).stat()
+                except FileNotFoundError:
+                    removed.append((clip["clip_id"], clip["game"] or "Unknown"))
+                except OSError:
+                    continue
+            if removed:
+                self._purge_clips(database, [clip_id for clip_id, _game in removed])
+            if cancelled():
+                raise InterruptedError("Scan cancelled")
+        if removed:
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+        return removed
 
     def unlinked_clips(self):
         linked = {row["clip_id"] for row in self.rows("SELECT DISTINCT clip_id FROM sources")}
