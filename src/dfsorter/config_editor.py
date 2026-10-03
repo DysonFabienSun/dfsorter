@@ -236,7 +236,7 @@ class Rows(QWidget):
         actions.addWidget(self.previous_match)
         actions.addWidget(self.next_match)
         body.addLayout(actions)
-        self.hint = QLabel(hint)
+        self.hint = QLabel(hint, self)
         self.hint.setWordWrap(True)
         role(self.hint, "secondary")
         self.hint.setVisible(bool(hint))
