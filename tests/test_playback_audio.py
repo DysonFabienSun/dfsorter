@@ -7,8 +7,9 @@ import wave
 from pathlib import Path
 
 import pytest
+from PySide6.QtMultimedia import QMediaPlayer
 
-from dfsorter.mpv_backend import audio_mix_graph, display_size, load_mpv
+from dfsorter.mpv_backend import MpvBackend, audio_mix_graph, display_size, load_mpv
 from dfsorter.output import copy_one
 
 
@@ -23,6 +24,29 @@ from dfsorter.output import copy_one
 )
 def test_display_size_uses_display_corrected_dimensions(parameters, expected):
     assert display_size(parameters) == expected
+
+
+def test_frame_step_requires_prepared_paused_video():
+    class Engine:
+        def __init__(self):
+            self.commands = []
+
+        def command(self, name):
+            self.commands.append(name)
+
+    backend = MpvBackend(None)
+    backend.engine = Engine()
+    backend.stepFrame(True)
+    backend._prepared = True
+    backend._set_state(QMediaPlayer.PlaybackState.PlayingState)
+    backend.stepFrame(True)
+    assert backend.engine.commands == []
+
+    backend._set_state(QMediaPlayer.PlaybackState.PausedState)
+    backend.stepFrame(True)
+    backend.stepFrame(False)
+    assert backend.engine.commands == ["frame-step", "frame-back-step"]
+    assert backend.playbackState() == QMediaPlayer.PlaybackState.PausedState
 
 
 @pytest.mark.parametrize("tracks", [1, 2, 3])

@@ -12,7 +12,7 @@ import PySide6
 import pytest
 import yaml
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
-from PySide6.QtGui import QColor, QCursor, QMouseEvent, QTextDocument
+from PySide6.QtGui import QColor, QCursor, QKeyEvent, QMouseEvent, QTextDocument
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -5836,6 +5836,34 @@ def test_browse_fullscreen_clip_and_volume_keys(window, application, tmp_path):
     window.browse.set_fullscreen(False)
     QTest.keyClick(player, Qt.Key.Key_BracketRight)
     assert window.library.currentRow() == 1
+
+
+def test_browse_fullscreen_frame_step_keys(window, application, tmp_path, monkeypatch):
+    add_clips(window, tmp_path, valid=True)
+    window.panel("Browse")
+    player = window.browse.player
+    assert wait_for(application, lambda: player.media.duration() > 0 and not player.awaiting_frame)
+    calls = []
+    monkeypatch.setattr(player.media, "stepFrame", calls.append)
+
+    QTest.keyClick(player, Qt.Key.Key_Period)
+    assert calls == []
+    window.browse.set_fullscreen(True)
+    player.media.pause()
+    QTest.keyClick(player, Qt.Key.Key_Period)
+    QTest.keyClick(player, Qt.Key.Key_Comma)
+    repeat = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Period,
+                       Qt.KeyboardModifier.NoModifier, ".", True)
+    QCoreApplication.sendEvent(player, repeat)
+    assert calls == [True, False, True]
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+
+    player.media.play()
+    QTest.keyClick(player, Qt.Key.Key_Period)
+    assert calls == [True, False, True, True]
+    window.browse.set_fullscreen(False)
+    QTest.keyClick(player, Qt.Key.Key_Comma)
+    assert calls == [True, False, True, True]
 
 
 def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):

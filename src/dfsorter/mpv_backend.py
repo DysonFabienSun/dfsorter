@@ -288,6 +288,14 @@ class MpvBackend(QObject):
             self.positionChanged.emit(position)
             self._set_status(QMediaPlayer.MediaStatus.LoadedMedia)
 
+    def stepFrame(self, forward):
+        if (
+            self.engine
+            and self._prepared
+            and self._state == QMediaPlayer.PlaybackState.PausedState
+        ):
+            self.engine.command("frame-step" if forward else "frame-back-step")
+
     def setVolume(self, volume):
         self._volume = volume
         if self.engine:

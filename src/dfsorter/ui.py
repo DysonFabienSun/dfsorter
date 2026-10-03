@@ -4007,6 +4007,9 @@ class Window(QMainWindow):
                 self.browse.set_fullscreen(False)
                 return True
             if self.browse.fullscreen_state is not None and not text_editing and not modifiers:
+                if key in {Qt.Key.Key_Comma, Qt.Key.Key_Period}:
+                    self.browse.player.media.stepFrame(key == Qt.Key.Key_Period)
+                    return True
                 if key in {Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight}:
                     self.navigate(-1 if key == Qt.Key.Key_BracketLeft else 1)
                     return True
