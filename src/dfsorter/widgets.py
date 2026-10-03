@@ -532,12 +532,16 @@ class ClipDelegate(QStyledItemDelegate):
         rating_metrics = QFontMetrics(rating_font)
         separator = " · " if rating is not None else ""
         folder_separator = " · "
-        folder = data.get("folder") or "Unlinked"
+        full_folder = data.get("folder") or "Unlinked"
+        folder = full_folder
+        hdr_label = " HDR" if data.get("hdr") else ""
+        hdr_width = detail_metrics.horizontalAdvance(hdr_label)
         fixed_width = (
             detail_metrics.horizontalAdvance(separator)
             + rating_metrics.horizontalAdvance(rating_text)
             + detail_metrics.horizontalAdvance(folder_separator + warning)
             + (13 if warning else 0)
+            + hdr_width
         )
         flexible_width = max(0, detail.width() - fixed_width)
         folder = detail_metrics.elidedText(
@@ -556,11 +560,13 @@ class ClipDelegate(QStyledItemDelegate):
         )
         text = game + separator + rating_text + folder_separator + folder
         if data.get("browse_details") is not None:
-            text = detail_metrics.elidedText(
-                data["browse_details"],
-                Qt.TextElideMode.ElideRight,
-                max(0, detail.width() - detail_metrics.horizontalAdvance(warning) - (13 if warning else 0)),
-            )
+            capture = data["browse_details"].removesuffix(full_folder)
+            if capture == data["browse_details"]:
+                capture = ""
+            available_width = max(0, detail.width() - hdr_width - detail_metrics.horizontalAdvance(warning) - (13 if warning else 0))
+            capture = detail_metrics.elidedText(capture, Qt.TextElideMode.ElideRight, available_width // 2)
+            folder = detail_metrics.elidedText(folder, Qt.TextElideMode.ElideMiddle, max(0, available_width - detail_metrics.horizontalAdvance(capture)))
+            text = capture + folder
         painter.setClipRect(card)
         painter.setPen(QColor(COLORS["text_secondary"]))
         if data.get("browse_details") is not None:
@@ -600,6 +606,14 @@ class ClipDelegate(QStyledItemDelegate):
                 + folder_separator_width
                 + folder_width
             )
+        if hdr_label:
+            painter.setPen(QColor(COLORS["hdr_label"]))
+            painter.drawText(
+                detail.adjusted(warning_offset, 0, 0, 0),
+                Qt.AlignmentFlag.AlignVCenter,
+                hdr_label,
+            )
+            warning_offset += hdr_width
         if warning:
             painter.setPen(QColor(COLORS["status_warning"]))
             warning_x = detail.left() + warning_offset + 3

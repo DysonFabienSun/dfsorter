@@ -72,6 +72,28 @@ def test_missing_and_undecodable_sources(tmp_path, application):
         cache.close()
 
 
+@pytest.mark.parametrize("transfer", ["smpte2084", "arib-std-b67"])
+def test_hdr_thumbnail_is_tonemapped_and_rekeyed(tmp_path, application, transfer):
+    source = tmp_path / "hdr.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12",
+         "-t", "1", "-vf", "format=yuv420p10le", "-c:v", "libx265", "-threads", "2",
+         "-x265-params", f"pools=2:log-level=error:colorprim=bt2020:transfer={transfer}:colormatrix=bt2020nc",
+         "-y", str(source)], check=True, capture_output=True,
+    )
+    clip = {"clip_id": "hdr", "source_path": str(source), "duration": 1, "hdr": True}
+    cache = ThumbnailCache(tmp_path)
+    try:
+        old_key = cache.signature({**clip, "hdr": False})
+        key, image = cache.request(clip)
+        assert key != old_key and image is None
+        assert wait_for(application, lambda: key in cache.memory)
+        assert not cache.memory[key].isNull()
+        assert cache.memory[key].size().width() == 168
+    finally:
+        cache.close()
+
+
 def test_thumbnail_ffmpeg_does_not_open_windows_console(tmp_path, monkeypatch, application):
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"video")

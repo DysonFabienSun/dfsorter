@@ -2949,6 +2949,23 @@ def test_startup_rescans_enabled_folders(application, tmp_path):
         application.processEvents()
 
 
+@pytest.mark.parametrize("panel", ["Home", "Browse", "Session", "Editing", "Export"])
+def test_hdr_clip_card_label(window, tmp_path, panel):
+    ids = add_clips(window, tmp_path)
+    clip = window.catalogue.clip(ids[0])
+    window.media_info[clip["source_path"]] = {"hdr": 1}
+    window.panel(panel)
+    item = next(
+        (window.library.item(index) for index in range(window.library.count())
+         if window.library.item(index).data(Qt.ItemDataRole.UserRole) == ids[0]),
+        None,
+    )
+    if item is None:
+        pytest.skip("Panel does not list this clip")
+    assert item.data(CLIP_ROLE)["hdr"] is True
+    assert "captures HDR" in item.toolTip()
+
+
 def test_cards_and_verdict_state(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")
@@ -5569,6 +5586,21 @@ def test_prepared_video_warms_behind_frame_before_reveal(window, application, tm
         assert player.warmed_video_geometry == (
             player.video.size(), player.video.devicePixelRatioF()
         )
+
+
+def test_hdr_preloaded_browse_reveals_live_surface(window, application, tmp_path):
+    clip_id = add_clips(window, tmp_path, valid=True)[0]
+    clip = window.catalogue.clip(clip_id)
+    window.media_info[clip["source_path"]] = {"hdr": 1}
+    window.preload_timer.stop()
+    window.prepare_inactive_clips()
+    player = window.browse.player
+    assert wait_for(application, lambda: not player.awaiting_frame)
+
+    window.panel("Browse")
+    assert wait_for(application, lambda: player.video.isVisible() and player.video.mask().isEmpty())
+    assert player.video_container.prepared_frame.isHidden()
+    assert window.transition_cover.isHidden()
 
 
 def test_prepared_video_reveal_is_cancelled_on_page_change(window, application, tmp_path):

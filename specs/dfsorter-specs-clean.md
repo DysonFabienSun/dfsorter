@@ -851,9 +851,11 @@ Sharing:
 4. chooses the whole clip or its saved valid In/Out range, defaulting to the range when available;
 5. creates an H.264 MP4 with one stereo AAC track mixing all audio tracks, or no audio if the source is silent.
 
-Range shares decode and re-encode through the exact source-frame/audio-sample boundaries. Pending In/Out edits do not replace the saved range offered for Share; the dialog explains when it is using the saved pair. Whole H.264 shares copy the video stream without generation loss; other codecs and all range shares re-encode, preferring NVIDIA H.264 P5/CQ19 with x264 medium/CRF18 fallback. Preserve source resolution and frame timing. Share requires FFmpeg and ffprobe and supports background processing, cancellation, temporary output validation, and cleanup on failure.
+Range shares decode and re-encode through the exact source-frame/audio-sample boundaries. Pending In/Out edits do not replace the saved range offered for Share; the dialog explains when it is using the saved pair. Whole SDR H.264 shares copy the video stream without generation loss; other codecs, all range shares, and all HDR shares re-encode, preferring NVIDIA H.264 P5/CQ19 with x264 medium/CRF18 fallback. PQ and HLG sources are tone mapped to tagged BT.709 SDR for Share. Preserve source resolution and frame timing. Share requires FFmpeg and ffprobe and supports background processing, cancellation, temporary output validation, and cleanup on failure.
 
 Share outputs use `.mp4`. Project Export retains the source extension and original bytes.
+
+Media inspection classifies clips tagged PQ (`smpte2084`) or HLG (`arib-std-b67`) as HDR. Library rows show a yellow HDR label after the capture-folder name, and Browse thumbnails are tone mapped to SDR. On Windows, source playback uses libmpv's `gpu-next` renderer with automatic target colorspace hints, allowing display-aware HDR output when the display path supports it. Project Export preserves the original HDR bytes.
 
 Confirmed Shares enter the nonmodal Output Jobs queue. The initiating Share control briefly changes to the success color when submission succeeds. The job freezes the clip, selected range, filename choices, and destination at submission. Output Jobs reports encoding time progress, validation, and saving; it retains completion and errors until dismissed. Share jobs are not resumed across application restarts.
 

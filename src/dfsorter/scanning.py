@@ -38,7 +38,7 @@ class ScanCoordinator:
 
     def inspect(self, item):
         path = Path(item["path"])
-        empty = dict(duration=None, created=None, error=None)
+        empty = dict(duration=None, created=None, error=None, hdr=None)
         probed = False
         try:
             before = path.stat()
@@ -47,6 +47,7 @@ class ScanCoordinator:
                 not self.force
                 and cached
                 and (cached["size"], cached["mtime_ns"]) == (before.st_size, before.st_mtime_ns)
+                and cached["hdr"] is not None
                 and (not cached["error"] or time.time() - cached["inspected_at"] < 86400)
             ):
                 return {**cached, **item}, None, True, False
@@ -54,6 +55,7 @@ class ScanCoordinator:
                 return {**item, **empty}, None, False, False
             probed = True
             info = inspect_media(path, self.executable, self.cancelled)
+            info.setdefault("hdr", 0)
             if info.pop("tool_unavailable", False):
                 return {**item, **info}, None, False, True
             after = path.stat()

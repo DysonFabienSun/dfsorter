@@ -8,7 +8,7 @@ from .app_paths import tool
 
 
 def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=20) -> dict:
-    info = {"duration": None, "created": None, "error": None}
+    info = {"duration": None, "created": None, "error": None, "hdr": None}
     executable = executable or tool("ffprobe")
     if not executable:
         info["error"] = "ffprobe unavailable; duration and media capture time unavailable"
@@ -18,7 +18,7 @@ def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=
         if cancelled():
             raise InterruptedError("Scan cancelled")
         process = subprocess.Popen(
-            [executable, "-v", "error", "-show_format", "-of", "json", str(path)],
+            [executable, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -39,9 +39,12 @@ def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=
                 pass
         if process.returncode:
             raise ValueError(stderr.strip() or "Media inspection failed")
-        data = json.loads(stdout)["format"]
+        result = json.loads(stdout)
+        data = result["format"]
         info["duration"] = float(data["duration"]) if "duration" in data else None
         info["created"] = data.get("tags", {}).get("creation_time")
+        video = next((stream for stream in result.get("streams", []) if stream.get("codec_type") == "video"), None)
+        info["hdr"] = int(video.get("color_transfer") in {"smpte2084", "arib-std-b67"}) if video else 0
     except InterruptedError:
         raise
     except FileNotFoundError:

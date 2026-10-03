@@ -11,6 +11,34 @@ from dfsorter.output import share_clip
 from dfsorter.sharing import probe
 
 
+@pytest.mark.parametrize("transfer", ["smpte2084", "arib-std-b67"])
+@pytest.mark.parametrize("selected_range", [False, True])
+@pytest.mark.parametrize("codec", ["libx265", "libx264"])
+def test_hdr_share_is_sdr(tmp_path, registry, transfer, selected_range, codec):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg required")
+    source = tmp_path / "hdr.mp4"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=12",
+         "-t", "1", "-vf", "format=yuv420p10le", "-c:v", codec, "-threads", "2",
+         *(["-x265-params", f"pools=2:log-level=error:colorprim=bt2020:transfer={transfer}:colormatrix=bt2020nc"]
+           if codec == "libx265" else ["-x264-params", f"colorprim=bt2020:transfer={transfer}:colormatrix=bt2020nc"]),
+         "-y", str(source)],
+        check=True, capture_output=True,
+    )
+    clip = {"source_path": str(source), "in_ms": 250, "out_ms": 750}
+    target = share_clip(
+        clip, registry, tmp_path / "shares", [], custom="sample", selected_range=selected_range
+    )
+    video = next(stream for stream in probe(target)["streams"] if stream["codec_type"] == "video")
+    assert (video["color_primaries"], video["color_transfer"], video["color_space"]) == (
+        "bt709", "bt709", "bt709"
+    )
+    assert subprocess.check_output(
+        ["ffmpeg", "-v", "error", "-i", target, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    )
+
+
 @pytest.mark.parametrize(
     "codec,audio_count,trim",
     [

@@ -84,6 +84,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
     audio = [stream for stream in info["streams"] if stream["codec_type"] == "audio"]
     if not videos:
         raise ValueError("Source has no video stream")
+    hdr = videos[0].get("color_transfer") in {"smpte2084", "arib-std-b67"}
     duration = float(info["format"]["duration"])
     start, end = 0.0, duration
     if selected_range:
@@ -108,10 +109,16 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
             filters.append(
                 f"{inputs}amix=inputs={len(audio)}:duration=longest:dropout_transition=0:normalize=1,apad,atrim=start={start}:end={end},asetpts=PTS-STARTPTS[mixed]"
             )
-        reencode = selected_range or videos[0]["codec_name"] != "h264"
+        reencode = selected_range or videos[0]["codec_name"] != "h264" or hdr
         if reencode:
+            treatment = (
+                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
+                "tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,"
+                if hdr else ""
+            )
             filters.append(
-                f"[0:{videos[0]['index']}]setpts=PTS-STARTPTS,trim=start={start}:end={end},setpts=PTS-STARTPTS,format=yuv420p[video]"
+                f"[0:{videos[0]['index']}]setpts=PTS-STARTPTS,trim=start={start}:end={end},"
+                f"setpts=PTS-STARTPTS,{treatment}format=yuv420p[video]"
             )
         arguments = [
             executable,
@@ -139,7 +146,10 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
             if detailed_progress:
                 detailed_progress(0, f"Encoding {source.name}")
             try:
-                command = arguments + encoder + [
+                command = arguments + encoder + (
+                    ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"]
+                    if hdr else []
+                ) + [
                         "-fps_mode",
                         "passthrough",
                         "-t",
@@ -181,6 +191,13 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
             or len(output_audio) != bool(audio)
         ):
             raise OSError("Share output failed codec/stream validation")
+        if hdr and any(
+            output_video[0].get(field) != "bt709"
+            for field in ("color_primaries", "color_transfer", "color_space")
+        ):
+            raise OSError("Share output failed SDR color validation")
+        if hdr and output_video[0].get("color_range") != "tv":
+            raise OSError("Share output failed SDR range validation")
         if any(stream["codec_name"] != "aac" or stream["channels"] != 2 for stream in output_audio):
             raise OSError("Share output failed audio validation")
         if abs(float(result["format"]["duration"]) - (end - start)) > 0.15:

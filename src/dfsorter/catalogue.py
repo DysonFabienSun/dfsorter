@@ -25,7 +25,7 @@ class Catalogue:
         self.redo_stack = []
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 7:
+            if version > 8:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -62,7 +62,8 @@ class Catalogue:
                 );
                 CREATE TABLE IF NOT EXISTS media_cache (
                     path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
-                    duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL
+                    duration REAL, created TEXT, error TEXT, inspected_at REAL NOT NULL,
+                    hdr INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS export_jobs (
                     job_id TEXT PRIMARY KEY, manifest TEXT NOT NULL,
@@ -73,6 +74,10 @@ class Catalogue:
                 columns = {row["name"] for row in database.execute("PRAGMA table_info(clips)")}
                 if "technical_condition" in columns:
                     database.execute("ALTER TABLE clips RENAME COLUMN technical_condition TO tag")
+            if version < 8 and "hdr" not in {
+                row["name"] for row in database.execute("PRAGMA table_info(media_cache)")
+            }:
+                database.execute("ALTER TABLE media_cache ADD COLUMN hdr INTEGER")
             if version < 3:
                 for table, column in [
                     ("folders", "path"),
@@ -103,7 +108,7 @@ class Catalogue:
                 "CREATE INDEX IF NOT EXISTS tag_casefold_identity "
                 "ON clips(casefold(tag)) WHERE tag IS NOT NULL"
             )
-            database.execute("PRAGMA user_version = 7")
+            database.execute("PRAGMA user_version = 8")
 
     def export_jobs(self):
         return [
@@ -145,9 +150,10 @@ class Catalogue:
                 "DELETE FROM media_cache WHERE path=?", [(path,) for path in invalidated]
             )
             database.executemany(
-                "INSERT OR REPLACE INTO media_cache VALUES "
-                "(:path,:size,:mtime_ns,:duration,:created,:error,:inspected_at)",
-                entries,
+                "INSERT OR REPLACE INTO media_cache "
+                "(path,size,mtime_ns,duration,created,error,inspected_at,hdr) VALUES "
+                "(:path,:size,:mtime_ns,:duration,:created,:error,:inspected_at,:hdr)",
+                [{**entry, "hdr": entry.get("hdr")} for entry in entries],
             )
 
     @contextmanager

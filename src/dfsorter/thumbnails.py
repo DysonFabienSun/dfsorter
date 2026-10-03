@@ -35,7 +35,7 @@ class ThumbnailCache(QObject):
                 return None
         except OSError:
             return None
-        raw = f'{clip["clip_id"]}\0{source.resolve()}\0{stat.st_size}\0{stat.st_mtime_ns}'
+        raw = f'v2\0{clip["clip_id"]}\0{source.resolve()}\0{stat.st_size}\0{stat.st_mtime_ns}\0{bool(clip.get("hdr"))}'
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, clip):
@@ -61,7 +61,7 @@ class ThumbnailCache(QObject):
         clip_id = clip["clip_id"]
         source = clip["source_path"]
         duration = clip.get("duration") or 0
-        future = self.executor.submit(self._extract, key, source, duration)
+        future = self.executor.submit(self._extract, key, source, duration, bool(clip.get("hdr")))
         self.futures[key] = future
 
         def completed(result):
@@ -85,7 +85,7 @@ class ThumbnailCache(QObject):
                 self.futures.pop(key, None)
                 self.pending.discard(key)
 
-    def _extract(self, key, source, duration):
+    def _extract(self, key, source, duration, hdr=False):
         executable = tool("ffmpeg")
         if not executable:
             return None
@@ -94,9 +94,10 @@ class ThumbnailCache(QObject):
         temporary = self.directory / f"{key}.tmp.png"
         points = [max(0.0, duration / 2) if duration and duration < 1 else 1.0, 0.0]
         for point in dict.fromkeys(points):
+            treatment = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p," if hdr else ""
             command = [executable, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
                        "-ss", str(point), "-i", source, "-frames:v", "1",
-                       "-vf", "scale=168:96:force_original_aspect_ratio=decrease,pad=168:96:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
+                       "-vf", treatment + "scale=168:96:force_original_aspect_ratio=decrease,pad=168:96:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
                        str(temporary)]
             try:
                 result = subprocess.run(

@@ -1,3 +1,4 @@
+import json
 import subprocess
 import threading
 import time
@@ -8,6 +9,41 @@ import pytest
 from dfsorter.catalogue import Catalogue, normalized
 from dfsorter.media import inspect_media
 from dfsorter.scanning import ScanCoordinator
+
+
+@pytest.mark.parametrize("transfer,expected", [("smpte2084", 1), ("arib-std-b67", 1), ("bt709", 0), (None, 0)])
+def test_probe_hdr_transfer(monkeypatch, transfer, expected):
+    class Process:
+        returncode = 0
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def communicate(self, timeout=None):
+            stream = {"codec_type": "video"}
+            if transfer:
+                stream["color_transfer"] = transfer
+            return json.dumps({"format": {"duration": "1"}, "streams": [stream]}), ""
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr("dfsorter.media.subprocess.Popen", Process)
+    assert inspect_media(Path("clip.mp4"), "ffprobe")["hdr"] == expected
+
+
+def test_legacy_cache_reprobes_once(catalogue, registry, clips, monkeypatch):
+    monkeypatch.setattr("dfsorter.scanning.tool", lambda name: "ffprobe")
+    monkeypatch.setattr(
+        "dfsorter.scanning.inspect_media",
+        lambda *args: dict(duration=1, created=None, error=None, hdr=1),
+    )
+    folder = catalogue.folders()[0]
+    ScanCoordinator(catalogue, registry).run([folder])
+    with catalogue.connection() as database:
+        database.execute("UPDATE media_cache SET hdr=NULL")
+    assert ScanCoordinator(catalogue, registry).run([folder])[2]["probes"] == 3
+    assert ScanCoordinator(catalogue, registry).run([folder])[2]["hits"] == 3
 
 
 def test_cache_lifecycle(catalogue, registry, clips, monkeypatch):

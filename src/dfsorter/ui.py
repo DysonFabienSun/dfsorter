@@ -1664,6 +1664,7 @@ class Window(QMainWindow):
             and not player.awaiting_frame
             and player.media.mediaStatus() == QMediaPlayer.MediaStatus.LoadedMedia
             and player.prepared_image is None
+            and not self.media_info.get(player.loaded_clip["source_path"], {}).get("hdr")
         ):
             image = player.media.frame_image()
             if not image.isNull():
@@ -1683,12 +1684,18 @@ class Window(QMainWindow):
 
     def begin_page_transition(self, scope="page"):
         self.cancel_prepared_video_reveal()
-        if scope == "page" and not self.transition_pending and self.isVisible():
+        active = self.active_player() if self.current_panel in {"Browse", "Editing", "Export"} else None
+        active_hdr = bool(
+            active and active.loaded_clip and self.media_info.get(
+                active.loaded_clip["source_path"], {}
+            ).get("hdr")
+        )
+        if scope == "page" and not self.transition_pending and self.isVisible() and not active_hdr:
             self.transition_image.setPixmap(self.centralWidget().grab())
             self.transition_image.show()
             self.transition_image.raise_()
             self.loading_label.raise_()
-        elif scope == "clip":
+        else:
             self.transition_image.hide()
             self.transition_image.clear()
         if not self.transition_pending or scope == "page":
@@ -2288,12 +2295,11 @@ class Window(QMainWindow):
             self.export_selection(refresh_library=False)
         if ready_player is not None and not self.transition_pending:
             ready_player.video_container.layout_surface()
-            image = ready_player.prepared_image
-            if image is None:
-                image = ready_player.media.frame_image()
-            ready_player.video_container.show_prepared_frame(
-                image
-            )
+            if not self.media_info.get(ready_player.loaded_clip["source_path"], {}).get("hdr"):
+                image = ready_player.prepared_image
+                if image is None:
+                    image = ready_player.media.frame_image()
+                ready_player.video_container.show_prepared_frame(image)
             # The splitter can resize the new page on the next event pass.
             QTimer.singleShot(
                 0,
@@ -2632,10 +2638,11 @@ class Window(QMainWindow):
             compact_time = compact_capture_time(captured)
         rating = f" · R{clip['rating']}" if clip["rating"] is not None else ""
         folder_name = self.clip_folder_names.get(clip["clip_id"], "Unlinked")
+        hdr = bool(self.media_info.get(clip["source_path"], {}).get("hdr"))
         details = browse_details or (
             f"{clip['game'] or 'Unassigned'}{rating} · {folder_name}"
         )
-        item.setText(f"{card_title}\n{details}{available}")
+        item.setText(f"{card_title}\n{details}{' HDR' if hdr else ''}{available}")
         tooltip = item.text()
         if self.current_panel in {"Browse", "Home", "Session"} and captured is not None:
             tooltip += "\nCaptured: " + captured.astimezone().strftime("%Y-%m-%d %H:%M:%S")
@@ -2670,6 +2677,7 @@ class Window(QMainWindow):
                 "game": clip["game"],
                 "rating": clip["rating"],
                 "folder": folder_name,
+                "hdr": hdr,
                 "triage": clip["triage"],
                 "unavailable": bool(available),
                 "thumbnail": previous.get("thumbnail") if self.current_panel == "Browse" else None,
@@ -2700,7 +2708,7 @@ class Window(QMainWindow):
                 continue
             media = self.media_info.get(clip["source_path"])
             duration = media["duration"] if media is not None and "duration" in media.keys() else None
-            request_clip = {**clip, "duration": duration}
+            request_clip = {**clip, "duration": duration, "hdr": media.get("hdr") if media else None}
             key, image = self.thumbnails.request(request_clip)
             if key is not None:
                 needed.add(key)
