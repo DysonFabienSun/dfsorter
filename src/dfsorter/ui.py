@@ -5114,6 +5114,7 @@ class Window(QMainWindow):
             ),
             record_id=job_id, forget=self.catalogue.delete_export_job, paused=paused,
             subtitle=f"{count} {'clip' if count == 1 else 'clips'}",
+            destination=record["manifest"]["destination"],
         )
 
     def restore_export_jobs(self):
@@ -5343,6 +5344,7 @@ class Window(QMainWindow):
                 detailed_progress=progress,
             ),
             clip_id=clip["clip_id"], subtitle=f"{safe_stem(stem)}.mp4",
+            destination=folder,
         )
         self.flash_share(self.edit_share_button)
 

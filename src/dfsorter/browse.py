@@ -434,6 +434,7 @@ class BrowsePage(QWidget):
             ),
             clip_id=clip["clip_id"],
             subtitle=f"{safe_stem(custom)}.mp4",
+            destination=destination,
         )
         self.window.flash_share(self.share_button)
         if self.fullscreen_state is not None:

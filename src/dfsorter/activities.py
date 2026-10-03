@@ -1,10 +1,14 @@
 """Session-scoped output jobs and their navigation menu."""
 
 import logging
+import subprocess
+import sys
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -60,6 +64,8 @@ class OutputJob:
     bar: QProgressBar | None = None
     action: QPushButton | None = None
     dismiss_button: QPushButton | None = None
+    open_button: QToolButton | None = None
+    destination: str | None = None
     record_id: str | None = None
     forget: object = None
     menu_action: QWidgetAction | None = None
@@ -149,13 +155,14 @@ class Activities(QObject):
         ) if clip_id else None
 
     def submit(self, kind, title, function, *, record_id=None, forget=None, paused=False,
-               clip_id=None, subtitle=""):
+               clip_id=None, subtitle="", destination=None):
         if kind == "Share" and (existing := self.active_share(clip_id)):
             return existing
         was_busy = self.busy()
         job = OutputJob(kind, title, function, subtitle=subtitle,
                         state="Paused" if paused else "Queued",
-                        record_id=record_id, forget=forget, clip_id=clip_id)
+                        record_id=record_id, forget=forget, clip_id=clip_id,
+                        destination=destination)
         if paused:
             job.detail = "Resume to continue unfinished copies"
         self.jobs.append(job)
@@ -247,10 +254,21 @@ class Activities(QObject):
         status_row.addWidget(job.status)
         status_row.addStretch()
         layout.addLayout(status_row)
+        phase_row = QHBoxLayout()
+        phase_row.setSpacing(5)
         job.phase = QLabel(card)
         job.phase.setObjectName("outputJobPhase")
         job.phase.setWordWrap(True)
-        layout.addWidget(job.phase)
+        phase_row.addWidget(job.phase, 1)
+        job.open_button = QToolButton(card)
+        job.open_button.setObjectName("outputJobOpen")
+        job.open_button.setProperty("navUtilityStyle", "ghost")
+        job.open_button.setFixedSize(24, 24)
+        job.open_button.setIconSize(QSize(16, 16))
+        set_icon(job.open_button, "folder-open", size=16)
+        job.open_button.clicked.connect(lambda: self.open_destination(job))
+        phase_row.addWidget(job.open_button, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(phase_row)
         job.bar = QProgressBar()
         job.bar.setObjectName("outputJobProgress")
         job.bar.setRange(0, 100)
@@ -290,6 +308,13 @@ class Activities(QObject):
         job.phase.setProperty("failed", job.state == "Failed")
         job.phase.style().unpolish(job.phase)
         job.phase.style().polish(job.phase)
+        reveal_file = (job.kind == "Share" and job.state == "Completed"
+                       and isinstance(job.result, str) and Path(job.result).is_file())
+        set_icon(job.open_button, "file-search" if reveal_file else "folder-open", size=16)
+        open_label = "Show shared file in Explorer" if reveal_file else "Open output folder in Explorer"
+        job.open_button.setToolTip(open_label)
+        job.open_button.setAccessibleName(open_label)
+        job.open_button.setVisible(bool(job.destination))
         job.bar.setValue(job.percent)
         job.bar.setProperty("statusColor", color)
         job.bar.style().unpolish(job.bar)
@@ -301,6 +326,22 @@ class Activities(QObject):
         job.dismiss_button.setVisible(bool(job.record_id) and not self._active(job))
         job.dismiss_button.setText("Dismiss" if job.state == "Completed" else "Forget")
         job.bar.setVisible(True)
+
+    def open_destination(self, job):
+        if not job.destination:
+            return
+        target = Path(job.destination)
+        reveal_file = (job.kind == "Share" and job.state == "Completed"
+                       and isinstance(job.result, str) and Path(job.result).is_file())
+        try:
+            if reveal_file and sys.platform == "win32":
+                subprocess.Popen(["explorer.exe", "/select,", str(Path(job.result))])
+            else:
+                target.mkdir(parents=True, exist_ok=True)
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(target))):
+                    raise OSError(f"Could not open output folder: {target}")
+        except OSError as error:
+            QMessageBox.warning(self.parent(), "Open output folder", str(error))
 
     def _update_button(self):
         active = sum(self._active(job) for job in self.jobs)

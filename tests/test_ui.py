@@ -4487,6 +4487,51 @@ def test_output_job_cards_stack_and_show_state(window, application):
     assert activities.empty.isVisible()
 
 
+def test_output_job_explorer_buttons_open_folder_or_select_shared_file(
+    window, application, tmp_path, monkeypatch,
+):
+    from dfsorter import activities as activities_module
+
+    opened_folders = []
+    selected_files = []
+    monkeypatch.setattr(activities_module.QDesktopServices, "openUrl",
+                        lambda url: opened_folders.append(url.toLocalFile()) or True)
+    monkeypatch.setattr(activities_module.subprocess, "Popen",
+                        lambda command: selected_files.append(command))
+    monkeypatch.setattr(activities_module.sys, "platform", "win32")
+
+    destination = tmp_path / "shares"
+    share = window.activities.submit(
+        "Share", "Share example", lambda cancelled, progress: None,
+        paused=True, destination=str(destination),
+    )
+    assert share.open_button.property("iconName") == "folder-open"
+    share.open_button.click()
+    assert [Path(folder) for folder in opened_folders] == [destination]
+    assert destination.is_dir()
+
+    output = destination / "shared.mp4"
+    output.write_bytes(b"video")
+    share.result = str(output)
+    share.state = "Completed"
+    window.activities._refresh(share)
+    assert share.open_button.property("iconName") == "file-search"
+    share.open_button.click()
+    assert selected_files == [["explorer.exe", "/select,", str(output)]]
+
+    export_folder = tmp_path / "export"
+    export = window.activities.submit(
+        "Export", "Export example", lambda cancelled, progress: None,
+        paused=True, destination=str(export_folder),
+    )
+    export.state = "Completed"
+    window.activities._refresh(export)
+    assert export.open_button.property("iconName") == "folder-open"
+    export.open_button.click()
+    assert Path(opened_folders[-1]) == export_folder
+    assert len(selected_files) == 1
+
+
 def test_unfinished_export_is_offered_for_resume_after_restart(window, application, tmp_path):
     from dfsorter.output import prepare_export_manifest
 
