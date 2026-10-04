@@ -18,20 +18,28 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QInputDialog,
     QLabel,
     QLineEdit,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStyle,
     QStyleOptionComboBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
+    QTextEdit,
     QToolButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -3431,6 +3439,109 @@ def test_editing_mouse_click_returns_to_review_without_losing_draft(
     window.command.setFocus()
     QTest.mouseClick(window.command, Qt.MouseButton.LeftButton)
     assert application.focusWidget() is window.command
+
+
+@pytest.mark.parametrize("field_name", ["custom_title", "destination"])
+@pytest.mark.parametrize("target_name", ["filename", "details"])
+def test_browse_outside_click_releases_text_focus_and_restores_hotkeys(
+    window, application, monkeypatch, field_name, target_name
+):
+    window.panel("Browse")
+    field = getattr(window.browse, field_name)
+    target = getattr(window.browse, target_name)
+    field.setText("draft")
+    field.setFocus()
+    application.processEvents()
+    QTest.mouseClick(field, Qt.MouseButton.LeftButton)
+    assert application.focusWidget() is field
+    toggles = []
+    monkeypatch.setattr(window.browse.player, "toggle", lambda: toggles.append(True))
+    QTest.keyClick(field, Qt.Key.Key_Space)
+    assert not toggles
+    draft = field.text()
+
+    QTest.mouseClick(target, Qt.MouseButton.LeftButton, pos=QPoint(1, 1))
+    assert application.focusWidget() is not field
+    assert field.text() == draft
+    QTest.keyClick(window, Qt.Key.Key_Space)
+    assert toggles == [True]
+
+
+@pytest.mark.parametrize(
+    "field_type", [QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox]
+)
+def test_dialog_text_fields_release_focus_on_outside_click(window, application, field_type):
+    dialog = QDialog(window)
+    dialog.setModal(True)
+    layout = QVBoxLayout(dialog)
+    field = field_type()
+    if isinstance(field, QComboBox):
+        field.setEditable(True)
+        field.setEditText("draft")
+    elif isinstance(field, (QSpinBox, QDoubleSpinBox)):
+        field.setValue(42)
+    else:
+        if isinstance(field, (QPlainTextEdit, QTextEdit)):
+            field.setPlainText("draft")
+        else:
+            field.setText("draft")
+    layout.addWidget(field)
+    label = QLabel("Outside the text field")
+    layout.addWidget(label)
+    button = QPushButton("Action")
+    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    layout.addWidget(button)
+    clicks = []
+    button.clicked.connect(lambda: clicks.append(True))
+    dialog.show()
+    dialog.activateWindow()
+    application.processEvents()
+    try:
+        for target in (label, button):
+            field.setFocus()
+            application.processEvents()
+            focused = application.focusWidget()
+            assert focused is field or field.isAncestorOf(focused)
+            editor = field.lineEdit() if isinstance(field, QComboBox) else focused
+            text = editor.toPlainText() if hasattr(editor, "toPlainText") else editor.text()
+            inside = field.viewport() if hasattr(field, "viewport") else editor
+            QTest.mouseClick(inside, Qt.MouseButton.LeftButton)
+            assert application.focusWidget() is focused
+            QTest.mouseClick(target, Qt.MouseButton.LeftButton)
+            assert application.focusWidget() is not focused
+            assert (editor.toPlainText() if hasattr(editor, "toPlainText") else editor.text()) == text
+        assert clicks == [True]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        application.processEvents()
+
+
+def test_inline_table_editor_commits_on_outside_label_click(window, application):
+    dialog = QDialog(window)
+    layout = QVBoxLayout(dialog)
+    table = QTableWidget(1, 1)
+    table.setItem(0, 0, QTableWidgetItem("original"))
+    layout.addWidget(table)
+    label = QLabel("Outside the table")
+    layout.addWidget(label)
+    dialog.show()
+    dialog.activateWindow()
+    application.processEvents()
+    try:
+        table.editItem(table.item(0, 0))
+        application.processEvents()
+        editor = application.focusWidget()
+        assert isinstance(editor, QLineEdit)
+        editor.setText("changed")
+        QTest.mouseClick(label, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert application.focusWidget() is not editor
+        assert table.item(0, 0).text() == "changed"
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        application.processEvents()
 
 
 def test_filename_fallback_deduplicates_game_prefix(window, application, tmp_path):

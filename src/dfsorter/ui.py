@@ -39,6 +39,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -3900,6 +3901,28 @@ class Window(QMainWindow):
             }
         ):
             return True
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and isinstance(watched, QWidget)
+            and not QApplication.activePopupWidget()
+        ):
+            focus = QApplication.focusWidget()
+            if isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)) or (
+                isinstance(focus, QComboBox) and focus.isEditable()
+            ):
+                field = focus
+                if isinstance(focus.parentWidget(), (QAbstractSpinBox, QComboBox)):
+                    field = focus.parentWidget()
+                if (
+                    watched.window() is field.window()
+                    and not field.rect().contains(
+                        field.mapFromGlobal(event.globalPosition().toPoint())
+                    )
+                ):
+                    if focus is self.command and self.current_panel == "Editing":
+                        self.review_mode()
+                    else:
+                        focus.clearFocus()
         if watched == self.library.viewport() and event.type() in {
             QEvent.Type.Leave, QEvent.Type.HoverLeave,
         }:
@@ -3960,18 +3983,6 @@ class Window(QMainWindow):
             self.submit_resume = False
             self.update_command_state()
             self.cancel_space()
-        if (
-            event.type() == QEvent.Type.MouseButtonPress
-            and self.current_panel == "Editing"
-            and QApplication.focusWidget() is self.command
-            and isinstance(watched, QWidget)
-            and watched.window() is self
-            and watched is not self.command
-            and not self.command.isAncestorOf(watched)
-            and not QApplication.activeModalWidget()
-            and not QApplication.activePopupWidget()
-        ):
-            self.review_mode()
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
             self.command_separator_range = None
             if event.type() == QEvent.Type.ApplicationDeactivate:
