@@ -3741,6 +3741,25 @@ class Window(QMainWindow):
         self.player.setFocus()
         self.update_command_state()
 
+    def insert_command_separator(self):
+        start = (
+            self.command.selectionStart()
+            if self.command.hasSelectedText()
+            else self.command.cursorPosition()
+        )
+        restore_space = False
+        text = self.command.text()
+        if "--" not in text and start == len(text) and not self.command.hasSelectedText():
+            trimmed_end = len(text.rstrip(" "))
+            restore_space = trimmed_end < start
+            if restore_space:
+                self.command.setSelection(trimmed_end, start - trimmed_end)
+                start = trimmed_end
+        separator = "-- " if start == 0 else " -- "
+        self.command.insert(separator)
+        self.command_separator_range = (start, start + len(separator), restore_space)
+        self.command_separator_space_pending = True
+
     def refresh_shortcut_hint(self):
         pairs = (
             [("Space", "Play/pause"), ("I/O", "Range"), ("Enter", "Metadata")]
@@ -3872,7 +3891,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “ -- ” separator\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “-- ” at start, “ -- ” elsewhere\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def update_library_hover_row(self, hovered=None):
@@ -4103,26 +4122,7 @@ class Window(QMainWindow):
                 and modifiers == Qt.KeyboardModifier.NoModifier
                 and not event.isAutoRepeat()
             ):
-                start = (
-                    self.command.selectionStart()
-                    if self.command.hasSelectedText()
-                    else self.command.cursorPosition()
-                )
-                restore_space = False
-                text = self.command.text()
-                if (
-                    "--" not in text
-                    and start == len(text)
-                    and not self.command.hasSelectedText()
-                ):
-                    trimmed_end = len(text.rstrip(" "))
-                    restore_space = trimmed_end < start
-                    if restore_space:
-                        self.command.setSelection(trimmed_end, start - trimmed_end)
-                        start = trimmed_end
-                self.command.insert(" -- ")
-                self.command_separator_range = (start, start + 4, restore_space)
-                self.command_separator_space_pending = True
+                self.insert_command_separator()
                 return True
             separator_range = self.command_separator_range
             suppress_space = self.command_separator_space_pending
@@ -4132,7 +4132,7 @@ class Window(QMainWindow):
                 start, end, restore_space = separator_range
                 if (
                     self.command.cursorPosition() == end
-                    and self.command.text()[start:end] == " -- "
+                    and self.command.text()[start:end] == ("-- " if start == 0 else " -- ")
                     and not self.command.hasSelectedText()
                 ):
                     if (
@@ -4239,7 +4239,14 @@ class Window(QMainWindow):
             and event.text().isprintable()
         ):
             self.command.setFocus()
-            self.command.insert(event.text())
+            if (
+                key == Qt.Key.Key_Equal
+                and modifiers == Qt.KeyboardModifier.NoModifier
+                and not event.isAutoRepeat()
+            ):
+                self.insert_command_separator()
+            else:
+                self.command.insert(event.text())
             return True
         return super().eventFilter(watched, event)
 

@@ -3203,6 +3203,39 @@ def test_real_playback(window, application, tmp_path, codec):
     window.grab().save(str(artifact / f"maximized-{codec}.png"))
 
 
+@pytest.mark.parametrize("review", [True, False], ids=["review", "command"])
+@pytest.mark.parametrize(
+    "draft,cursor,expanded,restored",
+    [
+        ("", 0, "-- ", ""),
+        ("title", 0, "-- title", "title"),
+        ("jett   ", 7, "jett -- ", "jett "),
+    ],
+)
+def test_equal_expands_when_entering_command_input(
+    window, application, tmp_path, monkeypatch, review, draft, cursor, expanded, restored
+):
+    add_clips(window, tmp_path)
+    window.panel("Editing")
+    monkeypatch.setattr(window, "editing_paused", lambda: True)
+    window.command.setText(draft)
+    window.command.setCursorPosition(cursor)
+    if review:
+        window.review_mode()
+        target = window.player
+    else:
+        window.command.setFocus()
+        target = window.command
+    QTest.keyClick(target, Qt.Key.Key_Equal)
+    assert application.focusWidget() is window.command
+    assert window.command.text() == expanded
+    assert window.command.cursorPosition() == (3 if cursor == 0 else len(expanded))
+    QTest.keyClick(window.command, Qt.Key.Key_Space)
+    assert window.command.text() == expanded
+    QTest.keyClick(window.command, Qt.Key.Key_Backspace)
+    assert window.command.text() == restored
+
+
 def test_paused_typing_and_submit_resume(window, application, tmp_path):
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg required for playback fixtures")
