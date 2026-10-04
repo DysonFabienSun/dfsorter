@@ -82,6 +82,8 @@ class TableEditDelegate(QStyledItemDelegate):
         return editor
 
     def eventFilter(self, watched, event):
+        if isinstance(watched, QLineEdit) and event.type() == QEvent.Type.KeyPress:
+            self.parent().ensure_row_visible(self.parent().currentIndex())
         add_after_commit = (
             isinstance(watched, QLineEdit)
             and event.type() == QEvent.Type.KeyPress
@@ -101,6 +103,27 @@ class ConfigTable(QTableWidget):
     def __init__(self, columns, changed, parent=None):
         super().__init__(0, columns, parent)
         self.changed = changed
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+    def ensure_row_visible(self, index):
+        if not index.isValid():
+            return
+        self.scrollTo(index, QAbstractItemView.ScrollHint.EnsureVisible)
+        ancestor = self.parentWidget()
+        while ancestor is not None:
+            if isinstance(ancestor, QScrollArea) and ancestor.widget() is not None:
+                rect = self.visualRect(index)
+                center = self.viewport().mapTo(ancestor.widget(), rect.center())
+                ancestor.ensureVisible(
+                    center.x(), center.y(), (rect.width() + 1) // 2, (rect.height() + 1) // 2
+                )
+            ancestor = ancestor.parentWidget()
+
+    def edit(self, index, trigger=QAbstractItemView.EditTrigger.AllEditTriggers, event=None):
+        started = super().edit(index, trigger, event)
+        if started:
+            self.ensure_row_visible(index)
+        return started
 
     def dropEvent(self, event):
         if event.source() is not self or self.currentRow() < 0:

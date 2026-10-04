@@ -60,6 +60,61 @@ def editor_window(tmp_path, close_window):
     close_window(window, application)
 
 
+@pytest.mark.parametrize("start", ["add", "type", "resume"])
+def test_active_table_row_is_visible_in_table_and_fields_scroll_area(editor_window, start):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
+
+    application = QApplication.instance()
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    body = QWidget()
+    layout = QVBoxLayout(body)
+    layout.addSpacing(220)
+    rows = Rows(["Alias", "Canonical value"], lambda: None)
+    layout.addWidget(rows)
+    layout.addSpacing(220)
+    scroll.setWidget(body)
+    scroll.resize(420, 220)
+    rows.set_values([[f"alias-{index}", f"value-{index}"] for index in range(20)])
+    scroll.show()
+    scroll.activateWindow()
+    application.processEvents()
+    try:
+        table = rows.table
+        if start == "add":
+            add = next(button for button in rows.findChildren(QPushButton) if button.text() == "Add row")
+            scroll.ensureWidgetVisible(add)
+            QTest.mouseClick(add, Qt.MouseButton.LeftButton)
+        else:
+            table.setCurrentCell(19, 0)
+            table.setFocus()
+            if start == "resume":
+                table.editItem(table.item(19, 0))
+            application.processEvents()
+            rect = table.visualItemRect(table.currentItem())
+            center = table.viewport().mapTo(body, rect.center())
+            # Leave the active row clipped by the enclosing Fields scroll area.
+            scroll.verticalScrollBar().setValue(center.y() - scroll.viewport().height() + 2)
+            target = application.focusWidget() if start == "resume" else table
+            QTest.keyClicks(target, "x")
+        application.processEvents()
+        editor = application.focusWidget()
+        assert isinstance(editor, QLineEdit)
+        assert table.isAncestorOf(editor)
+        rect = table.visualItemRect(table.currentItem())
+        assert table.viewport().rect().contains(rect)
+        top = table.viewport().mapTo(scroll.viewport(), rect.topLeft()).y()
+        bottom = table.viewport().mapTo(scroll.viewport(), rect.bottomLeft()).y()
+        assert 0 <= top <= bottom < scroll.viewport().height()
+        if start != "add":
+            assert "x" in editor.text()
+    finally:
+        scroll.close()
+        scroll.deleteLater()
+        application.processEvents()
+
+
 def test_table_add_row_starts_typing_and_tab_edits_next_cell(editor_window):
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QLineEdit, QPushButton

@@ -509,7 +509,10 @@ wrapping notes beneath tables use the shared secondary-text role to explain comm
 Selection highlights only the current cell, with at most one table selection across
 the editor. Empty table space and clicks outside tables clear the selection; row
 action buttons retain it. Clicking a selected cell opens its editor. Double-clicking
-empty table space adds a row and opens its first cell for editing.
+empty table space adds a row and opens its first cell for editing. Adding a row or
+starting cell editing reveals the complete row height in both the table viewport and
+any enclosing scroll area. The first keystroke in an active editor restores that
+visibility after manual scrolling; focus and entered text stay in the active cell.
 
 ## 7. Qt implementation patterns
 

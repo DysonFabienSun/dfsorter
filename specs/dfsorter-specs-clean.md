@@ -986,6 +986,10 @@ their cells show the same error styling and block Save.
 Add row inserts below the selected cell's row, or appends when no cell is selected.
 Double-clicking empty table space appends a row. Both actions immediately focus and
 edit the new row's first cell. Remove row is available only while a cell is selected.
+Adding a row must immediately reveal the complete row vertically, both inside the table
+and in the enclosing Fields scroll area. Starting cell editing or typing into an active
+cell must likewise reveal its full row height on the first keystroke, including after
+manual scrolling. Preserve the active cell, typed text and normal editing/navigation.
 Dragging a cell reorders its entire row within that table, preserving all column values.
 Each table has a search field and previous/next match arrows after its row buttons on
 the same line. Search highlights every cell containing a case-insensitive substring
