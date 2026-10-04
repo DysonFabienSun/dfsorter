@@ -399,9 +399,20 @@ def test_yaml_size_text_uses_binary_kilobytes(size, label):
 
 
 def test_config_game_search_filters_without_changing_open_draft(editor_window):
+    from PySide6.QtTest import QTest
+
     window = editor_window
     window.panel("Config")
     editor = window.config_editor
+    assert QApplication.focusWidget() is editor.game_search
+    editor.game_search.setText("old query")
+    window.panel("Home")
+    window.panel("Config")
+    assert QApplication.focusWidget() is editor.game_search
+    assert editor.game_search.selectedText() == "old query"
+    QTest.keyClicks(editor.game_search, "val")
+    assert editor.game_search.text() == "val"
+    editor.game_search.clear()
     select_game(editor, "VALORANT.yaml")
     editor.example.setText("unsaved search draft")
     selected = editor.games.currentItem()

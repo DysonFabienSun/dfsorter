@@ -962,7 +962,7 @@ Share and Project Export appear in a top-navigation Output Jobs dropdown with pe
 
 ## 17. Config Panel
 
-Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
+Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. Opening Config focuses Search games and selects any existing query so typing immediately starts a new search. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
 
 A search field above the left game list filters by displayed name, code, or YAML filename,
 case-insensitively. Filtering does not switch or discard the open game draft, even when

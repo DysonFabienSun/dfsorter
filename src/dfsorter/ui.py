@@ -2295,6 +2295,9 @@ class Window(QMainWindow):
                 self.rotate_tip()
         elif name == "Export":
             self.export_selection(refresh_library=False)
+        elif name == "Config":
+            self.config_editor.game_search.setFocus()
+            self.config_editor.game_search.selectAll()
         if ready_player is not None and not self.transition_pending:
             ready_player.video_container.layout_surface()
             if not self.media_info.get(ready_player.loaded_clip["source_path"], {}).get("hdr"):
