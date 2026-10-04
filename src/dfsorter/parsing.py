@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import Registry, title
@@ -14,9 +14,18 @@ class Token:
 
 
 @dataclass
+class FreeformValue:
+    field: str
+    value: str
+    start: int
+    end: int
+
+
+@dataclass
 class ParsedCommand:
     patch: dict
     inferred: list[tuple[str, object]]
+    freeform_values: list[FreeformValue] = field(default_factory=list)
 
 
 def segments(text: str) -> list[str]:
@@ -81,6 +90,7 @@ def parse_command_details(
 ) -> ParsedCommand:
     parts = segments(text)
     patch, metadata = {}, {}
+    freeform_values = []
     if len(parts) > 1:
         patch["mainline"] = parts[1].strip()
     if len(parts) > 2:
@@ -115,15 +125,23 @@ def parse_command_details(
             or (game and lowered.split(":", 1)[0] in game.prefixes and ":" in lowered)
         )
 
-    def enum_boundary(start):
+    def resolve_phrase(start, end):
+        raw = parts[0][tokens[start].start : tokens[end].end].strip().casefold()
+        resolved = game.values.get(raw)
+        if resolved and game.fields[resolved[0]]["type"] == "freeform":
+            return resolved
+        phrase = " ".join(item.value for item in tokens[start : end + 1]).casefold()
+        return game.values.get(phrase)
+
+    def named_value_boundary(start):
         if tokens[start].quoted:
-            return False
+            resolved = game.values.get(tokens[start].value.strip().casefold())
+            return bool(resolved and game.fields[resolved[0]]["type"] == "freeform")
         for end in range(start, len(tokens)):
             if any(item.quoted for item in tokens[start : end + 1]):
                 break
-            phrase = " ".join(item.value for item in tokens[start : end + 1]).casefold()
-            resolved = game.values.get(phrase)
-            if resolved and game.fields[resolved[0]]["type"] == "enum":
+            resolved = resolve_phrase(start, end)
+            if resolved:
                 return True
         return False
 
@@ -161,11 +179,12 @@ def parse_command_details(
             if key is None:
                 raise ValueError(f"Unknown field prefix: {prefix}")
             definition = game.fields[key]
+            start = tokens[index].start
             if definition["type"] == "freeform":
                 while (
                     index + 1 < len(tokens)
                     and not recognized(tokens[index + 1])
-                    and not enum_boundary(index + 1)
+                    and not named_value_boundary(index + 1)
                 ):
                     gap = parts[0][tokens[index].end : tokens[index + 1].start]
                     index += 1
@@ -188,13 +207,15 @@ def parse_command_details(
             if not value:
                 raise ValueError(f"{key} needs a value")
             assign(key, value)
+            if definition["type"] == "freeform":
+                freeform_values.append(FreeformValue(key, value, start, tokens[index].end))
         else:
             resolved = game.values.get(folded)
             consumed = index
             for end in range(index + 1, len(tokens)):
-                phrase = " ".join(item.value for item in tokens[index : end + 1]).casefold()
-                if phrase in game.values:
-                    resolved = game.values[phrase]
+                possible = resolve_phrase(index, end)
+                if possible:
+                    resolved = possible
                     consumed = end
             if resolved is None:
                 raise ValueError(f"Unknown metadata: {token}")
@@ -226,7 +247,7 @@ def parse_command_details(
                     metadata[target_key] = target_value
                     inferred.append((target_key, target_value))
                     pending.append((target_key, target_value))
-    return ParsedCommand(patch, inferred)
+    return ParsedCommand(patch, inferred, freeform_values)
 
 
 def parse_command(text: str, game_name: str | None, registry: Registry) -> dict:

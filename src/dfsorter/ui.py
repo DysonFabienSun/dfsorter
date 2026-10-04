@@ -79,6 +79,7 @@ from .catalogue import Catalogue
 from .command_input import CommandInput
 from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
+from .config_store import GameFile
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .folder_preview_dialog import FolderPreviewDialog
@@ -430,6 +431,10 @@ class BlockedCloseBell:
 class Window(QMainWindow):
     def __init__(self, root=ROOT):
         super().__init__()
+        self.named_value_registration = None
+        self.suppressed_named_values = set()
+        self.named_value_additions = Counter()
+        self.named_value_error = ""
         self.close_requested = False
         self.root = Path(root)
         self.registry = Registry(self.root / "configs/games")
@@ -882,6 +887,8 @@ class Window(QMainWindow):
         self.command = CommandInput()
         self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
+        self.command.cursorPositionChanged.connect(self.command_registration_changed)
+        self.command.selectionChanged.connect(self.command_registration_changed)
         self.command.setPlaceholderText("Enter clip metadata…")
         self.command_separator_range = None
         self.command_separator_space_pending = False
@@ -2296,6 +2303,7 @@ class Window(QMainWindow):
         elif name == "Export":
             self.export_selection(refresh_library=False)
         elif name == "Config":
+            self.config_editor.refresh_named_value_rows()
             self.config_editor.game_search.setFocus()
             self.config_editor.game_search.selectAll()
         if ready_player is not None and not self.transition_pending:
@@ -3625,6 +3633,8 @@ class Window(QMainWindow):
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
+        self.cancel_named_value_registration()
+        self.named_value_error = ""
         self.restored_command = None
         self.command_submitted_error = False
         self.command_submitted_navigation = False
@@ -3656,6 +3666,7 @@ class Window(QMainWindow):
         if hasattr(self, "config_editor"):
             self.config_editor.break_history_group()
         if old is self.command and new is not self.command:
+            self.cancel_named_value_registration()
             self.submit_resume = False
             self.command_submitted_navigation = False
         self.update_command_state()
@@ -3666,6 +3677,13 @@ class Window(QMainWindow):
 
     def update_command_state(self):
         clip = self.effective_clip() if self.current_id else None
+        registration = self.named_value_registration
+        if registration and (
+            self.current_panel != "Editing" or not clip
+            or registration["clip_id"] != self.current_id
+            or registration["game"] != clip["game"]
+        ):
+            self.cancel_named_value_registration()
         self.command.set_ghost_context(
             self.settings.get("ghost_autocomplete_enabled", True),
             self.registry.game(clip["game"]) if clip else None,
@@ -3732,12 +3750,132 @@ class Window(QMainWindow):
         if self.range_block_message:
             validation = "invalid"
             feedback = html.escape(self.range_block_message)
+        if self.named_value_registration:
+            candidate = self.named_value_registration["candidate"]
+            feedback = (
+                f'New {html.escape(candidate.field.replace("_", " "))}: '
+                f'<u>{html.escape(candidate.value)}</u> · Tab to finalize · Enter to cancel'
+            )
+        elif validation == "valid" and self.current_panel == "Editing":
+            candidate = self.named_value_candidate(result, clip)
+            if candidate:
+                feedback += (
+                    ' · <b>Tab to add '
+                    f'<u>{html.escape(candidate.value)}</u> to '
+                    f'{html.escape(clip["game"])} config</b>'
+                )
+        if self.named_value_error:
+            feedback += f' · {html.escape(self.named_value_error)}'
         self.command_feedback.setText(feedback)
         if self.command.property("validationState") != validation:
             self.command.setProperty("validationState", validation)
             self.command.style().unpolish(self.command)
             self.command.style().polish(self.command)
             self.command.update()
+
+    def named_value_candidate(self, result, clip):
+        if not clip or not self.command.hasFocus() or self.command.hasSelectedText():
+            return None
+        game = self.registry.game(clip["game"])
+        if game is None:
+            return None
+        cursor = self.command.cursorPosition()
+        for candidate in result.freeform_values:
+            identity = (game.name, candidate.field, candidate.value.casefold())
+            resolved = game.values.get(candidate.value.casefold())
+            if (
+                identity not in self.suppressed_named_values
+                and not (candidate.start <= cursor <= candidate.end)
+                and not (resolved and resolved[0] == candidate.field)
+            ):
+                return candidate
+        return None
+
+    def cancel_named_value_registration(self):
+        registration = self.named_value_registration
+        if registration:
+            candidate = registration["candidate"]
+            self.suppressed_named_values.add(
+                (registration["game"], candidate.field, candidate.value.casefold())
+            )
+            self.named_value_registration = None
+            self.named_value_error = ""
+
+    def command_registration_changed(self, *_):
+        self.cancel_named_value_registration()
+        self.named_value_error = ""
+        self.update_command_state()
+
+    def register_named_value(self):
+        if self.named_value_registration:
+            registration = self.named_value_registration
+            candidate = registration["candidate"]
+            try:
+                source = registration["source"]
+                self.check_named_value_draft(source)
+                draft = source.draft()
+                definition = draft["fields"][candidate.field]
+                if definition.get("type") != "freeform":
+                    raise ValueError("The field is no longer freeform. Reload configurations.")
+                definition.setdefault("values", []).append(candidate.value)
+                source.save(draft, self.root / "configs/games")
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                self.named_value_error = str(error)
+            else:
+                self.named_value_registration = None
+                self.named_value_error = ""
+                self.named_value_additions[registration["game"]] += 1
+                self.config_editor.rebase_named_value(source.path.name, candidate)
+                self.reload_configs()
+                text = self.command.text()
+                cursor = self.command.cursorPosition()
+                start = candidate.start
+                if text[start] in {'"', "'"}:
+                    start += 1
+                prefix_end = text.index(":", start, candidate.end) + 1
+                self.command.setSelection(start, prefix_end - start)
+                self.command.del_()
+                self.command.setCursorPosition(
+                    cursor - min(max(0, cursor - start), prefix_end - start)
+                )
+        else:
+            clip = self.effective_clip()
+            if not clip:
+                return False
+            result, validation, _ = preview_command_details(
+                self.command.text(), clip["game"], self.registry,
+                existing_metadata=clip["metadata"],
+            )
+            candidate = self.named_value_candidate(result, clip) if validation == "valid" else None
+            if candidate is None or self.range_block_message:
+                return False
+            try:
+                source = None
+                for path in (self.root / "configs/games").glob("*.yaml"):
+                    game_file = GameFile(path)
+                    if (
+                        isinstance(game_file.document, dict)
+                        and game_file.document.get("name") == clip["game"]
+                    ):
+                        source = game_file
+                        break
+                if source is None:
+                    raise ValueError("Game configuration could not be found.")
+                self.check_named_value_draft(source)
+                self.named_value_error = ""
+                self.named_value_registration = {
+                    "candidate": candidate, "game": clip["game"],
+                    "clip_id": self.current_id, "source": source,
+                }
+            except (OSError, ValueError) as error:
+                self.named_value_error = str(error)
+        self.update_command_state()
+        return True
+
+    def check_named_value_draft(self, source):
+        editor = self.config_editor
+        if editor.dirty and editor.source and editor.source.path == source.path:
+            raise ValueError("Save or discard this game's Config draft before adding a named value.")
 
     def review_mode(self):
         self.submit_resume = False
@@ -3909,6 +4047,11 @@ class Window(QMainWindow):
                 self.library.viewport().update(self.library.visualItemRect(item))
 
     def eventFilter(self, watched: QObject, event):
+        if hasattr(self, "named_value_registration") and self.named_value_registration and (
+            event.type() == QEvent.Type.ApplicationDeactivate
+            or event.type() == QEvent.Type.FocusOut and watched is self.command
+        ):
+            self.cancel_named_value_registration()
         if (
             getattr(self, "settings_dialog", None) is not None
             and self.settings_dialog.isVisible()
@@ -4039,6 +4182,19 @@ class Window(QMainWindow):
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
+        if self.current_panel == "Editing" and focus is self.command:
+            if self.named_value_registration and key in {
+                Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape,
+            } and modifiers == Qt.KeyboardModifier.NoModifier:
+                if not event.isAutoRepeat():
+                    self.cancel_named_value_registration()
+                    self.update_command_state()
+                return True
+            if key == Qt.Key.Key_Tab and modifiers == Qt.KeyboardModifier.NoModifier:
+                if event.isAutoRepeat():
+                    return True
+                if self.register_named_value():
+                    return True
         if self.reject_enter_armed and key not in {
             Qt.Key.Key_Shift,
             Qt.Key.Key_Control,

@@ -198,6 +198,15 @@ Checkbox label areas remain transparent so their text sits on the actual parent 
 Keyboard focus on checkboxes strengthens the indicator border with `focus`; it never draws a rectangle around the label text.
 
 Informational tips in dialogs use a quiet `accent.soft` surface with a 2 px `accent.default` left edge, a 16 px Lucide info icon in `accent.default`, and wrapping ordinary body text. Keep the icon and text in one horizontal row with layout-managed padding; do not use a warning color for optional guidance. In the capture-folder preview, show this tip only when the selected folder name resolves to a known game. Its message suggests selecting the parent recordings folder to include sibling game folders, while allowing the selected game folder to be added as-is. Verify the tip in Light and Dark modes and with long paths or translated text.
+Editing freeform registration offers use the existing command feedback font size
+and muted color, with bold offer text and an underlined value. Confirmation keeps
+the same hint styling, with an underlined value and regular surrounding text. Neither
+state adds an icon, background or border. Separate feedback actions with ` · `.
+Config game rows show the run's Editing registration count as `(+1 named value)` or
+`(+N named values)` in `accent.default` cyan, on the same secondary metadata line
+after YAML size. Use the shared secondary metadata font and preserve row alignment
+and selection/hover states; elide long summaries and retain a complete tooltip.
+
 ### Add capture folder dialog
 
 Use 16 px outer padding and a 550 px minimum width. Anchor the content to the top. Keep the

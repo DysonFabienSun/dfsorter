@@ -41,6 +41,7 @@ from .widgets import heading, tool
 
 GAME_SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 1
 GAME_SIZE_ROLE = Qt.ItemDataRole.UserRole + 2
+GAME_ADDITIONS_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 def yaml_size_text(size):
@@ -191,15 +192,25 @@ class GameListDelegate(QStyledItemDelegate):
         )
         painter.setFont(summary_font)
         painter.setPen(QColor(COLORS["text_secondary"]))
+        summary = f"{index.data(GAME_SUMMARY_ROLE)} · {index.data(GAME_SIZE_ROLE)}"
+        additions = index.data(GAME_ADDITIONS_ROLE) or ""
+        additions_width = min(width, summary_metrics.horizontalAdvance(additions)) if additions else 0
+        summary_width = max(0, width - additions_width - (4 if additions else 0))
+        visible_summary = summary_metrics.elidedText(summary, Qt.TextElideMode.ElideRight, summary_width)
+        summary_top = top + title_metrics.height() + 2
         painter.drawText(
-            QRect(left, top + title_metrics.height() + 2, width, summary_metrics.height()),
+            QRect(left, summary_top, summary_width, summary_metrics.height()),
             Qt.AlignmentFlag.AlignVCenter,
-            summary_metrics.elidedText(
-                f"{index.data(GAME_SUMMARY_ROLE)} · {index.data(GAME_SIZE_ROLE)}",
-                Qt.TextElideMode.ElideRight,
-                width,
-            ),
+            visible_summary,
         )
+        if additions:
+            painter.setPen(QColor(COLORS["accent_default"]))
+            painter.drawText(
+                QRect(left + summary_metrics.horizontalAdvance(visible_summary) + 4,
+                      summary_top, additions_width, summary_metrics.height()),
+                Qt.AlignmentFlag.AlignVCenter,
+                summary_metrics.elidedText(additions, Qt.TextElideMode.ElideRight, additions_width),
+            )
         painter.restore()
 
 
@@ -929,6 +940,7 @@ class ConfigEditor(QWidget):
             )
             item.setData(GAME_SIZE_ROLE, yaml_size_text(path.stat().st_size))
             item.setData(Qt.ItemDataRole.UserRole, path.name)
+            self.set_named_value_row(item, game.name if game else None)
             self.games.addItem(item)
             if path.name == select:
                 self.games.setCurrentItem(item)
@@ -943,6 +955,50 @@ class ConfigEditor(QWidget):
             self.tabs.setEnabled(False)
             self.save_button.setEnabled(False)
             self.revert_button.setEnabled(False)
+
+    def set_named_value_row(self, item, game_name):
+        count = self.window.named_value_additions[game_name]
+        additions = f"(+{count} named {'value' if count == 1 else 'values'})" if count else ""
+        item.setData(GAME_ADDITIONS_ROLE, additions)
+        item.setToolTip(
+            f'{item.text()}\n{item.data(GAME_SUMMARY_ROLE)} · {item.data(GAME_SIZE_ROLE)}'
+            + (f" {additions}" if additions else "")
+        )
+
+    def refresh_named_value_rows(self):
+        # Refresh metadata without switching or replacing an open Config draft.
+        for index in range(self.games.count()):
+            item = self.games.item(index)
+            path = self.directory / item.data(Qt.ItemDataRole.UserRole)
+            game = self.window.registry.game(item.text())
+            if path.exists():
+                item.setData(GAME_SIZE_ROLE, yaml_size_text(path.stat().st_size))
+            self.set_named_value_row(item, game.name if game else None)
+
+    def rebase_named_value(self, filename, candidate):
+        """Keep registrations in existing snapshots without creating an undo step."""
+        def update(state):
+            definition = state["draft"].get("fields", {}).get(candidate.field)
+            if definition and definition.get("type") == "freeform":
+                values = definition.setdefault("values", [])
+                if candidate.value.casefold() not in {value.casefold() for value in values}:
+                    values.append(candidate.value)
+            if state["field_key"] == candidate.field and state["field"]["type"] == "freeform":
+                rows = state["field"]["values"]
+                if candidate.value.casefold() not in {row[0].casefold() for row in rows if row}:
+                    rows.append([candidate.value])
+
+        for states in (self.initial_states, self.saved_states):
+            if filename in states:
+                update(states[filename])
+        for histories in (self.histories, self.saved_histories):
+            history = histories.get(filename)
+            if history:
+                for change in [*history.undo_stack, *history.redo_stack]:
+                    update(change.before)
+                    update(change.after)
+        if self.source and self.source.path.name == filename:
+            self.load_game(filename)
 
     def filter_games(self):
         query = self.game_search.text().strip().casefold()

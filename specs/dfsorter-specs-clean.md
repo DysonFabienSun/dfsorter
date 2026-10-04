@@ -670,6 +670,41 @@ normal populated marker. Command history appends smaller muted provenance such a
 
 `tag:` is a reserved global prefix for the tag field, available without an assigned game. Use `[LOW_FPS]`, `tag:LOW_FPS` or `tag:"audio issue"`. Bracket syntax accepts one non-empty token without spaces; `[]` and brackets containing spaces are invalid. `tag:""` clears; bare `tag:` is invalid. Conflicting repeated assignments reject the entire command. For a valid tag draft, replace the generic apply hint with `[TAG] Known tag` when it matches any library clip case-insensitively, or `[TAG] New tag` otherwise. Render the bracketed tag bold in primary text; render Known tag as secondary text and New tag in the accent color. Search accepts `tag:` with exact, case-insensitive matching (empty search values remain invalid). Game configurations cannot reuse this prefix. VALORANT accepts `brim` as an input alias for canonical `Brimstone`.
 
+In Editing, valid commands containing unregistered prefixed freeform values offer
+`Enter to apply · Tab to add <value> to <game> config`. Append the offer after tag
+feedback when present. Offer one value at a time in command order, only while the
+command input is focused, with no selection, and the caret is outside the entire
+parsed value including its boundaries. Trailing whitespace or moving to another
+command segment can make a value eligible. Registered named values and aliases match
+case-insensitively and receive no offer. All freeform fields participate; enum fields,
+inferred values, mainline and description do not. Invalid or incomplete commands
+receive no offer.
+
+Tab starts read-only confirmation: `New <field>: <value> · Tab to finalize · Enter to
+cancel`. Tab again atomically saves the named value to the current game's editable
+YAML immediately and reloads recognition, without submitting the command or adding
+a clip or Config undo step. After a successful save, remove only that occurrence's
+field prefix and colon from the command input. Preserve its value, quotes, surrounding
+text and whitespace, and adjust the caret by the removed prefix length when needed.
+The edit updates the command draft and supports native text undo. Registered named
+values also delimit preceding prefixed freeform values, retaining the command's
+field assignments after prefix removal. Cancellation and failed saves retain the
+original prefix. Preserve YAML comments and unrelated
+settings; shipped defaults are unaffected. Existing structured Config history and
+revert baselines retain the addition. Unsaved Config edits for that game block
+registration with inline feedback. A file changed after confirmation began cannot
+be overwritten. Validation or write failures keep confirmation open and show an
+inline error; no partial registration is saved.
+
+Enter or Escape during confirmation cancels registration and preserves the command.
+Typing, changing selection or caret, losing input focus, application deactivation, or
+changing clip, game or page also cancels confirmation. Cancelled values are suppressed
+for the rest of the application run, keyed by game, field and case-insensitive value.
+Other values remain eligible. Registration keys override their ordinary functions
+while applicable and ignore auto-repeat; elsewhere Tab retains focus navigation.
+Successful registration reveals the next eligible value. Enter still applies the
+command separately. Registrations persist independently of single-clip Save/Revert.
+
 General syntax:
 
 ```text
@@ -969,6 +1004,11 @@ case-insensitively. Filtering does not switch or discard the open game draft, ev
 its list item is hidden. Clearing search restores the full list.
 Game rows show the current YAML file size after code and field count on the second line,
 using B below 1,024 bytes and KB at or above 1,024 bytes (1 KB = 1,024 B).
+On opening Config, game rows also show a cyan `(+1 named value)` or
+`(+N named values)` after the size for registrations made from Editing during the
+current application run. Counts accumulate per game until application close; this
+notice creates no Config undo step. Retain the complete summary in the row tooltip
+when the sidebar is too narrow to display it.
 New weapon fields include `wpn` as a prefix alias by default.
 
 Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.

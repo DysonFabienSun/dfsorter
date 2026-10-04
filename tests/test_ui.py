@@ -85,6 +85,251 @@ def wait_for(application, predicate, timeout=12):
     return False
 
 
+@pytest.fixture
+def registration_window(window, application, tmp_path):
+    ids = add_clips(window, tmp_path)
+    window.catalogue.patch(ids[0], {"game": "Escape from Tarkov"})
+    window.panel("Editing")
+    window.activateWindow()
+    window.command.setFocus()
+    application.processEvents()
+    return window
+
+
+def test_named_value_registration_saves_without_submitting(registration_window, application):
+    from dfsorter.config_editor import GAME_ADDITIONS_ROLE, GAME_SIZE_ROLE
+    from dfsorter.parsing import parse_command
+
+    window = registration_window
+    command = window.command
+    command.setText("wpn:m16a1 ")
+    assert '<b>Tab to add <u>m16a1</u> to Escape from Tarkov config</b>' in window.command_feedback.text()
+    clip_before = window.catalogue.clip(window.current_id)
+    cursor = command.cursorPosition()
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert command.hasFocus()
+    assert window.command_feedback.text() == 'New weapon: <u>m16a1</u> · Tab to finalize · Enter to cancel'
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert window.named_value_registration is None
+    assert command.text() == "m16a1 "
+    assert command.cursorPosition() == cursor - len("wpn:")
+    assert window.catalogue.clip(window.current_id) == clip_before
+    assert parse_command("m16a1", "Escape from Tarkov", window.registry)["metadata"] == {"weapon": ["m16a1"]}
+    saved = yaml.safe_load((window.root / "configs/games/Escape from Tarkov.yaml").read_text(encoding="utf-8"))
+    assert saved["fields"]["weapon"]["values"] == ["m16a1"]
+    assert "Tab to add" not in window.command_feedback.text()
+    config_history = window.config_editor.histories.get("Escape from Tarkov.yaml")
+    assert config_history is None or not config_history.undo_stack
+    window.panel("Config")
+    item = next(window.config_editor.games.item(index) for index in range(window.config_editor.games.count())
+                if window.config_editor.games.item(index).text() == "Escape from Tarkov")
+    assert item.data(GAME_ADDITIONS_ROLE) == "(+1 named value)"
+    assert item.data(GAME_SIZE_ROLE) in item.toolTip()
+    assert "(+1 named value)" in item.toolTip()
+
+
+@pytest.mark.parametrize("text,cursor,offered", [
+    ("wpn:m16a1", None, False),
+    ("wpn:m16a1 ", None, True),
+    ("wpn:m16a1 ", 7, False),
+    ("wpn:m16a1 ", 9, False),
+    ("wpn:m16 a1 ", 7, False),
+    ("wpn:m16 a1 ", None, True),
+    ('wpn:"m16 a1" ', None, True),
+    ("wpn:m16a1 map:lab", None, True),
+    ("wpn:m16a1 -- description", None, True),
+    ("wpn:m16a1 R6 ", None, False),
+    ('wpn:"m16a1 ', None, False),
+    ("-- wpn:m16a1 ", None, False),
+])
+def test_named_value_offer_boundaries(registration_window, text, cursor, offered):
+    window = registration_window
+    window.command.setText(text)
+    if cursor is not None:
+        window.command.setCursorPosition(cursor)
+    assert ("Tab to add" in window.command_feedback.text()) is offered
+
+
+@pytest.mark.parametrize("cancel", ["enter", "escape", "caret", "typing", "selection", "focus", "page", "game"])
+def test_named_value_cancel_suppresses_for_run(registration_window, cancel):
+    window = registration_window
+    command = window.command
+    command.setText("wpn:m16a1 ")
+    before = window.catalogue.clip(window.current_id)
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    if cancel == "enter":
+        QTest.keyClick(command, Qt.Key.Key_Return)
+        assert command.hasFocus()
+    elif cancel == "escape":
+        QTest.keyClick(command, Qt.Key.Key_Escape)
+        assert command.hasFocus()
+    elif cancel == "caret":
+        command.setCursorPosition(1)
+    elif cancel == "typing":
+        QTest.keyClicks(command, "x")
+    elif cancel == "selection":
+        command.selectAll()
+    elif cancel == "focus":
+        window.review_mode()
+    elif cancel == "page":
+        window.panel("Session")
+    elif cancel == "game":
+        window.catalogue.patch(window.current_id, {"game": "VALORANT"})
+        window.render_clip()
+        window.catalogue.patch(window.current_id, {"game": "Escape from Tarkov"})
+    assert window.named_value_registration is None
+    assert ("Escape from Tarkov", "weapon", "m16a1") in window.suppressed_named_values
+    if cancel in {"enter", "escape", "focus", "page"}:
+        assert command.text() == "wpn:m16a1 "
+    window.panel("Editing")
+    command.setFocus()
+    command.setText("wpn:M16A1 ")
+    assert "Tab to add" not in window.command_feedback.text()
+    assert window.catalogue.clip(window.current_id)["metadata"] == before["metadata"]
+    command.setText("wpn:m16a2 ")
+    assert "Tab to add" in window.command_feedback.text()
+
+
+def test_named_value_multiple_fields_tag_and_known_alias(registration_window):
+    from dfsorter.config_store import GameFile
+
+    window = registration_window
+    source = GameFile(window.root / "configs/games/Escape from Tarkov.yaml")
+    draft = source.draft()
+    draft["fields"]["map"]["type"] = "freeform"
+    source.save(draft, source.path.parent)
+    window.reload_configs()
+    window.command.setText("wpn:m16a1 wpn:m16a2 map:new map tag:TEST ")
+    assert "New tag" in window.command_feedback.text()
+    for field, value in [("weapon", "m16a1"), ("weapon", "m16a2"), ("map", "new map")]:
+        assert f"Tab to add <u>{value}</u>" in window.command_feedback.text()
+        QTest.keyClick(window.command, Qt.Key.Key_Tab)
+        assert window.named_value_registration["candidate"].field == field
+        QTest.keyClick(window.command, Qt.Key.Key_Tab)
+    assert window.named_value_additions["Escape from Tarkov"] == 3
+    window.command.setText("map:LABS ")
+    assert "Tab to add" not in window.command_feedback.text()
+    window.command.setText("wpn:M16A1 ")
+    assert "Tab to add" not in window.command_feedback.text()
+
+
+def test_named_value_blocks_config_draft_and_retains_history(registration_window):
+    window = registration_window
+    editor = window.config_editor
+    filename = "Escape from Tarkov.yaml"
+    editor.load_game(filename)
+    editor.example.setText("changed example")
+    assert editor.dirty
+    window.command.setFocus()
+    window.command.setText("wpn:m16a1 ")
+    QTest.keyClick(window.command, Qt.Key.Key_Tab)
+    assert window.named_value_registration is None
+    assert "Config draft" in window.command_feedback.text()
+    assert editor.save()
+    history_count = len(editor.histories[filename].undo_stack)
+    window.command.setFocus()
+    QTest.keyClick(window.command, Qt.Key.Key_Tab)
+    QTest.keyClick(window.command, Qt.Key.Key_Tab)
+    assert len(editor.histories[filename].undo_stack) == history_count
+    assert not editor.dirty
+    editor.undo()
+    assert editor.example.text() != "changed example"
+    assert "m16a1" in editor.collect()["fields"]["weapon"]["values"]
+    assert editor.save()
+    assert "m16a1" in window.registry.game("Escape from Tarkov").fields["weapon"]["values"]
+
+
+@pytest.mark.parametrize("failure", ["external", "write", "collision"])
+def test_named_value_failure_preserves_confirmation(registration_window, monkeypatch, failure):
+    window = registration_window
+    command = window.command
+    command.setText("wpn:Factory " if failure == "collision" else "wpn:m16a1 ")
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    source = window.named_value_registration["source"]
+    if failure == "external":
+        source.path.write_text(source.text + "\n# External change\n", encoding="utf-8")
+    elif failure == "write":
+        monkeypatch.setattr(source, "save", lambda *_args: (_ for _ in ()).throw(OSError("Write failed")))
+    before = source.path.read_bytes()
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert source.path.read_bytes() == before
+    assert window.named_value_registration is not None
+    assert window.named_value_error
+    assert "Tab to finalize" in window.command_feedback.text()
+    assert not window.named_value_additions
+    QTest.keyClick(command, Qt.Key.Key_Return)
+    assert window.named_value_registration is None
+
+
+def test_named_value_keys_keep_submission_optional(registration_window, application):
+    window = registration_window
+    command = window.command
+    command.setText("wpn:m16a1 ")
+    QTest.keyClick(command, Qt.Key.Key_Return)
+    assert window.catalogue.clip(window.current_id)["metadata"]["weapon"] == ["m16a1"]
+    assert "m16a1" not in window.registry.game("Escape from Tarkov").fields["weapon"].get("values", [])
+    command.setText("wpn:m16a2 ")
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    for key in (Qt.Key.Key_Tab, Qt.Key.Key_Return):
+        event = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier, "", True)
+        application.sendEvent(command, event)
+        assert window.named_value_registration is not None
+        assert not window.named_value_additions
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    command.setText("wpn:M16A2 ")
+    assert "Tab to add" not in window.command_feedback.text()
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert not command.hasFocus()
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("wpn:m16a1 wpn:other ", "m16a1 wpn:other "),
+    ("weapon:m16a1 map:lab -- title", "m16a1 map:lab -- title"),
+    ('wpn:"M16 A1" map:lab', '"M16 A1" map:lab'),
+    ('"wpn:m16a1" map:lab', '"m16a1" map:lab'),
+    ("wpn:M16   A1 map:lab", "M16   A1 map:lab"),
+])
+def test_named_value_finalization_strips_only_registered_prefix(registration_window, text, expected):
+    from dfsorter.parsing import parse_command
+
+    window = registration_window
+    command = window.command
+    command.setText(text)
+    original_patch = parse_command(text, "Escape from Tarkov", window.registry)
+    original_cursor = command.cursorPosition()
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert command.text() == text
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert command.text() == expected
+    assert command.cursorPosition() == original_cursor - (len(text) - len(expected))
+    assert window.drafts[window.current_id] == expected
+    assert parse_command(expected, "Escape from Tarkov", window.registry) == original_patch
+    command.undo()
+    assert command.text() == text
+
+
+def test_named_value_prefix_removal_preserves_preceding_freeform(registration_window):
+    from dfsorter.config_store import GameFile
+    from dfsorter.parsing import parse_command
+
+    window = registration_window
+    source = GameFile(window.root / "configs/games/Escape from Tarkov.yaml")
+    draft = source.draft()
+    draft["fields"]["map"]["type"] = "freeform"
+    source.save(draft, source.path.parent)
+    window.reload_configs()
+    command = window.command
+    command.setText("map:new map wpn:new weapon ")
+    command.setCursorPosition(6)
+    patch = parse_command(command.text(), "Escape from Tarkov", window.registry)
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert window.named_value_registration["candidate"].field == "weapon"
+    QTest.keyClick(command, Qt.Key.Key_Tab)
+    assert command.text() == "map:new map new weapon "
+    assert command.cursorPosition() == 6
+    assert parse_command(command.text(), "Escape from Tarkov", window.registry) == patch
+
+
 def test_command_ghost_expansions_use_configured_aliases(registry):
     game = registry.game("VALORANT")
     expansions = command_expansions("hh weapon:tdf -- hh", game)
