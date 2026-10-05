@@ -2,28 +2,30 @@
 
 import sqlite3
 from copy import deepcopy
+from pathlib import Path
 from uuid import uuid4
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QGridLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
-    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from .output import check_destination, prepare_export_manifest
-from .project_workspace import project_readiness
+from .config import title
+from .output import check_destination, prepare_export_manifest, safe_stem
 from .theme import role
+from .widgets import UNDERLINE_ROLE, FlowLayout, UnderlinedComboBox
 
 
 def normalized_preferences(saved, games, registry, fallback_destination):
@@ -61,7 +63,7 @@ class ProjectExportDialog(QDialog):
         )
         self.job_id = None
         self.setWindowTitle(f"Export · {self.project['name']}")
-        self.resize(640, 540)
+        self.resize(640, 320)
         self.options = normalized_preferences(
             self.project["output_preferences"],
             {clip["game"] for clip in self.clips()},
@@ -84,29 +86,31 @@ class ProjectExportDialog(QDialog):
         choose.clicked.connect(self.choose_folder)
         row.addWidget(choose)
         body.addLayout(row)
-        self.game = QComboBox()
-        self.game.setAccessibleName("Filename options for game")
-        self.game.addItems(
-            sorted({clip["game"] for clip in self.clips() if window.registry.game(clip["game"])})
+        self.game = UnderlinedComboBox()
+        self.game.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
+        self.game.setMinimumContentsLength(12)
+        self.game.setAccessibleName("Filename options for game")
+        self.examples = {}
+        for clip in self.clips():
+            if clip["triage"] == "keep" and window.registry.game(clip["game"]):
+                self.examples.setdefault(clip["game"], clip)
+        for name in sorted(self.examples):
+            self.game.addItem(name, name)
+        self.refresh_game_labels()
         body.addWidget(self.game)
-        self.fields = QWidget()
-        self.field_layout = QGridLayout(self.fields)
-        self.field_layout.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(self.fields)
-        body.addWidget(scroll)
+        self.fields = QFrame()
+        role(self.fields, "outlinedGroup")
+        self.fields.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.field_layout = QVBoxLayout(self.fields)
+        self.field_layout.setContentsMargins(12, 12, 12, 12)
+        self.field_layout.setSpacing(8)
+        body.addWidget(self.fields)
         self.group_rating = QCheckBox("Group by Rating")
         self.group_rating.setChecked(self.options["group_rating"])
         body.addWidget(self.group_rating)
-        self.readiness = QLabel()
-        self.readiness.setWordWrap(True)
-        body.addWidget(self.readiness)
-        self.details = QPlainTextEdit()
-        self.details.setReadOnly(True)
-        self.details.setAccessibleName("Project readiness details")
-        body.addWidget(self.details, 1)
+        body.addStretch()
         self.error = QLabel()
         self.error.setWordWrap(True)
         role(self.error, "error")
@@ -118,9 +122,9 @@ class ProjectExportDialog(QDialog):
         self.submit_button.clicked.connect(self.submit)
         body.addWidget(buttons)
         self.game.currentIndexChanged.connect(self.show_fields)
-        self.destination.textChanged.connect(self.refresh_readiness)
+        self.destination.textChanged.connect(self.refresh_submission)
         self.show_fields()
-        self.refresh_readiness()
+        self.refresh_submission()
 
     def clips(self):
         ids = self.window.catalogue.member_ids(self.project_id)
@@ -130,16 +134,25 @@ class ProjectExportDialog(QDialog):
         while self.field_layout.count():
             item = self.field_layout.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
-        game = self.window.registry.game(self.game.currentText())
+        game = self.window.registry.game(self.game.currentData())
         if not game:
             return
         options = self.options["formats"][game.name]
-        prefix = QCheckBox("Game code prefix")
+        prefix = QCheckBox(f"Game code prefix [{game.code}]")
         prefix.setChecked(options["prefix"])
-        prefix.toggled.connect(lambda checked: options.update(prefix=checked))
-        self.field_layout.addWidget(prefix, 0, 0, 1, 2)
-        for index, field in enumerate(game.display_order):
+
+        def toggle_prefix(checked):
+            options.update(prefix=checked)
+            self.refresh_game_labels()
+
+        prefix.toggled.connect(toggle_prefix)
+        self.field_layout.addWidget(prefix)
+        field_row = QWidget()
+        flow = FlowLayout(field_row)
+        self.field_layout.addWidget(field_row)
+        for field in game.display_order:
             control = QCheckBox(field)
             control.setChecked(field in options["fields"])
 
@@ -147,29 +160,47 @@ class ProjectExportDialog(QDialog):
                 chosen = set(options["fields"])
                 chosen.add(field) if checked else chosen.discard(field)
                 options["fields"] = [name for name in game.display_order if name in chosen]
+                self.refresh_game_labels()
 
             control.toggled.connect(toggle)
-            self.field_layout.addWidget(control, index // 3 + 1, index % 3)
+            flow.addWidget(control)
+
+    def refresh_game_labels(self):
+        for index in range(self.game.count()):
+            name = self.game.itemData(index)
+            game = self.window.registry.game(name)
+            clip = self.examples[name]
+            options = self.options["formats"][name]
+            spans = []
+            stem = safe_stem(title(
+                clip, self.window.registry, options["fields"], options["prefix"],
+                lowercase=self.window.settings.get("lowercase_generated_titles", True),
+                text_spans=spans,
+            ), text_spans=spans)
+            filename = stem + Path(clip["source_path"]).suffix
+            self.game.setItemText(index, f"{game.code} · {filename}")
+            self.game.setItemData(index, [
+                (start + len(game.code) + 3, length)
+                for field, start, length in spans if field == "mainline"
+            ], UNDERLINE_ROLE)
+            self.game.setItemData(index, f"{game.name} · {filename}", Qt.ItemDataRole.ToolTipRole)
 
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Export folder", self.destination.text())
         if folder:
             self.destination.setText(folder)
 
-    def refresh_readiness(self):
-        categories, errors = project_readiness(self.clips(), self.window.registry)
-        self.readiness.setText(" · ".join(f"{name} {len(ids)}" for name, ids in categories.items()))
-        self.details.setPlainText("\n".join(errors.values()) or "No blocking clips.")
-        role(self.details, "error" if errors else "secondary")
+    def refresh_submission(self):
         self.submit_button.setEnabled(
-            bool(categories["Ready"]) and not errors and bool(self.destination.text().strip())
+            any(clip["triage"] != "discard" for clip in self.clips())
+            and bool(self.destination.text().strip())
         )
 
     def submit(self):
         window = self.window
         if not window.ensure_range_complete():
             return
-        self.refresh_readiness()
+        self.refresh_submission()
         if not self.submit_button.isEnabled():
             return
         if window.worker is not None or window.close_requested:
@@ -200,6 +231,7 @@ class ProjectExportDialog(QDialog):
                 options["formats"],
                 options["group_rating"],
                 lowercase=lowercase,
+                defer_validation=True,
             )
             manifest["project_name"] = self.project["name"]
             manifest["choices"] = {

@@ -352,7 +352,7 @@ Export's From/date and Through/date pairs use a shared grid with stretching inpu
 
 Put the estimated export-size label immediately left of Export… in the existing bottom action row. Right-align the row with layout stretch, vertically center the label and button, and use the shared secondary-text role and storage-size formatting (two decimal places, binary GB). Preserve shared spacing and the player's available height; do not add a separate estimate row or fixed label widths. Functional estimate scope follows main specs §16.
 
-Export setup is an application-owned modal dialog. Use ordinary destination controls, per-game field/prefix checkboxes in a scrollable area, Group by Rating, project-wide readiness and scrollable details. The final Export action uses the primary role; Cancel and folder selection remain secondary. Match disabled, focus and hover states across Light and Dark modes.
+Export setup is an application-owned modal dialog. Use ordinary destination controls, per-game field/prefix checkboxes in a content-height outlined group and Group by Rating. Fit the prefix and all wrapped field rows on screen without scrollbars or unused space inside the outline; update its height when the selected game or available width changes. Use the shared outlined-group role and 12 px inner margins. Keep readiness counts and blocking-clip details out of this task-creation dialog; job failures belong in Output jobs. The final Export action uses the primary role; Cancel and folder selection remain secondary. Match disabled, focus and hover states across Light and Dark modes.
 
 ## 4. Sparse-page composition
 
@@ -512,7 +512,7 @@ Export's navigation toolbar places the **Assigned / Available** selector and an 
 
 Preserve existing workflows and page-specific constraints. Apply the same shared surface,
 typography, form alignment, button hierarchy and state styling used elsewhere. Export's final
-commit action is primary; setup and utility actions remain secondary. Config uses a game list
+commit action is primary; setup and utility actions remain secondary. The export setup game selector uses the shared input style and a code plus live example filename, with long labels elided in the middle and full text in the tooltip. Underline the complete mainline portion of live filename examples in both the closed selector and popup, retaining the shared font, color, baseline, hover and selection styling for all other text. Filename options place Game code prefix [CODE] on its own first row. Remaining field checkboxes pack horizontally at their natural widths in display order and wrap to additional rows as space requires, using shared 8 px spacing without fixed grid columns. Fit the options outline to its occupied rows and hide outgoing controls immediately on game changes. Config uses a game list
 in the left pane and compact Identity, Fields, and Title & review tabs in the center. Its
 single Save action is primary; Revert, Reload and row actions remain secondary. Keep structured
 tables legible in Light and Dark without adding decorative cards merely to occupy space.

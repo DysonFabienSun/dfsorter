@@ -11,10 +11,12 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QInputDialog,
     QLabel,
+    QScrollArea,
     QStyle,
     QStyleOptionViewItem,
     QTabWidget,
@@ -28,7 +30,7 @@ from dfsorter.project_workspace import MembershipHistory, WorkspaceView, filter_
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS
 from dfsorter.ui import ROOT, Window
-from dfsorter.widgets import CLIP_ROLE
+from dfsorter.widgets import CLIP_ROLE, UNDERLINE_ROLE
 
 application = test_ui.application
 window = test_ui.window
@@ -1080,6 +1082,113 @@ def test_selection_preview_filters_and_atomic_return(window, application, tmp_pa
     assert window.library.count() == len(ids)
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_export_dialog_live_filename_examples_and_compact_fields(
+    window, application, tmp_path, theme
+):
+    ids, project = seed_workspace(window, tmp_path, 5)
+    window.set_theme(theme, persist=False)
+    window.settings["lowercase_generated_titles"] = theme == "light"
+    window.catalogue.batch_membership(project, ids, True)
+    window.catalogue.patch(ids[0], {
+        "metadata": {"agent": "Jett", "kill": 3}, "mainline": "Clutch Win",
+    })
+    window.catalogue.patch(ids[1], {"game": "Apex Legends", "mainline": None})
+    window.catalogue.patch(ids[2], {"game": "Battlefield 6", "triage": "discard"})
+    window.catalogue.patch(ids[3], {"game": "Overwatch", "triage": None})
+    dialog = ProjectExportDialog(window, project)
+    dialog.show()
+    application.processEvents()
+    assert {dialog.game.itemData(i) for i in range(dialog.game.count())} == {
+        "Apex Legends", "VALORANT",
+    }
+    previous_prefix = dialog.field_layout.itemAt(0).widget()
+    dialog.game.setCurrentIndex(dialog.game.findData("VALORANT"))
+    assert previous_prefix.isHidden()
+    application.processEvents()
+    prefix = dialog.field_layout.itemAt(0).widget()
+    fields = dialog.field_layout.itemAt(1).widget()
+    controls = {control.text(): control for control in fields.findChildren(QCheckBox)}
+    assert prefix.text() == "Game code prefix [VAL]"
+    assert fields.y() > prefix.geometry().bottom()
+    assert len({control.y() for control in controls.values()}) == 1
+    assert not dialog.findChildren(QScrollArea)
+    wide_height = dialog.fields.height()
+    assert dialog.fields.height() == dialog.field_layout.totalHeightForWidth(dialog.fields.width())
+
+    def assert_matches_manifest():
+        clip = window.catalogue.clip(ids[0])
+        manifest = prepare_export_manifest(
+            [clip], window.registry, tmp_path / "output", window.catalogue.folders(),
+            dialog.options["formats"], lowercase=window.settings["lowercase_generated_titles"],
+        )
+        assert dialog.game.currentText() == f"VAL · {manifest['items'][0]['stem']}.mp4"
+
+    assert_matches_manifest()
+    spans = dialog.game.currentData(UNDERLINE_ROLE)
+    assert [dialog.game.currentText()[start:start + length] for start, length in spans] == [
+        "clutch win" if theme == "light" else "Clutch Win"
+    ]
+    before = dialog.game.currentText()
+    controls["agent"].setChecked(False)
+    assert dialog.game.currentText() != before
+    assert_matches_manifest()
+    prefix.setChecked(False)
+    assert dialog.game.currentText().startswith("VAL · 3")
+    assert_matches_manifest()
+    artifact = ROOT / "cache/verification/project-export-dialog"
+    artifact.mkdir(parents=True, exist_ok=True)
+    application.processEvents()
+    dialog.grab().save(str(artifact / f"{theme}-underlined.png"))
+    dialog.game.showPopup()
+    application.processEvents()
+    dialog.game.view().grab().save(str(artifact / f"{theme}-underlined-popup.png"))
+    dialog.game.hidePopup()
+    for control in controls.values():
+        control.setChecked(False)
+    assert dialog.game.currentText() == "VAL · clip-000.mp4"
+    assert not dialog.game.currentData(UNDERLINE_ROLE)
+    assert_matches_manifest()
+    artifact = ROOT / "cache/verification/project-export-dialog"
+    artifact.mkdir(parents=True, exist_ok=True)
+    dialog.grab().save(str(artifact / f"{theme}-wide.png"))
+    dialog.resize(340, 540)
+    application.processEvents()
+    assert len({control.y() for control in controls.values()}) > 1
+    assert all(control.geometry().right() < fields.width() for control in controls.values())
+    assert dialog.fields.height() > wide_height
+    assert dialog.fields.height() == dialog.field_layout.totalHeightForWidth(dialog.fields.width())
+    assert all(control.geometry().bottom() < fields.height() for control in controls.values())
+    dialog.grab().save(str(artifact / f"{theme}-narrow.png"))
+    dialog.game.setCurrentIndex(dialog.game.findData("Apex Legends"))
+    assert dialog.field_layout.itemAt(0).widget().text() == "Game code prefix [APX]"
+    dialog.game.setCurrentIndex(dialog.game.findData("VALORANT"))
+    assert not dialog.field_layout.itemAt(0).widget().isChecked()
+    assert dialog.game.currentText() == "VAL · clip-000.mp4"
+    dialog.reject()
+    assert window.catalogue.projects()[0]["output_preferences"] == {}
+
+
+@pytest.mark.parametrize("prefix", [False, True])
+def test_export_preview_tracks_mainline_through_sanitizing_and_custom_order(
+    window, tmp_path, prefix
+):
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.registry.game("VALORANT").display_order = ["mainline", "kill", "agent"]
+    window.catalogue.patch(ids[0], {
+        "mainline": "  CON: highlight?  ", "metadata": {"kill": 3, "agent": "Jett"},
+    })
+    window.catalogue.batch_membership(project, ids, True)
+    dialog = ProjectExportDialog(window, project)
+    dialog.field_layout.itemAt(0).widget().setChecked(prefix)
+    spans = dialog.game.currentData(UNDERLINE_ROLE)
+    rendered = dialog.game.currentText()
+    mainline = rendered[spans[0][0]:sum(spans[0])]
+    assert mainline == ("  con_ highlight_  " if prefix else "con_ highlight_  ")
+    assert "3k jett.mp4" in rendered
+    dialog.reject()
+
+
 def test_export_dialog_isolation_blockers_cancel_and_enqueue(window, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path, 3)
     window.catalogue.batch_membership(project, ids, True)
@@ -1089,8 +1198,8 @@ def test_export_dialog_isolation_blockers_cancel_and_enqueue(window, tmp_path, m
     assert window.export_button.isEnabled()
     dialog = ProjectExportDialog(window, project)
     dialog.destination.setText(str(tmp_path / "out"))
-    assert not dialog.submit_button.isEnabled()
-    assert "verdict is pending" in dialog.details.toPlainText()
+    assert dialog.submit_button.isEnabled()
+    assert not hasattr(dialog, "details") and not hasattr(dialog, "readiness")
     dialog.group_rating.setChecked(True)
     dialog.reject()
     assert window.catalogue.projects()[0]["output_preferences"] == {}
@@ -1322,11 +1431,10 @@ def test_restart_destinations_and_atomic_auto_add(window, application, tmp_path,
         close_window(restarted, application)
 
 
-@pytest.mark.parametrize("verdict", [None, "discard"])
-def test_no_empty_jobs_and_submission_failure(window, tmp_path, monkeypatch, verdict):
+def test_no_empty_jobs_and_submission_failure(window, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path, 1)
     window.catalogue.batch_membership(project, ids, True)
-    window.catalogue.patch(ids[0], {"triage": verdict})
+    window.catalogue.patch(ids[0], {"triage": "discard"})
     dialog = ProjectExportDialog(window, project)
     dialog.destination.setText(str(tmp_path / "out"))
     dialog.submit()
@@ -1341,6 +1449,42 @@ def test_no_empty_jobs_and_submission_failure(window, tmp_path, monkeypatch, ver
     assert "database unavailable" in dialog.error.text()
     assert not window.catalogue.export_jobs()
     assert window.catalogue.projects()[0]["output_preferences"] == {}
+
+
+@pytest.mark.parametrize("blocking", ["pending", "metadata", "source", "game", "pending_only"])
+def test_export_setup_queues_blockers_and_job_fails_before_copying(
+    window, tmp_path, monkeypatch, blocking
+):
+    ids, project = seed_workspace(window, tmp_path, 2)
+    window.catalogue.batch_membership(project, ids, True)
+    reason = {
+        "pending": "verdict is pending", "pending_only": "verdict is pending",
+        "metadata": "add at least one metadata", "source": "source unavailable",
+        "game": "assign a configured game",
+    }[blocking]
+    if blocking.startswith("pending"):
+        window.catalogue.patch(ids[0], {"triage": None})
+        if blocking == "pending_only":
+            window.catalogue.patch(ids[1], {"triage": None})
+    elif blocking == "metadata":
+        window.catalogue.patch(ids[0], {"metadata": {}, "mainline": None})
+    elif blocking == "source":
+        Path(window.catalogue.clip(ids[0])["source_path"]).unlink()
+    else:
+        window.catalogue.patch(ids[0], {"game": None})
+    dialog = ProjectExportDialog(window, project)
+    destination = tmp_path / "out"
+    dialog.destination.setText(str(destination))
+    dialog.group_rating.setChecked(True)
+    monkeypatch.setattr(window, "add_export_job", lambda *_: None)
+    assert dialog.submit_button.isEnabled()
+    dialog.submit()
+    assert dialog.job_id and not dialog.error.text()
+    assert window.catalogue.projects()[0]["output_preferences"]["group_rating"]
+    result = run_export_manifest(window.catalogue, dialog.job_id)
+    assert reason in result.error
+    assert not result.completed and not destination.exists()
+    assert window.catalogue.export_jobs()[0]["status"] == "Failed"
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])

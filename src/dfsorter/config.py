@@ -224,6 +224,7 @@ def title(
     lowercase: bool = True,
     rich_styles: dict[str, str] | None = None,
     underline_first_mainline_word: bool = False,
+    text_spans: list | None = None,
 ) -> str:
     import html
 
@@ -261,6 +262,9 @@ def title(
             else:
                 parts.append(f"<b>{escaped}</b>" if key == "mainline" else escaped)
         else:
+            if text_spans is not None:
+                start = sum(len(part) for part in parts) + (len(game.code) + 1 if game and prefix else 0)
+                text_spans.append((key, start, len(value)))
             parts.append(value)
         previous_key = key
     fallback = source_fallback(clip, game if prefix else None)

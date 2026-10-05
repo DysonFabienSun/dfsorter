@@ -23,6 +23,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QTextCharFormat,
     QTextDocument,
     QTextLayout,
 )
@@ -32,10 +33,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QListWidget,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionComboBox,
+    QStyleOptionViewItem,
     QStylePainter,
     QToolButton,
     QWidget,
@@ -47,6 +50,7 @@ from .theme import COLORS, FONT_SIZES, RADII, SIZES, font, role
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
+UNDERLINE_ROLE = Qt.ItemDataRole.UserRole + 3
 
 
 def storage_gb(size):
@@ -515,6 +519,67 @@ def tool(name, label, callback, *, pulsing=False):
     return control
 
 
+class FlowLayout(QLayout):
+    """Pack controls at their natural widths, wrapping when the row is full."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(8)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._arrange(QRect(0, 0, width, 0), measure=True)
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._arrange(rect)
+
+    def _arrange(self, rect, *, measure=False):
+        margins = self.contentsMargins()
+        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x, y, row_height = area.x(), area.y(), 0
+        for item in self._items:
+            size = item.sizeHint()
+            if row_height and x + size.width() - 1 > area.right():
+                x = area.x()
+                y += row_height + self.spacing()
+                row_height = 0
+            if not measure:
+                item.setGeometry(QRect(x, y, size.width(), size.height()))
+            x += size.width() + self.spacing()
+            row_height = max(row_height, size.height())
+        return y - rect.y() + row_height + margins.bottom()
+
+
 class MiddleElideComboBox(QComboBox):
     """Preserve both ends of long labels without changing popup item text."""
 
@@ -531,6 +596,92 @@ class MiddleElideComboBox(QComboBox):
         painter = QStylePainter(self)
         painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+
+
+def draw_underlined_text(painter, rect, text, spans, text_font, color):
+    display = QFontMetrics(text_font).elidedText(text, Qt.TextElideMode.ElideMiddle, rect.width())
+    if not display:
+        return
+    prefix = 0
+    while prefix < min(len(text), len(display)) and text[prefix] == display[prefix]:
+        prefix += 1
+    suffix = 0
+    while (suffix < min(len(text), len(display)) - prefix
+           and text[-suffix - 1] == display[-suffix - 1]):
+        suffix += 1
+    positions = list(range(prefix))
+    positions += [None] * (len(display) - prefix - suffix)
+    positions += list(range(len(text) - suffix, len(text)))
+    underlined = [
+        position is not None and any(start <= position < start + length for start, length in spans)
+        for position in positions
+    ]
+    formats = []
+    start = 0
+    while start < len(display):
+        end = start + 1
+        while end < len(display) and underlined[end] == underlined[start]:
+            end += 1
+        if underlined[start]:
+            formatting = QTextLayout.FormatRange()
+            formatting.start = len(display[:start].encode("utf-16-le")) // 2
+            formatting.length = len(display[start:end].encode("utf-16-le")) // 2
+            formatting.format = QTextCharFormat()
+            formatting.format.setFontUnderline(True)
+            formats.append(formatting)
+        start = end
+    layout = QTextLayout(display, text_font)
+    layout.setFormats(formats)
+    layout.beginLayout()
+    line = layout.createLine()
+    line.setLineWidth(rect.width())
+    layout.endLayout()
+    painter.save()
+    painter.setClipRect(rect)
+    painter.setPen(color)
+    layout.draw(painter, QPointF(rect.x(), rect.y() + (rect.height() - line.height()) / 2))
+    painter.restore()
+
+
+class UnderlinedTextDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        spans = index.data(UNDERLINE_ROLE)
+        if not spans:
+            super().paint(painter, option, index)
+            return
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        style = styled.widget.style() if styled.widget else self.parent().style()
+        rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, styled, styled.widget)
+        text = styled.text
+        styled.text = ""
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, styled, painter, styled.widget)
+        color = styled.palette.highlightedText().color() if styled.state & QStyle.StateFlag.State_Selected else styled.palette.text().color()
+        draw_underlined_text(painter, rect, text, spans, styled.font, color)
+
+
+class UnderlinedComboBox(MiddleElideComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setItemDelegate(UnderlinedTextDelegate(self))
+
+    def paintEvent(self, event):
+        spans = self.currentData(UNDERLINE_ROLE)
+        if not spans:
+            super().paintEvent(event)
+            return
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        rect = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxEditField, self,
+        )
+        text = option.currentText
+        option.currentText = ""
+        painter = QStylePainter(self)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+        draw_underlined_text(painter, rect, text, spans, self.font(), option.palette.buttonText().color())
 
 
 class ClipDelegate(QStyledItemDelegate):

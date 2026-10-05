@@ -631,7 +631,7 @@ class Catalogue:
                        for row in rows}
             if current != {clip["clip_id"]: clip for clip in expected_clips}:
                 raise ValueError("Project changed during export preparation; review setup again")
-            if not manifest.get("items"):
+            if not manifest.get("items") and not manifest.get("validation_errors"):
                 raise ValueError("No exportable clips")
             updated = database.execute(
                 "UPDATE projects SET output_preferences=? WHERE project_id=?",

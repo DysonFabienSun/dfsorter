@@ -9,8 +9,16 @@ from pathlib import Path
 from .config import has_review_metadata, title
 
 
-def safe_stem(value: str) -> str:
-    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value).strip(" .")[:160].rstrip(" .")
+def safe_stem(value: str, *, text_spans=None) -> str:
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
+    trimmed = len(value) - len(value.lstrip(" ."))
+    value = value.strip(" .")[:160].rstrip(" .")
+    if text_spans is not None:
+        text_spans[:] = [
+            (role, max(0, start - trimmed), min(len(value), start + length - trimmed) - max(0, start - trimmed))
+            for role, start, length in text_spans
+            if min(len(value), start + length - trimmed) > max(0, start - trimmed)
+        ]
     if not value:
         value = "clip"
     if value.split(".")[0].upper() in {
@@ -22,6 +30,8 @@ def safe_stem(value: str) -> str:
         *(f"LPT{number}" for number in range(1, 10)),
     }:
         value = "_" + value
+        if text_spans is not None:
+            text_spans[:] = [(role, start + 1, length) for role, start, length in text_spans]
     return value
 
 
@@ -142,10 +152,10 @@ def export_project(
 
 
 def prepare_export_manifest(clips, registry, destination, folders, formats=None,
-                            group_rating=False, *, lowercase=True):
-    """Freeze all choices needed to resume a project export without live catalogue data."""
+                            group_rating=False, *, lowercase=True, defer_validation=False):
+    """Freeze export choices, optionally recording eligibility failures for the queued job."""
     errors = validate(clips, registry)
-    if errors:
+    if errors and not defer_validation:
         raise ValueError("\n".join(message for _, message in errors))
     root = check_destination(destination, folders)
     items = []
@@ -153,7 +163,14 @@ def prepare_export_manifest(clips, registry, destination, folders, formats=None,
         if clip["triage"] != "keep":
             continue
         source = Path(clip["source_path"])
-        source_stat = source.stat()
+        try:
+            source_stat = source.stat()
+        except OSError as error:
+            if not defer_validation:
+                raise
+            source_stat = None
+            if not any(clip_id == clip["clip_id"] for clip_id, _ in errors):
+                errors.append((clip["clip_id"], f"{source.name}: {error}"))
         options = (formats or {}).get(clip["game"], {})
         name = safe_stem(title(
             clip, registry, options.get("fields"), options.get("prefix", True),
@@ -164,10 +181,14 @@ def prepare_export_manifest(clips, registry, destination, folders, formats=None,
         ) if group_rating else ""
         items.append({
             "clip_id": clip["clip_id"], "source_path": str(source),
-            "source_size": source_stat.st_size, "source_mtime_ns": source_stat.st_mtime_ns,
+            "source_size": source_stat.st_size if source_stat else 0,
+            "source_mtime_ns": source_stat.st_mtime_ns if source_stat else None,
             "stem": name, "directory": directory, "completed": None,
         })
-    return {"destination": str(root), "items": items}
+    manifest = {"destination": str(root), "items": items}
+    if errors:
+        manifest["validation_errors"] = [message for _, message in errors]
+    return manifest
 
 
 def _hash_file(path, cancelled):
@@ -242,6 +263,8 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
     total = sum(item["source_size"] for item in manifest["items"])
     done_bytes = 0
     try:
+        if manifest.get("validation_errors"):
+            raise ValueError("\n".join(manifest["validation_errors"]))
         check_destination(manifest["destination"], catalogue.folders())
         recovered = set()
         for item in manifest["items"]:

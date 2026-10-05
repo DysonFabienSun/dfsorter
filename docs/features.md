@@ -1,5 +1,9 @@
 # Export collection and player refinements
 
+- [x] Export setup fits all filename checkbox rows in a content-height outline without scrolling, omits readiness details, and queues blocked projects for failure reporting in Output jobs before copying.
+
+- [x] Export setup lists Keep games as code plus a live generated filename from a real clip, using export naming rules and full-text tooltips. The full included mainline is underlined in selected examples and popup entries, with semantic ranges tracked through filename sanitization and display elision. Prefix options show their code on a separate row; remaining fields pack at natural widths and wrap with the dialog. Pending/Discard-only games are omitted, blocked Keep games remain configurable, and Cancel retains preference isolation.
+
 - [x] Successful Add all matching switches to Assigned and Remove all matching switches to Available, retaining destination filters/shared dates and clearing selection through the prepared-preview transition. Cancellation, failure, no-change batches, selected-only actions and history replay retain the current view.
 
 - [x] Export date bounds are shared between Assigned and Available per project for the current run. Selector labels show default-filter counts independent of active filters, excluding temporary Available skips. Clicking Export falls back from Assigned to Available when Assigned has zero default-filter members; manual empty-view selection and atomic returns remain intact.
