@@ -8,7 +8,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QGridLayout,
     QHBoxLayout,
@@ -27,7 +26,7 @@ from .output import validate
 from .parsing import query_clips
 from .playback import Player, playback_start_settings
 from .theme import role
-from .widgets import CLIP_ROLE, storage_gb, tool
+from .widgets import CLIP_ROLE, set_icon, storage_gb, tool
 
 
 @dataclass
@@ -38,7 +37,6 @@ class WorkspaceView:
     from_date: str = ""
     through_date: str = ""
     unavailable: bool = False
-    outside: bool = False
     newest: bool = False
     readiness: str | None = None
     selected: set = field(default_factory=set)
@@ -79,8 +77,7 @@ def filter_candidates(
     clips = [
         clip
         for clip in clips
-        if (not member_view or clip["clip_id"] in members)
-        and (member_view or not state.outside or clip["clip_id"] not in members)
+        if (clip["clip_id"] in members) == member_view
         and (state.game is None or (clip["game"] or "") == state.game)
         and (state.verdict == "all" or (clip["triage"] or "pending") == state.verdict)
         and (state.unavailable or available(clip["source_path"]))
@@ -187,7 +184,7 @@ class ProjectWorkspace:
     def __init__(self, window, layout):
         self.window = window
         self.project_id = window.catalogue.state("workspace_project")
-        self.view = "Project clips" if self.project_id else "Library"
+        self.view = "Assigned" if self.project_id else "Available"
         self.states = {}
         self.project_views = {}
         self.histories = {}
@@ -205,9 +202,23 @@ class ProjectWorkspace:
         body.setContentsMargins(8, 8, 8, 8)
         body.setSpacing(8)
         self.views = QComboBox()
-        self.views.addItems(["Library", "Project clips"])
+        self.views.addItem("Assigned", "Assigned")
+        self.views.addItem("Available", "Available")
+        self.views.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.views.setMinimumContentsLength(12)
         self.views.setAccessibleName("Project workspace view")
-        body.addWidget(self.views)
+        row = QHBoxLayout()
+        row.addWidget(self.views, 1)
+        self.unavailable = tool(
+            "eye-off", "Unavailable clips hidden · Show unavailable clips", self.filters_changed
+        )
+        self.unavailable.setCheckable(True)
+        self.unavailable.setProperty("unavailableSources", True)
+        self.unavailable.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        row.addWidget(self.unavailable, 0, Qt.AlignmentFlag.AlignVCenter)
+        body.addLayout(row)
         self.search = QLineEdit()
         self.search.setProperty("librarySearch", True)
         self.search.setPlaceholderText("Search · game:VAL rating:>=4")
@@ -236,7 +247,6 @@ class ProjectWorkspace:
             row.addWidget(control, 1)
         body.addLayout(row)
         filters = QGridLayout()
-        self.filters_layout = filters
         filters.setHorizontalSpacing(body.spacing())
         filters.setVerticalSpacing(body.spacing())
         filters.setColumnStretch(1, 1)
@@ -254,10 +264,6 @@ class ProjectWorkspace:
             control.setAccessibleName(f"Capture date {label.text().lower()} (inclusive, local time)")
             control.setClearButtonEnabled(True)
             filters.addWidget(control, 0, column + 1)
-        self.outside = QCheckBox("Outside project")
-        self.unavailable = QCheckBox("Unavailable sources")
-        filters.addWidget(self.outside, 1, 0, 1, 2)
-        filters.addWidget(self.unavailable, 1, 2, 1, 2)
         body.addLayout(filters)
         self.category = QPushButton("All members")
         self.category.clicked.connect(lambda: self.open_category(None))
@@ -367,14 +373,14 @@ class ProjectWorkspace:
         export_row.addWidget(self.export_size, 0, Qt.AlignmentFlag.AlignVCenter)
         export_row.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(export_row)
-        self.views.currentTextChanged.connect(self.switch_view)
+        self.views.currentIndexChanged.connect(
+            lambda _: self.switch_view(self.views.currentData())
+        )
         self.selector.currentIndexChanged.connect(self.switch_project)
         for control in (self.search, self.from_date, self.through_date):
             control.textChanged.connect(self.filters_changed)
         for control in (self.game, self.verdict, self.sort):
             control.currentIndexChanged.connect(self.filters_changed)
-        for control in (self.outside, self.unavailable):
-            control.toggled.connect(self.filters_changed)
         window.library.itemSelectionChanged.connect(self.update_actions)
 
     def show_guide(self):
@@ -383,22 +389,22 @@ class ProjectWorkspace:
             "Project assembly and export",
             "1. Choose a project and collect clips\n"
             "Select an existing project or use New project… to create one. "
-            "Collect through Editing’s Projects auto-add or bulk actions in Library. "
+            "Collect through Editing’s Projects auto-add or bulk actions in Available. "
             "More contains Rename and Delete.\n\n"
-            "2. Refine candidates in Library\n"
+            "2. Refine candidates in Available\n"
             "Search, game, verdict and capture-date filters narrow the results. "
-            "Outside project hides saved members. Add selected collects nonmembers; "
-            "member selections offer Remove selected. All matching acts on every filtered "
-            "result of that membership type, including offscreen rows. Plain-click starts "
-            "a new selection. Ctrl-click adds separate rows of the same membership type; "
-            "Shift-click selects only that type within a range. Ctrl+A follows the selection "
-            "type, or the current row’s type when nothing is selected.\n\n"
-            "3. Remove exceptions in Project clips\n"
+            "Available hides saved members. Add selected collects nonmembers; "
+            "Assigned offers Remove selected. All matching acts on every filtered "
+            "result, including offscreen rows. Plain-click starts a new selection; "
+            "Ctrl-click adds separate rows; Shift-click selects a range; Ctrl+A selects "
+            "all visible rows. The eye toggle shows or hides unavailable sources. "
+            "Without a project, the view selector is disabled and the catalogue is shown.\n\n"
+            "3. Remove exceptions in Assigned\n"
             "To include a broad set except a few recordings, add all matching first. "
-            "Switch to Project clips, click the first exception, Ctrl-click the others, "
+            "Switch to Assigned, click the first exception, Ctrl-click the others, "
             "then use Remove selected, or filter and Remove all matching. Removal changes "
             "membership only; removing more than 20 matching members asks for confirmation. "
-            "Return to Library and use Skip selected on nonmember "
+            "Return to Available and use Skip selected on nonmember "
             "exceptions to hide those candidates for this project until restart. Saved "
             "members remain visible. Add, remove and skip batches share Undo/Redo; "
             "successful add/remove actions and Undo/Redo clear selection. "
@@ -409,7 +415,7 @@ class ProjectWorkspace:
             "range or use Clear range before leaving the clip. Share uses the saved range "
             "or whole clip. Edit clip… opens single-clip Editing; Save or Revert returns "
             "to the originating project and view. Range saves are outside Export Undo/Redo.\n\n"
-            "5. Inspect Project clips and readiness\n"
+            "5. Inspect Assigned and readiness\n"
             "Ready clips can export; Pending clips need a verdict; Blocked clips have an "
             "unavailable source or invalid export metadata; Skipped counts Discard members. "
             "These counts cover the whole project. Click a category to inspect it; "
@@ -432,8 +438,8 @@ class ProjectWorkspace:
         key = (self.project_id, view)
         if key not in self.states:
             self.states[key] = WorkspaceView(
-                verdict="all" if view == "Project clips" else "keep",
-                unavailable=view == "Project clips",
+                verdict="all" if view == "Assigned" else "keep",
+                unavailable=view == "Assigned",
             )
         return self.states[key]
 
@@ -494,7 +500,7 @@ class ProjectWorkspace:
         self.project_views[self.project_id] = self.view
         self.project_id = self.selector.currentData()
         self.view = self.project_views.get(
-            self.project_id, "Project clips" if self.project_id else "Library"
+            self.project_id, "Assigned" if self.project_id else "Available"
         )
         self.window.catalogue.set_state("workspace_project", self.project_id)
         self.load_controls()
@@ -502,11 +508,14 @@ class ProjectWorkspace:
 
     def select_project(self, project_id, *, new=False):
         if new:
-            self.project_views[project_id] = "Library"
+            self.project_views[project_id] = "Available"
         self.selector.setCurrentIndex(max(0, self.selector.findData(project_id)))
 
     def switch_view(self, view):
         if self.loading:
+            return
+        if not self.project_id:
+            self.load_controls()
             return
         if not self.window.ensure_range_complete():
             self.load_controls()
@@ -548,21 +557,21 @@ class ProjectWorkspace:
     def load_controls(self):
         self.loading = True
         state = self.state
-        self.views.setCurrentText(self.view)
+        assigned_index = self.views.findData("Assigned")
+        assigned_label = f"Assigned - {self.selector.currentText()}" if self.project_id else "Assigned"
+        self.views.setItemText(assigned_index, assigned_label)
+        self.views.setItemData(assigned_index, assigned_label, Qt.ItemDataRole.ToolTipRole)
+        self.views.setCurrentIndex(self.views.findData(self.view))
+        self.views.setEnabled(bool(self.project_id))
         self.search.setText(state.query)
         self.game.setCurrentIndex(max(0, self.game.findData(state.game)))
         self.verdict.setCurrentIndex(self.verdict.findData(state.verdict))
         self.sort.setCurrentIndex(int(state.newest))
         self.from_date.setText(state.from_date)
         self.through_date.setText(state.through_date)
-        self.outside.setChecked(state.outside)
         self.unavailable.setChecked(state.unavailable)
-        self.outside.setVisible(self.view == "Library")
-        self.filters_layout.removeWidget(self.unavailable)
-        self.filters_layout.addWidget(
-            self.unavailable, 1, 2 if self.view == "Library" else 0, 1, 2
-        )
-        self.category.setVisible(self.view == "Project clips")
+        self.update_unavailable_toggle()
+        self.category.setVisible(self.view == "Assigned")
         self.category.setToolTip(
             f"{state.readiness} · Return to all members" if state.readiness else "All members"
         )
@@ -581,16 +590,26 @@ class ProjectWorkspace:
         state.verdict = self.verdict.currentData()
         state.from_date = self.from_date.text().strip()
         state.through_date = self.through_date.text().strip()
-        state.outside = self.outside.isChecked()
         state.unavailable = self.unavailable.isChecked()
+        self.update_unavailable_toggle()
         state.newest = bool(self.sort.currentIndex())
         self.refresh(reset=True)
+
+    def update_unavailable_toggle(self):
+        shown = self.unavailable.isChecked()
+        set_icon(self.unavailable, "eye" if shown else "eye-off")
+        label = (
+            "Unavailable clips shown · Hide unavailable clips" if shown
+            else "Unavailable clips hidden · Show unavailable clips"
+        )
+        self.unavailable.setToolTip(label)
+        self.unavailable.setAccessibleName(label)
 
     def open_category(self, category):
         if not self.window.ensure_range_complete():
             return
         self.remember()
-        self.view = "Project clips"
+        self.view = "Assigned"
         previous = self.state
         self.states[(self.project_id, self.view)] = WorkspaceView(
             verdict="all",
@@ -659,7 +678,7 @@ class ProjectWorkspace:
                 self.members,
                 window.capture_datetime,
                 window.source_available,
-                member_view=self.view == "Project clips",
+                member_view=self.view == "Assigned",
                 readiness=self.categories,
             )
         except ValueError as error:
@@ -711,7 +730,7 @@ class ProjectWorkspace:
             membership = "In project" if is_member else "Outside project"
             reason = self.errors.get(clip["clip_id"], "").partition(": ")[2]
             data.update(project_member=is_member, project_reason=reason, project_workspace=True,
-                        danger_selection=self.view == "Library" and is_member)
+                        danger_selection=self.view == "Available" and is_member)
             item.setData(CLIP_ROLE, data)
             detail = " · ".join(part for part in (membership, reason) if part)
             item.setToolTip(item.toolTip() + ("\n" + detail if detail else ""))
@@ -737,7 +756,7 @@ class ProjectWorkspace:
     def preview(self):
         if self.pending_view is not None:
             self.loading = True
-            self.views.setCurrentText(self.view)
+            self.views.setCurrentIndex(self.views.findData(self.view))
             self.loading = False
         self.pending_view = None
         clip_id = self.window.selected_id(self.window.library)
@@ -797,7 +816,7 @@ class ProjectWorkspace:
     def mask_candidates(self, clips, view=None, members=None):
         skipped = self.skipped_ids.get(self.project_id, set())
         skipped.difference_update(self.window.catalogue.removed_clip_ids)
-        if (view or self.view) == "Project clips":
+        if (view or self.view) == "Assigned":
             return clips
         members = self.members if members is None else members
         return [clip for clip in clips if clip["clip_id"] not in skipped
@@ -825,7 +844,7 @@ class ProjectWorkspace:
                 members,
                 window.capture_datetime,
                 window.source_available,
-                member_view=view == "Project clips",
+                member_view=view == "Assigned",
                 readiness=categories,
             )
         except ValueError:
@@ -853,7 +872,7 @@ class ProjectWorkspace:
             item.data(Qt.ItemDataRole.UserRole) for item in self.window.library.selectedItems()
         }
         self.state.selected = selected
-        include = self.view == "Library" and not bool(selected & self.members)
+        include = self.view == "Available" and not bool(selected & self.members)
         count = len(selected - self.members if include else selected & self.members)
         matching = len(set(self.state.visible) - self.members if include
                        else set(self.state.visible) & self.members)
@@ -876,7 +895,7 @@ class ProjectWorkspace:
             return
         selected = {item.data(Qt.ItemDataRole.UserRole)
                     for item in self.window.library.selectedItems()}
-        include = self.view == "Library" and not bool(selected & self.members)
+        include = self.view == "Available" and not bool(selected & self.members)
         ids = (
             tuple(self.state.visible)
             if all_matching
@@ -917,7 +936,7 @@ class ProjectWorkspace:
         self.window.library.selectionModel().member_type = None
 
     def skip_selected(self):
-        if not self.project_id or not self.valid or self.view != "Library":
+        if not self.project_id or not self.valid or self.view != "Available":
             return
         ids = {item.data(Qt.ItemDataRole.UserRole)
                for item in self.window.library.selectedItems()} - self.members

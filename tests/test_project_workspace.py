@@ -153,7 +153,7 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     window.new_project()
     created = window.workspace.project_id
     assert created != original
-    assert window.workspace.view == "Library"
+    assert window.workspace.view == "Available"
     assert window.catalogue.state("review_destination") == original
     window.workspace.matching_action.click()
     window.catalogue.save_export_job("frozen", {"items": [{"frozen": True}]}, "Cancelled")
@@ -161,6 +161,8 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     window.rename_project()
     assert window.workspace.project_id == created
     assert window.workspace.selector.currentText() == "Renamed"
+    assert window.workspace.views.itemText(0) == "Assigned - Renamed"
+    assert window.workspace.views.itemText(1) == "Available"
     assert window.catalogue.member_ids(created) == set(ids)
     window.catalogue.set_state("review_destination", created)
     window.update_collection_controls()
@@ -168,6 +170,7 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     monkeypatch.setattr(window, "confirm", lambda *_: True)
     window.delete_project()
     assert window.workspace.project_id is None
+    assert window.workspace.views.itemText(0) == "Assigned"
     assert window.catalogue.state("review_destination") is None
     assert not window.auto_collect_enabled
     assert not window.workspace.export_button.isEnabled()
@@ -201,10 +204,10 @@ def test_filters_local_dates_unknown_and_query(catalogue, clips, registry):
     result, unknown = filtered(
         WorkspaceView(verdict="all", from_date="2026-10-05", through_date="2026-10-05")
     )
-    assert result == clips[:2] and unknown == 1
-    assert len(filtered(WorkspaceView(verdict="all"))[0]) == 3
-    assert filtered(WorkspaceView(query="agent:Jett rating:>=4"))[0] == clips[:1]
-    assert filtered(WorkspaceView(outside=True))[0] == clips[1:2]
+    assert result == clips[1:2] and unknown == 1
+    assert len(filtered(WorkspaceView(verdict="all"))[0]) == 2
+    assert filtered(WorkspaceView(query="agent:Jett rating:>=4"), member_view=True)[0] == clips[:1]
+    assert filtered(WorkspaceView())[0] == clips[1:2]
     assert filtered(WorkspaceView(verdict="all"), member_view=True)[0] == clips[:1]
     with pytest.raises(ValueError, match="From"):
         filtered(WorkspaceView(from_date="2026-10-06", through_date="2026-10-05"))
@@ -316,11 +319,14 @@ def test_export_size_counts_ready_originals_independently_of_workspace_view(
     assert workspace.export_size.text() == "Estimated export: — GB"
 
 
-@pytest.mark.parametrize("first", [0, 1])
-def test_export_selection_membership_mouse_and_keyboard(window, application, tmp_path, first):
+@pytest.mark.parametrize("view", ["Assigned", "Available"])
+def test_export_selection_membership_mouse_and_keyboard(window, application, tmp_path, view):
     ids, project = seed_workspace(window, tmp_path, 5)
     window.catalogue.batch_membership(project, ids[::2], True)
     window.workspace.refresh()
+    select_view(window, view)
+    visible = ids[::2] if view == "Assigned" else ids[1::2]
+    assert window.workspace.state.visible == visible
     listing = window.library
     listing.setFocus()
 
@@ -328,28 +334,27 @@ def test_export_selection_membership_mouse_and_keyboard(window, application, tmp
         QTest.mouseClick(listing.viewport(), Qt.MouseButton.LeftButton, modifier,
                          listing.visualItemRect(listing.item(row)).center())
 
-    click(first)
-    click(1 - first, Qt.KeyboardModifier.ControlModifier)
-    assert selected_ids(window) == {ids[first]}
-    click(first)
-    click(4, Qt.KeyboardModifier.ShiftModifier)
-    assert selected_ids(window) == set(ids[first:5:2])
-    QTest.keyClick(listing, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
-    assert selected_ids(window) == set(ids[first::2])
+    click(0)
+    assert selected_ids(window) == {visible[0]}
+    click(1, Qt.KeyboardModifier.ControlModifier)
+    assert selected_ids(window) == set(visible[:2])
+    click(0)
+    click(len(visible) - 1, Qt.KeyboardModifier.ShiftModifier)
+    assert selected_ids(window) == set(visible)
     listing.clearSelection()
-    listing.setCurrentRow(1 - first, listing.selectionModel().SelectionFlag.NoUpdate)
     QTest.keyClick(listing, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
-    assert selected_ids(window) == set(ids[1 - first::2])
-    click(first)
-    assert selected_ids(window) == {ids[first]}
+    assert selected_ids(window) == set(visible)
+    click(0)
+    assert selected_ids(window) == {visible[0]}
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_library_member_actions_and_danger_selection(window, tmp_path, theme):
+def test_project_member_actions_and_accent_selection(window, tmp_path, theme):
     ids, project = seed_workspace(window, tmp_path, 2)
     window.set_theme(theme, persist=False)
     window.catalogue.batch_membership(project, ids[:1], True)
     window.workspace.refresh()
+    select_view(window, "Assigned")
     listing = window.library
     listing.clearSelection()
     listing.item(0).setSelected(True)
@@ -357,7 +362,7 @@ def test_library_member_actions_and_danger_selection(window, tmp_path, theme):
     assert workspace.selected_action.text() == "Remove selected (1)"
     assert workspace.matching_action.text() == "Remove all matching (1)"
     assert workspace.skip_action.isHidden()
-    assert listing.item(0).data(CLIP_ROLE)["danger_selection"]
+    assert not listing.item(0).data(CLIP_ROLE)["danger_selection"]
     image = QImage(500, 100, QImage.Format.Format_ARGB32)
     image.fill(QColor(COLORS["surface_workspace"]))
     option = QStyleOptionViewItem()
@@ -367,13 +372,51 @@ def test_library_member_actions_and_danger_selection(window, tmp_path, theme):
     painter = QPainter(image)
     listing.itemDelegate().paint(painter, option, listing.model().index(0, 0))
     painter.end()
-    assert image.pixelColor(1, 15) == QColor(COLORS["status_danger"])
-    assert image.pixelColor(5, 2) == QColor(COLORS["status_danger_soft"])
+    assert image.pixelColor(1, 15) == QColor(COLORS["accent_default"])
+    assert image.pixelColor(5, 2) == QColor(COLORS["accent_selection"])
     listing.clearSelection()
-    assert workspace.selected_action.text() == "Add selected (0)"
+    assert workspace.selected_action.text() == "Remove selected (0)"
     assert not workspace.selected_action.isEnabled()
     assert not workspace.skip_action.isEnabled()
-    assert workspace.matching_action.text() == "Add all matching (1)"
+    assert workspace.matching_action.text() == "Remove all matching (1)"
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_membership_views_and_unavailable_icon(window, application, tmp_path, theme):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    window.set_theme(theme, persist=False)
+    workspace = window.workspace
+    window.catalogue.batch_membership(project, ids[2:], True)
+    for clip_id in ids[1:]:
+        Path(window.catalogue.clip(clip_id)["source_path"]).unlink()
+    workspace.refresh()
+    assert [workspace.views.itemText(i) for i in range(workspace.views.count())] == [
+        "Assigned - Highlights", "Available"
+    ]
+    assert workspace.state.visible == ids[:1]
+    assert not workspace.unavailable.isChecked()
+    assert "hidden" in workspace.unavailable.toolTip()
+    workspace.unavailable.click()
+    assert set(workspace.state.visible) == set(ids[:2])
+    assert "shown" in workspace.unavailable.accessibleName()
+    select_view(window, "Assigned")
+    assert workspace.state.visible == ids[2:]
+    assert workspace.unavailable.isChecked()
+    workspace.unavailable.click()
+    assert not workspace.state.visible
+    select_view(window, "Available")
+    assert workspace.unavailable.isChecked()
+    assert set(workspace.state.visible) == set(ids[:2])
+    workspace.select_project(None)
+    assert not workspace.views.isEnabled()
+    assert workspace.view == "Available"
+    workspace.unavailable.click()
+    assert set(workspace.state.visible) == set(ids)
+    assert not workspace.selected_action.isEnabled()
+    assert not workspace.skip_action.isEnabled()
+    application.processEvents()
+    assert abs(workspace.views.geometry().center().y()
+               - workspace.unavailable.geometry().center().y()) <= 1
 
 
 def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_path, monkeypatch):
@@ -385,7 +428,8 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     assert not confirmations
     assert not selected_ids(window)
     assert window.library.selectionModel().member_type is None
-    assert window.selected_id(window.library) == ids[0]
+    assert window.library.count() == 0
+    select_view(window, "Assigned")
     window.library.item(0).setSelected(True)
     assert workspace.matching_action.text() == "Remove all matching (100)"
     workspace.matching_action.click()
@@ -395,7 +439,7 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     window.undo()
     assert window.catalogue.member_ids(project) == set(ids)
     assert not selected_ids(window)
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     assert workspace.matching_action.text() == "Remove all matching (100)"
     workspace.matching_action.click()
     assert len(confirmations) == 2
@@ -406,18 +450,16 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     assert not selected_ids(window)
 
 
-@pytest.mark.parametrize("view", ["Library", "Project clips"])
 @pytest.mark.parametrize("count", [20, 21])
 @pytest.mark.parametrize("accepted", [False, True])
 def test_remove_all_matching_confirmation_threshold_and_cancellation(
-    window, tmp_path, monkeypatch, view, count, accepted
+    window, tmp_path, monkeypatch, count, accepted
 ):
     ids, project = seed_workspace(window, tmp_path, count + 5)
     workspace = window.workspace
     workspace.history().apply(ids[:count], True)
     workspace.refresh()
-    if view == "Project clips":
-        select_view(window, view)
+    select_view(window, "Assigned")
     window.library.clearSelection()
     window.library.item(0).setSelected(True)
     window.library.verticalScrollBar().setValue(100)
@@ -452,7 +494,7 @@ def test_remove_selected_above_threshold_does_not_confirm(window, tmp_path, monk
     ids, project = seed_workspace(window, tmp_path, 21)
     workspace = window.workspace
     workspace.matching_action.click()
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     window.library.selectAll()
     confirmations = []
     monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or False)
@@ -481,7 +523,10 @@ def test_skip_masks_member_visibility_isolation_and_restart(
     assert workspace.state.visible == ids[1:]
     window.catalogue.batch_membership(project, ids[:1], True)
     workspace.refresh()
-    assert workspace.state.visible == ids
+    assert workspace.state.visible == ids[1:]
+    select_view(window, "Assigned")
+    assert workspace.state.visible == ids[:1]
+    select_view(window, "Available")
     window.catalogue.batch_membership(project, ids[:1], False)
     workspace.refresh()
     assert workspace.state.visible == ids[1:]
@@ -491,7 +536,7 @@ def test_skip_masks_member_visibility_isolation_and_restart(
     try:
         assert not restarted.workspace.skipped_ids
         restarted.panel("Export")
-        select_view(restarted, "Library")
+        select_view(restarted, "Available")
         assert restarted.workspace.state.visible == ids
     finally:
         close_window(restarted, application)
@@ -580,8 +625,8 @@ def test_export_pending_range_guards_and_immediate_save(window, tmp_path, monkey
     assert window.selected_id(window.library) == ids[0]
     workspace.search.setText("absent")
     assert workspace.search.text() == ""
-    workspace.views.setCurrentText("Project clips")
-    assert workspace.view == "Library"
+    workspace.views.setCurrentIndex(workspace.views.findData("Assigned"))
+    assert workspace.view == "Available"
     workspace.select_project(other)
     assert workspace.project_id == project
     workspace.skip_selected()
@@ -633,7 +678,7 @@ def test_export_share_feedback_and_atomic_return(window, tmp_path, monkeypatch, 
     window.edit({"rating": 4})
     assert window.save_atomic_edit()
     assert window.current_panel == "Export"
-    assert workspace.project_id == project and workspace.view == "Library"
+    assert workspace.project_id == project and workspace.view == "Available"
     assert workspace.state.visible == ids[1:]
     assert window.selected_id(window.library) == ids[1]
     workspace.edit_preview()
@@ -668,7 +713,7 @@ def test_export_share_pending_range_uses_saved_markers(window, tmp_path, monkeyp
 
 
 def select_view(window, view):
-    window.workspace.views.setCurrentText(view)
+    window.workspace.views.setCurrentIndex(window.workspace.views.findData(view))
     assert test_ui.wait_for(QApplication.instance(), lambda: window.workspace.pending_view is None)
 
 
@@ -693,10 +738,10 @@ def test_view_switch_loading_covers_only_export_video(
         player.loading_started.emit()
 
     monkeypatch.setattr(player, "load", slow_load)
-    for view, clip_id in (("Project clips", ids[1]), ("Library", ids[0])):
+    for view, clip_id in (("Assigned", ids[1]), ("Available", ids[0])):
         previous_view = window.workspace.view
         previous_row = window.library.item(0)
-        window.workspace.views.setCurrentText(view)
+        window.workspace.views.setCurrentIndex(window.workspace.views.findData(view))
         application.processEvents()
         assert loads[-1] == clip_id
         assert window.transition_pending
@@ -749,15 +794,15 @@ def test_pending_view_switch_can_be_cancelled(window, application, tmp_path, mon
         player.loading_started.emit()
 
     monkeypatch.setattr(player, "load", slow_load)
-    window.workspace.views.setCurrentText("Project clips")
+    window.workspace.views.setCurrentIndex(window.workspace.views.findData("Assigned"))
     assert window.workspace.pending_view is not None
-    window.workspace.views.setCurrentText("Library")
+    window.workspace.views.setCurrentIndex(window.workspace.views.findData("Available"))
     assert window.workspace.pending_view is None
     player.awaiting_frame = False
     player.loading_finished.emit()
     application.processEvents()
-    assert window.workspace.view == "Library"
-    assert window.library.count() == 2
+    assert window.workspace.view == "Available"
+    assert window.library.count() == 1
     assert window.selected_id(window.library) == ids[0]
     assert not window.transition_pending
 
@@ -794,12 +839,12 @@ def test_real_video_view_switch_prepares_once_before_list_change(
         original_load(clip)
 
     monkeypatch.setattr(player, "load", record_load)
-    window.workspace.views.setCurrentText("Project clips")
-    assert window.workspace.view == "Library"
+    window.workspace.views.setCurrentIndex(window.workspace.views.findData("Assigned"))
+    assert window.workspace.view == "Available"
     assert window.library.currentItem() is previous
     assert window.workspace.pending_view is not None
     assert test_ui.wait_for(application, lambda: window.workspace.pending_view is None)
-    assert window.workspace.view == "Project clips"
+    assert window.workspace.view == "Assigned"
     assert window.library.count() == 1
     assert window.selected_id(window.library) == second
     assert loads == [second]
@@ -815,7 +860,7 @@ def test_assemble_300_paused_clips_and_undo(window, application, tmp_path, monke
     workspace.matching_action.click()
     assert window.catalogue.member_ids(project) == set(ids)
     assert window.undo_button.isEnabled()
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     window.library.clearSelection()
     for index in (1, 8, 22):
         window.library.item(index).setSelected(True)
@@ -870,7 +915,7 @@ def test_selection_preview_filters_and_atomic_return(window, application, tmp_pa
     window.edit({"rating": 4})
     assert window.save_atomic_edit()
     assert window.current_panel == "Export"
-    assert workspace.view == "Library"
+    assert workspace.view == "Available"
     assert window.selected_id(window.library) == current
     assert {
         item.data(Qt.ItemDataRole.UserRole) for item in window.library.selectedItems()
@@ -882,9 +927,9 @@ def test_selection_preview_filters_and_atomic_return(window, application, tmp_pa
     workspace.from_date.clear()
     assert workspace.matching_action.isEnabled()
     assert window.library.currentRow() == 0
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     assert window.library.count() == 0
-    select_view(window, "Library")
+    select_view(window, "Available")
     assert window.library.count() == len(ids)
 
 
@@ -1054,28 +1099,27 @@ def test_workspace_project_view_state_and_readiness(window, application, tmp_pat
     workspace.search.setText("no match")
     assert len(workspace.categories["Ready"]) == 1
     workspace.readiness_buttons["Blocked"].click()
-    assert workspace.view == "Project clips"
+    assert workspace.view == "Assigned"
     assert window.library.count() == 1
     assert window.selected_id(window.library) == ids[1]
     workspace.category.click()
     assert window.library.count() == 4
     workspace.search.setText("rating:>=4")
-    select_view(window, "Library")
+    select_view(window, "Available")
     assert workspace.search.text() == "no match"
     workspace.search.clear()
-    workspace.outside.setChecked(True)
     assert window.library.count() == len(ids) - 4
     other = window.catalogue.save_project("Other")
     window.refresh_references()
     workspace.select_project(other)
-    assert workspace.view == "Project clips" and window.library.count() == 0
+    assert workspace.view == "Assigned" and window.library.count() == 0
     workspace.select_project(project)
-    assert workspace.view == "Library" and workspace.outside.isChecked()
-    select_view(window, "Project clips")
+    assert workspace.view == "Available"
+    select_view(window, "Assigned")
     assert workspace.search.text() == "rating:>=4"
     workspace.search.setText("rating:>=oops")
-    select_view(window, "Library")
-    select_view(window, "Project clips")
+    select_view(window, "Available")
+    select_view(window, "Assigned")
     assert window.library.count() == 0
     assert not workspace.valid
 
@@ -1084,7 +1128,7 @@ def test_remove_preview_fallback_and_history_invalidation(window, tmp_path):
     ids, project = seed_workspace(window, tmp_path, 4)
     workspace = window.workspace
     workspace.matching_action.click()
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     window.library.setCurrentRow(1)
     workspace.selected_action.click()
     assert window.selected_id(window.library) == ids[2]
@@ -1094,7 +1138,7 @@ def test_remove_preview_fallback_and_history_invalidation(window, tmp_path):
     assert window.save_atomic_edit()
     assert not window.undo_button.isEnabled()
     assert window.editing_histories[ids[0]].undo_stack
-    select_view(window, "Library")
+    select_view(window, "Available")
     window.library.setCurrentRow(0)
     workspace.selected_action.click()
     assert not window.editing_histories.get(ids[0])
@@ -1126,7 +1170,7 @@ def test_restart_destinations_and_atomic_auto_add(window, application, tmp_path,
         assert restarted.catalogue.state("review_destination") == other
         assert not restarted.auto_collect_enabled
         assert restarted.workspace.project_id == project
-        assert restarted.workspace.view == "Project clips"
+        assert restarted.workspace.view == "Assigned"
     finally:
         close_window(restarted, application)
 
@@ -1162,7 +1206,7 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
     window.catalogue.patch(ids[2], {"triage": None})
     Path(window.catalogue.clip(ids[3])["source_path"]).unlink()
     window.refresh_references()
-    select_view(window, "Project clips")
+    select_view(window, "Assigned")
     window.library.item(1).setSelected(True)
     window.library.item(3).setSelected(True)
     artifact = (
@@ -1172,25 +1216,22 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
     for maximized in (False, True):
         window.showMaximized() if maximized else window.showNormal()
         application.processEvents()
-        for view in ("Library", "Project clips"):
+        for view in ("Available", "Assigned"):
             select_view(window, view)
             application.processEvents()
             workspace = window.workspace
-            assert workspace.category.isHidden() == (view != "Project clips")
-            if view == "Project clips":
+            assert workspace.category.isHidden() == (view != "Assigned")
+            if view == "Assigned":
                 assert workspace.category.text() == "All members"
                 assert workspace.selected_action.geometry().right() < workspace.category.x()
                 assert workspace.category.geometry().right() < workspace.matching_action.x()
                 assert workspace.category.y() == workspace.selected_action.y()
                 assert workspace.category.y() == workspace.matching_action.y()
-            for label, checkbox in (
-                (workspace.from_label, workspace.outside),
-                (workspace.through_label, workspace.unavailable),
-            ):
-                if not checkbox.isHidden():
-                    assert label.mapTo(workspace.controls, QPoint()).x() == checkbox.mapTo(
-                        workspace.controls, QPoint()
-                    ).x()
+            assert workspace.views.geometry().right() < workspace.unavailable.x()
+            assert abs(workspace.views.geometry().center().y()
+                       - workspace.unavailable.geometry().center().y()) <= 1
+            assert workspace.unavailable.width() == 28
+            assert not workspace.unavailable.text()
         assert window.splitter.count() == 2
         assert window.workspace.controls.width() <= window.left.width()
         assert window.library.horizontalScrollBar().maximum() == 0

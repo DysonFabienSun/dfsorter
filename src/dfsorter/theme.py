@@ -341,6 +341,8 @@ def stylesheet():
         QToolButton#settingsMenuButton::menu-indicator, QToolButton#captureFolderMenuButton::menu-indicator, QToolButton#activitiesButton::menu-indicator { image: none; width: 0px; }
         QToolButton { background: transparent; border: 1px solid transparent; padding: 2px; }
         QLineEdit QToolButton { min-height: 0px; padding: 0px; border: none; }
+        QToolButton[unavailableSources="true"]:focus { border: 1px solid transparent; }
+        QToolButton[unavailableSources="true"]:checked { border: 1px solid %(accent_default)s; }
         QPushButton[captureFolderAction="true"], QToolButton[captureFolderAction="true"] { min-height: 24px; }
         QPushButton[role="prominentNeutral"][captureFolderAction="true"] { background: %(surface_prominent_neutral)s; color: %(text_primary)s; border: 1px solid %(border_default)s; }
         QPushButton[role="prominentNeutral"][captureFolderAction="true"]:hover { background: %(accent_soft)s; border-color: %(accent_default)s; }
