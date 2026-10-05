@@ -1,5 +1,11 @@
 # Export collection and player refinements
 
+- [x] Successful Add all matching switches to Assigned and Remove all matching switches to Available, retaining destination filters/shared dates and clearing selection through the prepared-preview transition. Cancellation, failure, no-change batches, selected-only actions and history replay retain the current view.
+
+- [x] Export date bounds are shared between Assigned and Available per project for the current run. Selector labels show default-filter counts independent of active filters, excluding temporary Available skips. Clicking Export falls back from Assigned to Available when Assigned has zero default-filter members; manual empty-view selection and atomic returns remain intact.
+
+- [x] Export capture-date bounds accept YYYY-M-D and current-year M-D with one- or two-digit months/days. The shared Editing ghost renderer adds only the inferred year as soon as a complete date is valid, retaining raw text and hiding the prefix at its cursor boundary. Date hints remain independent of the command ghost setting.
+
 - [x] Export uses Assigned / Available as exclusive membership views. The Outside project checkbox and availability checkbox row are removed. A compact eye toggle beside the selector shows unavailable sources independently per view and is outlined only when checked. Without a project, the selector is disabled and the catalogue remains visible. Focused filtering, selection, history, view-transition, range, and Light/Dark layout checks pass.
 
 - [x] Project clips places All members between Remove selected and Remove all matching, replacing Skip selected's middle slot and eliminating its separate row. Active readiness remains available in its tooltip/accessibility text. Remove all matching asks for confirmation above 20 members in either view; cancellation preserves membership, selection, preview, viewport and history. Twelve focused threshold/cancellation, offscreen-batch and Light/Dark layout cases pass; the updated normal Light capture was inspected. Scoped lint and diff review pass.

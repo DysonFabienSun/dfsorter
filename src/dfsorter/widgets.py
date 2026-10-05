@@ -29,11 +29,14 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QAbstractButton,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QStyle,
     QStyledItemDelegate,
+    QStyleOptionComboBox,
+    QStylePainter,
     QToolButton,
     QWidget,
 )
@@ -510,6 +513,24 @@ def tool(name, label, callback, *, pulsing=False):
     control.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     control.clicked.connect(callback)
     return control
+
+
+class MiddleElideComboBox(QComboBox):
+    """Preserve both ends of long labels without changing popup item text."""
+
+    def paintEvent(self, event):
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        rect = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option,
+            QStyle.SubControl.SC_ComboBoxEditField, self,
+        )
+        option.currentText = self.fontMetrics().elidedText(
+            option.currentText, Qt.TextElideMode.ElideMiddle, rect.width()
+        )
+        painter = QStylePainter(self)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
 class ClipDelegate(QStyledItemDelegate):

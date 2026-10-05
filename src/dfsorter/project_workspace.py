@@ -21,12 +21,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .date_input import DateInput, parse_capture_date
 from .history import EditHistory
 from .output import validate
 from .parsing import query_clips
 from .playback import Player, playback_start_settings
 from .theme import role
-from .widgets import CLIP_ROLE, set_icon, storage_gb, tool
+from .widgets import CLIP_ROLE, MiddleElideComboBox, set_icon, storage_gb, tool
 
 
 @dataclass
@@ -66,11 +67,9 @@ def filter_candidates(
     clips, state, registry, members, capture, available, *, member_view=False, readiness=None
 ):
     """Filter a catalogue snapshot without Session eligibility or membership side effects."""
-    try:
-        lower = date.fromisoformat(state.from_date) if state.from_date else None
-        upper = date.fromisoformat(state.through_date) if state.through_date else None
-    except ValueError:
-        raise ValueError("Capture dates must use YYYY-MM-DD") from None
+    today = date.today()
+    lower = parse_capture_date(state.from_date, today=today)
+    upper = parse_capture_date(state.through_date, today=today)
     if lower and upper and lower > upper:
         raise ValueError("From must be on or before Through")
     clips = query_clips(clips, state.query, registry)
@@ -201,7 +200,7 @@ class ProjectWorkspace:
         body = QVBoxLayout(self.controls)
         body.setContentsMargins(8, 8, 8, 8)
         body.setSpacing(8)
-        self.views = QComboBox()
+        self.views = MiddleElideComboBox()
         self.views.addItem("Assigned", "Assigned")
         self.views.addItem("Available", "Available")
         self.views.setSizeAdjustPolicy(
@@ -251,8 +250,8 @@ class ProjectWorkspace:
         filters.setVerticalSpacing(body.spacing())
         filters.setColumnStretch(1, 1)
         filters.setColumnStretch(3, 1)
-        self.from_date = QLineEdit()
-        self.through_date = QLineEdit()
+        self.from_date = DateInput()
+        self.through_date = DateInput()
         self.from_label = QLabel("From")
         self.through_label = QLabel("Through")
         for column, label, control in (
@@ -261,6 +260,7 @@ class ProjectWorkspace:
         ):
             filters.addWidget(label, 0, column)
             control.setPlaceholderText("YYYY-MM-DD")
+            control.setToolTip("YYYY-M-D or M-D · Omitted year defaults to the current local year")
             control.setAccessibleName(f"Capture date {label.text().lower()} (inclusive, local time)")
             control.setClearButtonEnabled(True)
             filters.addWidget(control, 0, column + 1)
@@ -511,7 +511,7 @@ class ProjectWorkspace:
             self.project_views[project_id] = "Available"
         self.selector.setCurrentIndex(max(0, self.selector.findData(project_id)))
 
-    def switch_view(self, view):
+    def switch_view(self, view, *, deselect=False):
         if self.loading:
             return
         if not self.project_id:
@@ -523,44 +523,43 @@ class ProjectWorkspace:
         self.remember()
         self.pending_view = None
         if view == self.view:
-            self.refresh(restore=True)
+            self.refresh(restore=True, deselect=deselect)
             return
         clip = self.expected_clip(view)
         if clip is not None and not self.window.player_has_clip(self.player, clip):
-            self.pending_view = (view, self.project_id, self.window.clip_load_key(clip, "Export"))
+            self.pending_view = (
+                view, self.project_id, self.window.clip_load_key(clip, "Export"), deselect
+            )
             self.player.load(clip)
             return
-        self.commit_view_switch(view)
+        self.commit_view_switch(view, deselect=deselect)
 
-    def commit_view_switch(self, view):
+    def commit_view_switch(self, view, *, deselect=False):
         self.pending_view = None
         self.view = view
         self.load_controls()
-        self.refresh(restore=True)
+        self.refresh(restore=True, deselect=deselect)
 
     def finish_view_switch(self):
         pending = self.pending_view
         if pending is None or self.player.awaiting_frame:
             return
-        view, project_id, key = pending
+        view, project_id, key, deselect = pending
         if self.window.current_panel != "Export" or project_id != self.project_id:
             self.pending_view = None
             return
         clip = self.expected_clip(view)
         if key != self.window.clip_load_key(clip, "Export"):
-            self.switch_view(view)
+            self.switch_view(view, deselect=deselect)
             return
         if key != self.window.clip_load_key(self.player.loaded_clip, "Export"):
             return
-        self.commit_view_switch(view)
+        self.commit_view_switch(view, deselect=deselect)
 
     def load_controls(self):
         self.loading = True
         state = self.state
-        assigned_index = self.views.findData("Assigned")
-        assigned_label = f"Assigned - {self.selector.currentText()}" if self.project_id else "Assigned"
-        self.views.setItemText(assigned_index, assigned_label)
-        self.views.setItemData(assigned_index, assigned_label, Qt.ItemDataRole.ToolTipRole)
+        self.update_view_counts()
         self.views.setCurrentIndex(self.views.findData(self.view))
         self.views.setEnabled(bool(self.project_id))
         self.search.setText(state.query)
@@ -588,12 +587,47 @@ class ProjectWorkspace:
         state.query = self.search.text()
         state.game = self.game.currentData()
         state.verdict = self.verdict.currentData()
-        state.from_date = self.from_date.text().strip()
-        state.through_date = self.through_date.text().strip()
+        self.set_date_bounds(self.from_date.text().strip(), self.through_date.text().strip())
         state.unavailable = self.unavailable.isChecked()
         self.update_unavailable_toggle()
         state.newest = bool(self.sort.currentIndex())
         self.refresh(reset=True)
+
+    def set_date_bounds(self, lower, upper):
+        for view in ("Assigned", "Available"):
+            state = self.view_state(view)
+            state.from_date = lower
+            state.through_date = upper
+
+    def entry_view(self):
+        if self.view == "Assigned" and not self.window.catalogue.member_ids(self.project_id):
+            return "Available"
+        return self.view
+
+    def update_view_counts(self, clips=None):
+        catalogue = self.window.catalogue
+        clips = catalogue.clips() if clips is None else clips
+        members = catalogue.member_ids(self.project_id)
+        skipped = self.skipped_ids.get(self.project_id, set())
+        counts = {
+            "Assigned": len(members),
+            "Available": sum(
+                clip["clip_id"] not in members
+                and clip["clip_id"] not in skipped
+                and clip["triage"] == "keep"
+                and self.window.source_available(clip["source_path"])
+                for clip in clips
+            ),
+        }
+        for view, count in counts.items():
+            name = f"Assigned - {self.selector.currentText()}" if view == "Assigned" and self.project_id else view
+            label = f"{name} ({count})"
+            index = self.views.findData(view)
+            self.views.setItemText(index, label)
+            self.views.setItemData(
+                index, label + " · Count uses default filters, excludes temporary skips",
+                Qt.ItemDataRole.ToolTipRole,
+            )
 
     def update_unavailable_toggle(self):
         shown = self.unavailable.isChecked()
@@ -609,6 +643,7 @@ class ProjectWorkspace:
         if not self.window.ensure_range_complete():
             return
         self.remember()
+        self.set_date_bounds("", "")
         self.view = "Assigned"
         previous = self.state
         self.states[(self.project_id, self.view)] = WorkspaceView(
@@ -634,6 +669,7 @@ class ProjectWorkspace:
         self.update_export_size(clips)
         self.more.setEnabled(bool(self.project_id))
         self.empty.setVisible(not self.project_id)
+        self.update_view_counts(clips)
 
     def update_export_size(self, clips):
         total = 0
@@ -928,6 +964,8 @@ class ProjectWorkspace:
         except (ValueError, sqlite3.Error) as error:
             self.window.error(error)
         self.refresh(restore=True, deselect=bool(changed))
+        if all_matching and changed:
+            self.switch_view("Assigned" if include else "Available", deselect=True)
 
     def clear_selection(self):
         self.remember()

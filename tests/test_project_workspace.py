@@ -161,8 +161,8 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     window.rename_project()
     assert window.workspace.project_id == created
     assert window.workspace.selector.currentText() == "Renamed"
-    assert window.workspace.views.itemText(0) == "Assigned - Renamed"
-    assert window.workspace.views.itemText(1) == "Available"
+    assert window.workspace.views.itemText(0) == "Assigned - Renamed (2)"
+    assert window.workspace.views.itemText(1) == "Available (0)"
     assert window.catalogue.member_ids(created) == set(ids)
     window.catalogue.set_state("review_destination", created)
     window.update_collection_controls()
@@ -170,7 +170,7 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     monkeypatch.setattr(window, "confirm", lambda *_: True)
     window.delete_project()
     assert window.workspace.project_id is None
-    assert window.workspace.views.itemText(0) == "Assigned"
+    assert window.workspace.views.itemText(0) == "Assigned (0)"
     assert window.catalogue.state("review_destination") is None
     assert not window.auto_collect_enabled
     assert not window.workspace.export_button.isEnabled()
@@ -179,11 +179,15 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     assert all(Path(clip["source_path"]).is_file() for clip in window.catalogue.clips())
 
 
-def test_filters_local_dates_unknown_and_query(catalogue, clips, registry):
+@pytest.mark.parametrize("bounds", [
+    ("2026-10-05", "2026-10-05"), ("10-5", "10-5"), ("2026-10-5", "10-05"),
+])
+def test_filters_local_dates_unknown_and_query(catalogue, clips, registry, monkeypatch, bounds):
     clips[0].update(triage="keep", rating=4, metadata={"agent": "Jett"})
     clips[1].update(triage="keep", rating=3)
     clips[2].update(triage="discard", rating=5)
     local = datetime(2026, 10, 5, tzinfo=datetime.now().astimezone().tzinfo)
+    monkeypatch.setattr("dfsorter.project_workspace.date", SimpleNamespace(today=lambda: local.date()))
     dates = {
         clips[0]["clip_id"]: local.astimezone(timezone.utc),
         clips[1]["clip_id"]: (local + timedelta(hours=23, minutes=59)).astimezone(timezone.utc),
@@ -202,7 +206,7 @@ def test_filters_local_dates_unknown_and_query(catalogue, clips, registry):
         )
 
     result, unknown = filtered(
-        WorkspaceView(verdict="all", from_date="2026-10-05", through_date="2026-10-05")
+        WorkspaceView(verdict="all", from_date=bounds[0], through_date=bounds[1])
     )
     assert result == clips[1:2] and unknown == 1
     assert len(filtered(WorkspaceView(verdict="all"))[0]) == 2
@@ -211,6 +215,8 @@ def test_filters_local_dates_unknown_and_query(catalogue, clips, registry):
     assert filtered(WorkspaceView(verdict="all"), member_view=True)[0] == clips[:1]
     with pytest.raises(ValueError, match="From"):
         filtered(WorkspaceView(from_date="2026-10-06", through_date="2026-10-05"))
+    with pytest.raises(ValueError, match="From"):
+        filtered(WorkspaceView(from_date="10-6", through_date="10-5"))
     with pytest.raises(ValueError):
         filtered(WorkspaceView(query="rating:>=no"))
 
@@ -391,7 +397,7 @@ def test_membership_views_and_unavailable_icon(window, application, tmp_path, th
         Path(window.catalogue.clip(clip_id)["source_path"]).unlink()
     workspace.refresh()
     assert [workspace.views.itemText(i) for i in range(workspace.views.count())] == [
-        "Assigned - Highlights", "Available"
+        "Assigned - Highlights (1)", "Available (1)"
     ]
     assert workspace.state.visible == ids[:1]
     assert not workspace.unavailable.isChecked()
@@ -419,6 +425,92 @@ def test_membership_views_and_unavailable_icon(window, application, tmp_path, th
                - workspace.unavailable.geometry().center().y()) <= 1
 
 
+def test_date_bounds_shared_between_views_and_isolated_by_project(window, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    workspace = window.workspace
+    window.catalogue.batch_membership(project, ids[:1], True)
+    workspace.refresh()
+    workspace.from_date.setText("3-1")
+    workspace.through_date.setText("12-31")
+    select_view(window, "Assigned")
+    assert workspace.from_date.text() == "3-1"
+    assert workspace.through_date.text() == "12-31"
+    workspace.from_date.setText("3-")
+    select_view(window, "Available")
+    assert workspace.from_date.text() == "3-"
+    assert not workspace.valid
+    workspace.from_date.setText("3-13")
+    other = window.catalogue.save_project("Other")
+    window.refresh_references()
+    workspace.select_project(other)
+    assert workspace.from_date.text() == workspace.through_date.text() == ""
+    workspace.select_project(project)
+    assert workspace.from_date.text() == "3-13"
+    assert workspace.through_date.text() == "12-31"
+    workspace.open_category(None)
+    assert workspace.from_date.text() == workspace.through_date.text() == ""
+    select_view(window, "Available")
+    assert workspace.from_date.text() == workspace.through_date.text() == ""
+
+
+def test_view_counts_use_defaults_and_exclude_skips(window, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 6)
+    workspace = window.workspace
+    window.catalogue.batch_membership(project, ids[:2], True)
+    window.catalogue.patch(ids[0], {"triage": "discard"})
+    window.catalogue.patch(ids[1], {"triage": None})
+    window.catalogue.patch(ids[5], {"triage": None})
+    Path(window.catalogue.clip(ids[4])["source_path"]).unlink()
+    workspace.refresh()
+
+    def counts(assigned, available):
+        assert workspace.views.itemText(0) == f"Assigned - Highlights ({assigned})"
+        assert workspace.views.itemText(1) == f"Available ({available})"
+
+    counts(2, 2)
+    workspace.search.setText("no matching title")
+    workspace.from_date.setText("bad")
+    workspace.unavailable.click()
+    counts(2, 2)
+    workspace.history().skip([ids[2]])
+    workspace.refresh()
+    counts(2, 1)
+    workspace.undo()
+    counts(2, 2)
+    window.catalogue.batch_membership(project, [ids[3]], True)
+    workspace.refresh()
+    counts(3, 1)
+    window.catalogue.batch_membership(project, [ids[3]], False)
+    workspace.refresh()
+    counts(2, 2)
+
+
+@pytest.mark.parametrize("origin", ["Home", "Export"])
+def test_export_click_falls_back_only_when_default_assigned_is_empty(
+    window, application, tmp_path, origin
+):
+    ids, project = seed_workspace(window, tmp_path, 2)
+    workspace = window.workspace
+    select_view(window, "Assigned")
+    assert workspace.view == "Assigned"  # Manual selection of an empty view stays possible.
+    window.panel(origin)
+    window.nav["Export"].click()
+    assert test_ui.wait_for(application, lambda: window.pending_page is None
+                            and workspace.pending_view is None)
+    assert window.current_panel == "Export"
+    assert workspace.view == "Available"
+    window.catalogue.batch_membership(project, ids[:1], True)
+    workspace.refresh()
+    select_view(window, "Assigned")
+    workspace.search.setText("no matching title")
+    assert not workspace.state.visible
+    window.panel(origin)
+    window.nav["Export"].click()
+    assert test_ui.wait_for(application, lambda: window.pending_page is None)
+    assert workspace.view == "Assigned"
+    assert not workspace.state.visible
+
+
 def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path, 100)
     workspace = window.workspace
@@ -426,14 +518,18 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or True)
     workspace.matching_action.click()
     assert not confirmations
+    assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
+    assert workspace.view == "Assigned"
     assert not selected_ids(window)
     assert window.library.selectionModel().member_type is None
-    assert window.library.count() == 0
+    assert window.library.count() == 100
     select_view(window, "Assigned")
     window.library.item(0).setSelected(True)
     assert workspace.matching_action.text() == "Remove all matching (100)"
     workspace.matching_action.click()
     assert len(confirmations) == 1
+    assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
+    assert workspace.view == "Available"
     assert not window.catalogue.member_ids(project)
     assert not selected_ids(window)
     window.undo()
@@ -443,6 +539,8 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     assert workspace.matching_action.text() == "Remove all matching (100)"
     workspace.matching_action.click()
     assert len(confirmations) == 2
+    assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
+    assert workspace.view == "Available"
     assert not window.catalogue.member_ids(project)
     window.undo()
     assert not selected_ids(window)
@@ -472,22 +570,71 @@ def test_remove_all_matching_confirmation_threshold_and_cancellation(
     monkeypatch.setattr(window, "confirm",
                         lambda message: confirmations.append(message) or accepted)
     workspace.matching_action.click()
+    assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
     assert len(confirmations) == (1 if count > 20 else 0)
     if confirmations:
         assert f"{count} matching clips" in confirmations[0]
     if count > 20 and not accepted:
+        assert workspace.view == "Assigned"
         assert window.catalogue.member_ids(project) == set(ids[:count])
         assert selected_ids(window) == selection
         assert window.selected_id(window.library) == current
         assert window.library.verticalScrollBar().value() == scroll
         assert len(history.undo_stack) == 1 and not history.redo_stack
     else:
+        assert workspace.view == "Available"
         assert not window.catalogue.member_ids(project)
         assert not selected_ids(window)
         assert len(history.undo_stack) == 2
         window.undo()
         assert window.catalogue.member_ids(project) == set(ids[:count])
     assert window.catalogue.clips() == before
+
+
+@pytest.mark.parametrize("include", [True, False])
+def test_all_matching_switches_views_preserving_filters_and_dates(
+    window, application, tmp_path, monkeypatch, include
+):
+    ids, project = seed_workspace(window, tmp_path, 4)
+    workspace = window.workspace
+    window.catalogue.batch_membership(project, ids[:2], True)
+    window.catalogue.patch(ids[0], {"mainline": "Exception"})
+    local = datetime.now().astimezone().replace(month=6, day=12)
+    monkeypatch.setattr(window, "capture_datetime", lambda clip: local)
+    workspace.view_state("Assigned").query = "Highlight"
+    workspace.view_state("Assigned").newest = True
+    workspace.view_state("Available").query = "game:VAL"
+    workspace.set_date_bounds("1-1", "12-31")
+    workspace.load_controls()
+    workspace.refresh()
+    select_view(window, "Available" if include else "Assigned")
+    workspace.matching_action.click()
+    assert test_ui.wait_for(application, lambda: workspace.pending_view is None)
+    assert workspace.view == ("Assigned" if include else "Available")
+    assert workspace.search.text() == ("Highlight" if include else "game:VAL")
+    assert workspace.from_date.text() == "1-1"
+    assert workspace.through_date.text() == "12-31"
+    assert not selected_ids(window)
+    assert window.catalogue.member_ids(project) == (set(ids) if include else {ids[0]})
+    workspace.undo()
+    assert window.catalogue.member_ids(project) == set(ids[:2])
+    assert workspace.view == ("Assigned" if include else "Available")
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_all_matching_no_change_or_failure_keeps_view(window, tmp_path, monkeypatch, fails):
+    seed_workspace(window, tmp_path, 2)
+    workspace = window.workspace
+    select_view(window, "Assigned")
+    if fails:
+        def fail(*args):
+            raise ValueError("Membership change failed")
+
+        monkeypatch.setattr(workspace.history(), "apply", fail)
+        monkeypatch.setattr(window, "error", lambda error: None)
+    workspace.change_membership(True)
+    assert workspace.view == "Assigned"
+    assert workspace.pending_view is None
 
 
 def test_remove_selected_above_threshold_does_not_confirm(window, tmp_path, monkeypatch):

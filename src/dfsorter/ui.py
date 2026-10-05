@@ -2001,7 +2001,7 @@ class Window(QMainWindow):
         if name == "Editing":
             return self.expected_editing_clip(), self.player
         if name == "Export":
-            return self.expected_export_clip(), self.export_player
+            return self.workspace.expected_clip(self.workspace.entry_view()), self.export_player
         return None, None
 
     def cancel_pending_navigation(self):
@@ -2022,18 +2022,18 @@ class Window(QMainWindow):
     def navigate_panel(self, name):
         if name == self.current_panel:
             self.cancel_pending_navigation()
-            self.panel(name)
+            self.panel(name, export_entry=name == "Export")
             return
         if name not in {"Browse", "Editing", "Export"} or (
             self.current_panel == "Config" or self.atomic_edit or self.has_pending_range()
         ):
             self.cancel_pending_navigation()
-            self.panel(name)
+            self.panel(name, export_entry=name == "Export")
             return
         clip, player = self.navigation_target(name)
         if clip is None or self.player_has_clip(player, clip):
             self.cancel_pending_navigation()
-            self.panel(name)
+            self.panel(name, export_entry=name == "Export")
             return
         key = self.clip_load_key(clip, name)
         if (
@@ -2071,9 +2071,9 @@ class Window(QMainWindow):
             return
         self.capture_inactive_frame(player, media_generation)
         self.cancel_pending_navigation()
-        self.panel(name)
+        self.panel(name, export_entry=name == "Export")
 
-    def panel(self, name):
+    def panel(self, name, *, export_entry=False):
         self.cancel_pending_navigation()
         stamp = self.catalogue_stamp()
         if name == self.current_panel and self._panel_initialized:
@@ -2081,6 +2081,8 @@ class Window(QMainWindow):
                 self.source_stats.clear()
                 self.refresh_references()
                 self.refresh_library()
+            if export_entry and self.workspace.entry_view() != self.workspace.view:
+                self.workspace.switch_view(self.workspace.entry_view())
             return
         if self.current_panel == "Config" and name != "Config":
             if not self.config_editor.confirm_discard():
@@ -2091,6 +2093,9 @@ class Window(QMainWindow):
             self.discard_atomic_edit()
         if not self.ensure_range_complete():
             return
+        if export_entry:
+            self.workspace.view = self.workspace.entry_view()
+            self.workspace.load_controls()
         self.submit_resume = False
         if name == "Editing" and not self.atomic_edit and not self.catalogue.state("session"):
             self.error("Create a session before entering Editing")
