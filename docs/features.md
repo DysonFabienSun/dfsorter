@@ -1,3 +1,18 @@
+# Export project workspace
+
+- [x] Export owns project creation, rename, deletion, Library / Project clips assembly and export setup. The former Projects pane, hanging tab, activation controls, Session visibility overrides and Settings Projects tab are retired; historical entries below describing them are superseded.
+- [x] Independent per-project/view filters support structured search, verdict/game, inclusive local capture dates, unavailable sources and Outside project. Multi-selection, preview navigation, atomic Editing return and bulk operations preserve surviving workspace state.
+- [x] Transactional membership batches provide per-project Undo/Redo, stale-history checks and reciprocal Editing history invalidation. Assembly retains metadata, verdicts and Session state.
+- [x] Ready / Pending / Blocked / Skipped summaries open actionable member filters. Setup remembers per-project preferences only after the job and preferences commit together; frozen manifests retain existing copy and Resume behavior.
+- [x] Schema 9 preserves catalogue identities, memberships, Sessions and jobs, migrates the legacy review destination and keeps workspace selection separate. Auto-add is explicit, applies only to new Keep decisions, and starts off every launch.
+- [x] Editing uses one Projects menu after Change game: left-click controls current-clip memberships; right-click toggles collection into one project, marked by cycling arrows and a cyan button outline. Atomic membership changes remain staged; Ctrl+Enter retains explicit Add to project + Next behavior.
+- [x] Focused migration, filtering, transaction, history, Editing, dialog and navigation checks pass. The 300-clip paused-folder scenario assembles and exports all matches with byte-identical copies and unchanged originals, verdicts and Session state. Light/Dark normal, maximized, setup and atomic Editing views were inspected at 100% and 125% scaling; screenshots are in `cache/verification/project-workspace`. Changed-file Ruff and diff checks pass.
+- [x] Export view changes prepare the requested preview before replacing the list, with loading confined to the video surface. Project controls remain visible. Focused Light/Dark, resize, cancellation, state-restoration and real-video checks pass; real-video preparation loads the destination once.
+- [x] A help icon after Export’s More menu opens a generic assembly/export guide, including the add-all/remove-exceptions workflow. Dialog opening, closing and layout were verified in Light and Dark modes.
+- [x] The separate destination selector and Auto widget are removed. Projects merges membership and review collection without adding rows. Collection starts off on launch, remains independent of clip membership, and cannot be changed during atomic Editing. The UI Layout Guide prohibits extra rows for formatting changes to preserve player height.
+- [ ] Merged-menu interaction verification: test execution stopped at request; the new right-click interaction has not been confirmed by completed tests.
+- [ ] User acceptance of the renovated workflow.
+
 # DFSorter v1 delivery checklist
 
 ## Pane layout consistency

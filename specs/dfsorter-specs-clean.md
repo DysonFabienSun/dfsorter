@@ -339,13 +339,13 @@ toolbar switches immediately between explicit Light and Dark modes. When the sav
 System, the quick toggle selects the explicit mode opposite the currently resolved system
 appearance. Settings provides all three choices under Appearance.
 
-Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse, Editing and Export, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. The first time each applicable navigation page opens, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. Successfully creating or replacing a Session re-arms this one-time placement for Editing so the first queued clip receives it; ordinary Resume Session entries preserve the Editing viewport. Later mouse selection, keyboard navigation, library rebuilds, page returns and window resizes do not reapply this prescribed placement. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. User-initiated library sorting and filtering select only the first visible clip and scroll to the start of the list. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
+Page and clip transitions keep the native video surface hidden until the surrounding controls are prepared and the first frame is ready (or loading fails). Page changes reveal the prepared page and video together. Within Browse and Editing, clip changes cover only the clip details/player area (and Editing command area); the library and navigation remain visible and usable. Reveal the new details and video together. Within Export, clip and Library / Project clips changes cover only the video surface while loading; project selection, readiness, titles, membership controls, library and navigation remain visible and usable. Clip selection must not rebuild the library or unrelated controls or restart an already selected clip. The first time each applicable navigation page opens, place the selected clip at the top when it is the first clip. Otherwise, show only the bottom third of the immediately preceding card above it. Successfully creating or replacing a Session re-arms this one-time placement for Editing so the first queued clip receives it; ordinary Resume Session entries preserve the Editing viewport. Later mouse selection, keyboard navigation, library rebuilds, page returns and window resizes do not reapply this prescribed placement. When cards exist beyond a visible list edge, overlay a non-interactive 16 px gradient that fades from the list background at that edge to transparent toward the content. The gradient consumes no layout space and disappears completely at the corresponding scroll boundary; do not add chevrons or borders. Necessary library rebuilds retain surviving selections and the viewport anchor where possible when no clip is selected. User-initiated library sorting and filtering select only the first visible clip and scroll to the start of the list. Show a quiet Loading… indicator only when the transition lasts longer than 1000 ms. Media errors and missing sources reveal the details with an error instead of leaving them covered; a preview that has not produced a frame within 15 seconds stops waiting and offers retry through Play. Stale transition callbacks must not reveal a newer page prematurely.
 
 ### 9.2 Settings and Actions
 
 The settings menu also contains Check for updates… after Settings…. This manual action is available in portable releases; it checks the latest stable public GitHub Release, asks before downloading, closes the app, applies the update through a separate helper, and reopens it. Failed replacement restores the previous application files and retains the state backup. Each portable-app launch also checks once after UI initialization, without a progress dialog. The automatic check stays quiet when the copy is current or the check fails; a newer release prompts for download and installation. Development copies do not check automatically.
 
-There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Manage unavailable clips…, Reset window and panes, and Exit. Undo and Redo icon buttons sit at the right with 4 px between them; retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Undo, Redo, Theme and Settings use matching 28 px heights and one vertical centerline with frameless styling. When available and closed, Projects uses a labeled folder-like tab hanging beneath Settings. Opening the pane hides the tab; the pane has a prominent Projects heading and its own close action. Retain the shared optical 1 px downward icon offset on icon-only utilities. Settings changes save immediately. While the Settings dialog is open, main-window controls ignore input, but an operating-system close request closes the dialog and shuts down the main window through its normal close handling.
+There is no menu bar. The navigation strip is the top application control row. Its right-aligned settings cog opens a menu containing Settings…, Capture folders…, Reset clip metadata…, Edit tag…, Delete rejected originals…, Manage unavailable clips…, Reset window and panes, and Exit. Undo and Redo icon buttons sit at the right with 4 px between them; retain Ctrl+Z, Ctrl+Shift+Z and Ctrl+Q, with text inputs retaining native undo/redo behavior. Existing page controls provide projects, capture folders, sharing, export, configuration and playback actions. Undo, Redo, Theme and Settings use matching 28 px heights and one vertical centerline with frameless styling. Retain the shared optical 1 px downward icon offset on icon-only utilities. Settings changes save immediately. While the Settings dialog is open, main-window controls ignore input, but an operating-system close request closes the dialog and shuts down the main window through its normal close handling.
 
 Resetting clip metadata must never modify or delete the source video. Destructive catalogue operations retain explicit confirmation.
 
@@ -364,26 +364,18 @@ The panel-navigation row and settings cog are present on every panel except duri
 
 ### 9.4 Pane Layout
 
-The application uses a Premiere-inspired three-pane layout where relevant.
+All pages use a two-column library-and-content composition. The library starts at roughly 30% of the normal window width and remains resizable; recovered width and window growth go to the main content. Widths are retained during the run, not across restarts. Reset Layout restores a normal 1400 × 918 window and the default library width. There is no right Projects pane, hanging tab, activation UI, maximized visibility override, or Session forced-open behavior.
 
-- The left pane defaults to roughly 30% of the normal window width.
-- The right Projects pane defaults to collapsed in normal windows and expanded to roughly 25% when maximized. When closed, a visible **Projects** folder tab beneath Settings opens it and then disappears; an × action beside the pane heading closes it. Manual visibility overrides are remembered separately for normal/maximized states for the current run. Session always shows the pane and does not allow it to close or collapse; leaving Session restores the current window state's visibility preference. Browse, Export and Config always hide it. Reset Layout restores defaults.
-- Both panes are manually resizable using splitters.
-- Resizing/maximizing the window primarily gives additional width to the center pane.
-- User-adjusted pane widths are not persisted across application restarts.
+| Panel | Left pane | Main area | Command bar |
+| --- | --- | --- | --- |
+| Home | Library reference | Capture-folder management | Hidden |
+| Browse | Library, search and filters | Preview, source context and Share | Hidden |
+| Session | Pending candidates with search/filter/sort | Session creation and status | Hidden |
+| Editing | Frozen Session queue or single clip | Video, metadata, compact project membership and review controls | Visible |
+| Export | Library / Project clips, independent filters and membership actions | Project management, readiness, preview and Export setup access | Hidden |
+| Config | Game list | Game-config editor and validation | Hidden |
 
-The exact content of each pane depends on the active panel.
-
-| Panel | Left pane | Center/main area | Right pane | Command bar |
-| --- | --- | --- | --- | --- |
-| Home | Library reference | Capture-folder management | Projects | Hidden |
-| Browse | Library clips, search, clip/game/project filters, availability toggle, date-order toggle | Video, working title, filename, inline Share | Hidden | Hidden |
-| Session | Full library with search/filter/sort | Session creation and status | Projects | Hidden |
-| Editing | Locked session queue | Video + clip metadata | Projects | Visible |
-| Export | Selected project/member list | Project export controls + smaller player | Hidden | Hidden |
-| Config | Game list | Game-config editor and validation status | Hidden | Hidden |
-
-Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. The Clips button shows the selected verdict names in menu order, or **Clips: all** / **Clips: none** for those states, and grows to fit its label. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. The Games and Projects buttons show counts of selected options, including Uncategorized in the Games count. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Frozen Editing sessions and Export membership are unaffected.
+Home and Browse share a compact filter row containing **Clips**, **Games**, and **Projects** menu buttons. Each menu supports checkbox multi-selection and an all-items action. The Clips button shows the selected verdict names in menu order, or **Clips: all** / **Clips: none** for those states, and grows to fit its label. Clips defaults to Pending + Keep so discarded clips are hidden. Games includes **Uncategorized**. The Games and Projects buttons show counts of selected options, including Uncategorized in the Games count. Projects remains clickable when no projects exist and shows **All projects** selected plus a disabled **No projects** message. Filter selections stay in effect across panel changes for the current run but are not persisted across restarts. Export filters are independent, with separate current-run state per project and per view. Frozen Sessions and saved project memberships are never changed by filtering.
 
 ### 9.5 Left-Pane Library
 
@@ -423,7 +415,7 @@ Rating remains an editorial reference and optional export-grouping value; rating
 
 ## 10. Home Panel
 
-Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Projects dialog (General selected initially).
+Home owns capture-folder management. The settings cog retains its action menu: **Capture folders…** opens Home, while **Settings…** opens the General/Appearance dialog (General selected initially).
 
 Show a folder list with readable scanning state, clip/game counts, the total logical size in GB of all regular files recursively inside each capture folder, and the size in GB of newly discovered clips since application launch. Use the same since-launch baseline as the new clip counts. The controls are **Add folder…**, **Game configs…**, **Rescan**, and a text-only **More…** menu, in that order. Game configs… opens the Config panel. More contains selected-folder **Pause scanning / Resume scanning** and the advanced global **Rebuild media information…** action. **Relink folder…** and **Remove folder…** are available from the selected folder's context menu. Disable selected-folder actions without a valid selection. No capture-folder controls are duplicated in Settings. Hide the inactive command bar on Home.
 
@@ -647,7 +639,7 @@ Entering Editing or changing clips starts review mode with a non-text surface fo
 - In the Editing command field, unmodified `=` inserts `-- ` at the beginning of the command (no leading space, one trailing space), or ` -- ` elsewhere at the cursor. At the end of a command with no existing `--` and no selection, trailing spaces are replaced by the separator's single leading space; an otherwise blank command has no leading space. The same expansion applies when `=` triggers the paused-video review-to-input transition. An immediate unmodified Space is suppressed once because the separator already ends in a space; subsequent spaces insert normally. An immediate Backspace (also after the suppressed Space) removes the separator, restoring one trailing space if any were replaced, otherwise none, and cancels Space suppression. Any other intervening key, cursor movement, pointer interaction or focus change cancels both opportunities.
 - Enter submits commands only in command-input mode and remains in input on success; invalid commands retain input focus and text. Shift+Enter never submits; it applies verdict-and-advance in review mode or command-input mode when the command bar is completely empty. Escape returns to review preserving the draft.
 - Clicking a button or empty space in Editing returns to review mode and removes focus from the command bar while preserving any unsubmitted draft. Clicking the command bar itself keeps input focus; modal dialogs and popup menus retain their own focus.
-- Ctrl+Enter in review mode adds the current clip to the active project and advances one position in frozen Session order regardless of triage. It requires an active project, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible icon-only **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without an active project. The Projects menu retains **Add to project** for the current selection (one clip in Editing, potentially multiple in other library views).
+- Ctrl+Enter in review mode adds the current clip to the review destination and advances one position in frozen Session order regardless of triage. It requires a review destination, preserves triage and drafts, ignores auto-repeat, and stays on the last clip without wrapping. Existing membership is harmless. A visible icon-only **Add to project + Next** button at the bottom right of the Editing player provides the same action and is disabled without a review destination. The Projects checkbox menu edits the current clip membership; Export owns bulk membership changes.
 - Unmodified Up/Down in Editing review mode navigates every clip in frozen Session order, including kept/rejected clips, without wrapping. After a successful Enter submission, Up/Down in the still-focused empty command bar performs the same navigation until new draft text is entered or focus leaves the bar. Otherwise text fields retain their normal keys. Preserve drafts and position the destination as specified in §9.1.
 - While a usable Editing video is paused, ordinary typing enters command input and inserts the triggering text once at its retained cursor, applying the separator expansion above for unmodified `=`. Existing review/video shortcuts take priority, including F, I/O, Space, arrows, Backspace, / and Enter. Other text fields, menus, dialogs and modifier-only keys are excluded. Settings → General → **Type to enter commands while video is paused** defaults on and persists immediately.
 - Command colors indicate validation independently of keyboard mode: neutral when empty or typing an unfinished token, subtle blue for a valid draft, amber bottom border for incomplete syntax, red bottom border for invalid input, and a green bottom border for 1.2 seconds after saving. Retain the cyan focus outline. Defer unknown-token errors until a token is delimited or submission fails; explicit invalid values and conflicts can show immediately. A short hint explains validation and shows “Saved · Space to resume” after a successful submission while paused. In that post-submit state only, the first unmodified Space resumes normal-speed playback and enters review without inserting text; consume its repeats and release. Other non-modifier keys consume the opportunity and behave normally. Mouse interaction, focus loss, playback changes, paste and clip/panel changes cancel it. Failed commands do not arm it. This post-submit behavior is independent of the paused-typing setting.
@@ -795,7 +787,7 @@ This command history exists only in memory and does not persist across applicati
 - `Shift+Enter` applies verdict-and-advance in review mode or command-input mode when the command bar is completely empty; it never submits a command. Ignore auto-repeat. Failed validation preserves input focus; a successful action enters review mode. Other text fields retain their normal editing behavior.
 - If the command bar contains any text, including whitespace or a retained draft, Shift+Enter in either mode refuses advancement and prompts the user to enter input mode and press Enter to submit existing commands first.
 - A successful metadata command by itself does **not** change triage.
-- For a non-discarded clip, Shift+Enter requires a configured game and at least one populated structured metadata field or `mainline`. Missing metadata leaves verdict and position unchanged and is explained inline. A legal action changes triage to `keep`, applies the normal active-project membership rule and advances. Source availability remains an export requirement.
+- For a non-discarded clip, Shift+Enter requires a configured game and at least one populated structured metadata field or `mainline`. Missing metadata leaves verdict and position unchanged and is explained inline. A legal action changes triage to `keep`, applies the normal explicitly enabled review auto-add rule and advances. Source availability remains an export requirement.
 - An explicitly discarded clip advances while preserving Discard, even with missing fields, no game or an unavailable source. The empty-command-bar requirement still applies.
 - After applying the legal verdict, advance to the next clip with pending triage later in frozen Session order, skipping Keep and Discard clips. Do not wrap. If none remains ahead, stay on the current clip and report Session complete only if no Session clips remain pending; otherwise report that earlier clips remain pending. Do not delete or replace the Session. Ignore key auto-repeat for advancement.
 - Backspace in review mode marks the current clip `discard`; in every text field, including an empty command bar, it only edits text.
@@ -824,57 +816,37 @@ The Editing panel displays the stored rating as a clickable 1-5 star control. Th
 
 Rating is reference metadata only. It does not automatically Keep, Discard, or prioritize a clip; rating search is supported as described in the search section.
 
-### 13.8 Active Project Behavior
+### 13.8 Project membership and review collection
 
-A clip may belong to multiple Projects.
+A clip may belong to multiple projects. Immediately after **Change game** on the existing verdict row, Editing provides one **Projects** menu combining current-clip membership and review collection. Left-click checkboxes change current-clip memberships, immediately in ordinary Editing and staged in atomic Editing. Right-clicking a project enables automatic collection of new Keep decisions into that project; right-clicking another project moves the single collection destination. The active project displays a Lucide cycling-arrow icon at the right of its menu row, and the Projects button has a cyan outline. Right-clicking the active project again turns Auto off and removes both indicators while retaining its destination for Add to project + Next. The Menu key on a focused project provides the same collection toggle. Tooltips explain both gestures and the current destination/Auto state. There is no separate destination selector, Auto widget or project-control row.
 
-At most one Project may be active at a time.
+The review destination persists across restarts, separately from the workspace project. Auto-add starts off on every launch. Deleting the destination clears it and turns Auto off. Collection changes are disabled in atomic Editing; the membership checkboxes remain available for staging.
 
-Whenever a clip transitions to `keep` from the Editing panel while a Project is active, DFSorter adds that clip to the active Project if it is not already a member.
+Auto-add applies only when Editing explicitly changes a non-Keep verdict to Keep and supplies the enabled destination to the catalogue edit. Selecting a project, editing metadata, changing memberships, or opening a Session cannot collect existing Keep clips or backfill a Session. An explicit Keep in atomic Editing may stage collection under the existing review setting. Changing away from Keep never removes membership.
 
-Changing or deactivating the active Project does not remove existing memberships.
-
-Changing a clip away from Keep does not automatically delete existing project membership; export rules determine whether the clip is actually copied.
-
----
+**Add to project + Next** and Ctrl+Enter explicitly add to the review destination and advance one position in frozen Session order without changing verdicts or drafts. They require a destination, ignore auto-repeat, stop at the last clip, and are unavailable in atomic Editing. Project creation, rename and deletion exist exclusively in Export.
 
 ### 13.9 Atomic single-clip Editing
 
 Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Double-clicking a Home or Session clip opens that clip in Browse. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
 
-Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename, deletion and activation and permanent source deletion are unavailable. Undo/Redo reverses staged Editing actions in memory, including commands, individual I/O presses and membership changes. Native text-field undo remains available. Saving retains the staged action history for that clip; discarding drops the staged history.
+Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename and deletion and permanent source deletion are unavailable. Undo/Redo reverses staged Editing actions in memory, including commands, individual I/O presses and membership changes. Native text-field undo remains available. Saving retains the staged action history for that clip; discarding drops the staged history.
 
 Place atomic-only **Save and return to clip** and red **Revert** actions beside the working title. Save is disabled until the staged snapshot differs from its baseline and remains blocked while command text is unsubmitted or an In/Out range is incomplete or invalid. Save and Shift+Enter preserve the staged verdict, including any explicit Keep, Discard, or Pending change; neither action automatically changes triage or requires Keep/export completeness. Save verifies that the persisted clip identity, editable fields and relevant memberships still match the baseline, then writes the complete staged snapshot and memberships in one transaction, updates modification time once, and adds exactly one catalogue undo operation. A conflict keeps the draft open. A snapshot equal to its baseline performs no write. Shift+Enter in single-clip Editing invokes the same save action from review mode or an empty command bar, ignoring auto-repeat. Replace the rotating cyan tip at the bottom right with a static orange warning icon and text explaining that this is single-clip Editing and Save or Shift+Enter retains the selected verdict. Keep this notice visible even when editing tips are disabled.
 
 Revert opens a destructive **Discard changes / Cancel** confirmation. Confirming discards the entire atomic draft and returns to the originating panel with the edited clip selected and the originating library scroll position restored; Cancel stays in Editing. Clicking another navigation tab opens the same confirmation and, when confirmed, discards the draft before opening the selected tab. Save and Shift+Enter commit and return to the originating panel with the edited clip selected, restoring its library scroll position where the resulting filtered and sorted list permits it. A confirmed navigation exit opens its selected destination. Closing DFSorter silently discards atomic state and its local submitted-command history without a catalogue write or undo entry.
 
-Share may use the staged atomic snapshot without Save. Command text must first be submitted and the range must be complete and valid. Shared files intentionally remain after Revert or Discard. Atomic-only submitted-command history never enters normal runtime clip history. Keep entered during atomic Editing may stage addition to the active project, but does not advance a Session.
+Share may use the staged atomic snapshot without Save. Command text must first be submitted and the range must be complete and valid. Shared files intentionally remain after Revert or Discard. Atomic-only submitted-command history never enters normal runtime clip history. Keep entered during atomic Editing may stage addition to the review destination only when auto-add is enabled, but does not advance a Session.
 
 ## 14. Projects
 
-Projects are stored as persistent application/database state, not as YAML files.
+Projects are persistent catalogue records with stable IDs, names, clip memberships and JSON output preferences. A clip may belong to any number of projects. Schema 9 adds an empty-object preferences column to existing projects without changing clip/project IDs, memberships, Sessions, or frozen jobs. A valid legacy `active_project` becomes `review_destination`; the legacy state is retired and automatic collection remains off. Migration and assembly perform no source-file operations.
 
-A Project contains:
+Export owns the project selector, **New project…**, and **More → Rename / Delete**. Creation selects the new project and opens Library. The first selection of an existing project opens Project clips; later visits restore that project's current-run view, filters, selections and viewport. Only the last workspace project persists across restarts. Missing projects show the chooser. With no project selected, creation remains available and membership/export actions are disabled. Workspace selection never changes the review destination.
 
-- stable project ID;
-- name;
-- references to member clip IDs.
+Names retain nonempty-name validation. Delete requires confirmation, removes the project, memberships and preferences, and clears matching workspace/review references. Clips, source files and already-submitted jobs remain. Project management and preferences are outside membership undo.
 
-Clips may belong to any number of Projects.
-
-At most one Project may be active at a time.
-
-Projects may be created, renamed, activated, deactivated, and deleted.
-
-Double-clicking a project row toggles its activation: an inactive project becomes the sole active project, and the active project is deactivated. The existing restrictions on activation in Browse and atomic Editing also apply to double-clicking.
-
-Deleting a Project removes only the Project and its memberships. It never deletes clip catalogue entries or source videos.
-
-The right project pane provides access to these operations and shows which Project, if any, is currently active.
-
-Use a compact icon toolbar and project context menu; Delete remains in the context menu with confirmation. Use vendored Lucide SVGs from `resources/icons`, never runtime assets from node_modules. Clip lists use the compact bordered cards in [UI Layout Guide — Clip cards](ui-layout-guide.md#clip-cards), status dots, full-text tooltips, and no horizontal scrollbar. Session creation uses Selected / First N / All with one primary Create Session action; enable the count only for First N.
-
----
+Batch membership operations freeze the selected or matching IDs and validate all project/clip identities before writing in one transaction. Existing additions and absent removals are harmless no-ops. Any stale identity or database error rolls back the whole batch and refreshes the list with an explanation. Report actual changed/no-op counts and refresh once per batch. Verdicts and metadata never change as a side effect.
 
 ## 15. Share
 
@@ -912,20 +884,23 @@ The copied file is not added back into DFSorter and is not tracked after the cop
 
 ## 16. Export Panel and Project Export
 
-The Export panel is dedicated to **Project Export**.
+Export is the project assembly and output workspace. A help icon to the right of New project and More opens a generic guide covering collection, removal of exceptions, selection, readiness, undo and project-wide export; it remains available without a selected project. Use the shared clip list beside the existing Export player; project controls and project-wide readiness appear above the player, and Editing-style working title, source filename and **Export…** below it. Direct selection export, dynamic memberships, saved searches and video editing remain deferred.
 
-It contains:
+**Library** shows catalogue clips, including paused capture folders, independently of Session eligibility. Defaults: Keep, all games, oldest first, no date restriction, unavailable sources hidden. **Outside project** defaults off and excludes saved members when enabled. Cards show a quiet, accessible folder/text membership indicator distinct from selection and the verdict dot. **Add selected (N)** and **Add all matching (N)** count only nonmembers; all matching includes offscreen results. Deliberately selected Pending and Discard clips may be added without altering their verdicts.
 
-- selection of one Project;
-- a smaller preview player;
-- the Project's member list;
-- export validation/errors;
-- filename-format controls;
-- output-directory controls;
-- optional rating-based directory grouping;
-- final export action.
+**Project clips** starts with all members, including Pending, Discard and unavailable clips. It has its own search, game/verdict filters, capture-date bounds and sorting state. **Remove selected (N)** changes memberships only. There is no Remove all matching action; Ctrl+A explicitly selects the filtered result for bulk removal.
 
-The right project pane and command bar are hidden to give the Export panel more room.
+Search reuses the catalogue query parser, including rating comparisons, metadata aliases, tags and free text. Optional **From / Through** capture dates are inclusive local calendar dates and use existing capture-time resolution. Unknown dates remain visible without bounds and are excluded with either bound; disclose their excluded count. Invalid queries, malformed dates and reversed bounds keep the last valid results visible with an inline error and disable membership actions until corrected.
+
+Ctrl-click, Shift-click and Ctrl+A operate on the focused list. Current row determines preview; selected rows determine bulk actions; saved membership is independent. Preview previous/next traverses visible results without wrapping or clearing bulk selection. A context menu on a selected row preserves multi-selection; **Edit clip…** targets the pointed row. Membership changes preserve surviving selection, preview and scroll. When the preview disappears, choose the next surviving row, then the previous, or clear the player. Filter/sort changes select the first visible row and scroll to the beginning. Atomic Editing returns to the originating workspace project/view and restores surviving state. A Library / Project clips switch prepares the requested preview before replacing the list, retaining the current list and project controls while only the video surface indicates loading. An already prepared clip switches immediately. A new view, clip, project or navigation choice cancels the pending switch; stale loading callbacks cannot apply it.
+
+Readiness counts always describe the whole project: **Ready** means Keep passing export validation; **Pending** means no verdict; **Blocked** means invalid Keep; **Skipped** means Discard. Clicking a category opens Project clips with that category and clears conflicting filters. **All members** returns to the complete project. Show blocking reasons on affected cards and in setup. **Edit clip…** uses atomic Editing; membership removal remains available here.
+
+**Export…** is available whenever a project is selected, including blocked and empty projects. It opens an application-owned modal setup dialog containing destination, per-game filename fields and prefix choice, Group by Rating, readiness details and final submission. Submission is disabled for any blocker or zero exportable clips. Cancel discards setup changes without saving preferences or queuing jobs.
+
+The dialog opens with that project's last successfully submitted choices. Without saved choices, use the application's last export folder, current game display orders, enabled prefixes and Group by Rating off. Omit removed fields, normalize choices to current display orders, and give newly encountered games their current defaults. Title casing remains the application preference and is frozen in the submitted job.
+
+On submission, revalidate current project membership, eligibility and destination, freeze the manifest through the existing engine, and atomically record the queued job with project preferences before dispatch. A changed input snapshot or failed transaction saves neither. Preferences survive later job failure/cancellation; frozen jobs ignore subsequent project, metadata, preference and game-configuration changes. Keep the existing output concurrency, collision handling, whole-file copies, cancellation cleanup and verified Resume behavior.
 
 ### 16.1 Export Eligibility
 
@@ -1056,8 +1031,8 @@ Removing a field or canonical enum value used by clips shows affected counts and
 
 ## 18. Undo and Redo
 
-Toolbar Undo/Redo is available only in Editing and Config. Each button independently
-reflects the active clip or game history; available actions use `text.secondary` and
+Toolbar Undo/Redo is available in Editing, Export and Config. Each button independently
+reflects the active clip, workspace project or game history; available actions use `text.secondary` and
 unavailable actions use `text.disabled`. Other pages cannot invoke these histories.
 Focused text inputs retain native typing undo/redo. Histories exist only for this
 application run; new edits clear the active history's redo branch.
@@ -1072,6 +1047,8 @@ text returns to an empty command box. An existing draft is preserved. Redo remov
 restored command text only if it has not been edited. Staged single-clip Editing uses
 its own temporary history without writing catalogue changes until Save. Changes to
 clip state outside its history invalidate stale actions rather than overwrite newer state.
+
+Export retains current-run membership undo/redo per project. Each changed batch is one step; no-ops create no step. Undo/redo verifies expected memberships and changes only recorded pairs, preserving metadata and other projects. Stale history is rejected without partial changes. Editing membership writes invalidate affected workspace histories; workspace writes invalidate affected clip-edit histories. Destructive catalogue cleanup clears affected histories.
 
 Config uses a separate history per game, retained across Save and game switches.
 Consecutive typing in one focused input is grouped into one step; row actions,
@@ -1112,7 +1089,7 @@ The bulk rejected-originals preview omits sources already recorded as explicitly
 
 ### 19.2 Unified settings
 
-The top-right Lucide settings cog retains its action menu. Settings… opens a dialog with General, Appearance and Projects tabs in that order, with General initially selected; Capture folders… navigates to Home. General groups preferences in rounded boxes labelled with their affected panes: near-end playback applies to Browse, Editing and Export on the next clip load; paused typing applies only to Editing; title and generated-filename casing applies to Browse, Editing and Export. Avoid introductory prose between settings. Project-pane controls remain available. Capture-folder management lives only on Home.
+The top-right Lucide settings cog retains its action menu. Settings… opens a dialog with General and Appearance tabs in that order, with General initially selected; Capture folders… navigates to Home. General groups preferences in rounded boxes labelled with their affected panes: near-end playback applies to Browse, Editing and Export on the next clip load; paused typing applies only to Editing; title and generated-filename casing applies to Browse, Editing and Export. Avoid introductory prose between settings. Project management is available only in Export. Capture-folder management lives only on Home.
 
 Normal review, metadata editing, session creation, project membership, search, filtering, rating, and I/O marking operate only on catalogue state.
 

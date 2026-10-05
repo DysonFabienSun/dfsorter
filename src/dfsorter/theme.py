@@ -2,7 +2,7 @@ import html
 
 from PySide6.QtCore import QLocale, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PySide6.QtWidgets import QCheckBox, QComboBox, QProxyStyle, QStyle
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QProxyStyle, QStyle
 
 from .app_paths import ROOT
 
@@ -174,6 +174,11 @@ SIZES = {
     "icon_md": 16,
     "icon_lg": 20,
     "icon_xl": 24,
+    "menu_check": 16,
+    "menu_icon_y_offset": 2,
+    "menu_cycle_y_offset": 1,
+    "menu_check_column": 24,
+    "menu_gap": 8,
     "rating": 18,
     "rating_gap": 4,
 }
@@ -208,6 +213,8 @@ def stylesheet():
         **SIZES,
         **{f"radius_{key}": value for key, value in RADII.items()},
         **{f"font_{key}": value for key, value in FONT_SIZES.items()},
+        "project_menu_label_inset": SIZES["menu_check_column"] + SIZES["menu_gap"],
+        "project_menu_trailing_inset": SIZES["icon_md"] + 2 * SIZES["menu_gap"],
         "combo_chevron": (
             ROOT / "resources/icons/chevron-down.svg"
         ).as_posix(),
@@ -243,12 +250,11 @@ def stylesheet():
         QLabel#fastIndicator { color: %(accent_default)s; background: transparent; }
         QWidget[role="panel"] { background: %(surface_panel)s; }
         QWidget[role="sidebar"] { background: %(surface_sidebar)s; }
-        QWidget#libraryToolbar { background: %(bg_library_toolbar)s; }
+        QWidget#libraryToolbar, QWidget#projectWorkspaceToolbar { background: %(bg_library_toolbar)s; }
         QLineEdit[librarySearch="true"] { background: %(bg_library_search)s; border-color: %(border_subtle)s; }
         QLineEdit[librarySearch="true"]:hover { border-color: %(border_strong)s; }
         QLineEdit[librarySearch="true"]:focus { border: 2px solid %(focus)s; padding: 3px 7px; }
-        QWidget#clipLibraryPane, QWidget#projectsPane { border-radius: %(radius_structural)spx; }
-        QWidget#projectsPane { background: %(surface_sidebar)s; border-left: 1px solid %(border_subtle)s; }
+        QWidget#clipLibraryPane { border-radius: %(radius_structural)spx; }
         QWidget[role="transparent"] { background: transparent; }
         QWidget[role="group"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: %(radius_structural)spx; }
         QWidget[role="outlinedGroup"] { background: %(surface_workspace)s; border: 1px solid %(border_default)s; border-radius: %(radius_structural)spx; }
@@ -264,9 +270,6 @@ def stylesheet():
         QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QWidget#sessionHeader { background: %(bg_library_toolbar)s; }
         QWidget#configSidebarHeader { background: %(bg_library_toolbar)s; border-bottom: 1px solid %(border_subtle)s; }
-        QLabel#projectsActiveName { color: %(accent_default)s; font-size: %(font_sm)spx; }
-        QToolButton[projectsAction="true"]:hover { background: %(surface_hover)s; border-color: %(border_subtle)s; }
-        QToolButton[projectsAction="true"]:pressed { background: %(surface_pressed)s; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
         QPushButton[periodSegment="true"] { border-radius: 0px; margin: 0px; border-left: none; }
         QPushButton[periodSegment="true"][periodPosition="first"] { border-left: 1px solid %(border_subtle)s; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
@@ -314,6 +317,7 @@ def stylesheet():
         QPushButton:hover, QToolButton:hover { background: %(surface_hover)s; }
         QPushButton:pressed, QToolButton:pressed { background: %(surface_pressed)s; }
         QPushButton:checked, QToolButton:checked { background: %(accent_soft)s; border-color: %(accent_default)s; }
+        QPushButton[autoCollection="true"] { border-color: %(accent_default)s; }
         QPushButton[role="primary"] { background: %(accent_default)s; color: %(text_inverse)s; border-color: %(accent_default)s; font-weight: 600; }
         QPushButton[role="primary"]:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; }
         QPushButton[role="primary"]:pressed { background: %(accent_pressed)s; border-color: %(accent_pressed)s; }
@@ -346,13 +350,6 @@ def stylesheet():
         QToolButton#captureFolderMenuButton:focus { border-color: %(focus)s; }
         QToolButton#captureFolderMenuButton:pressed { background: %(surface_pressed)s; }
         QWidget#navigationStrip { background: %(surface_sidebar)s; border-bottom: 1px solid %(border_subtle)s; }
-        QPushButton#projectsDrawerTab { background: %(surface_sidebar)s; border: 1px solid %(border_subtle)s; border-top: none; border-top-left-radius: 0px; border-top-right-radius: 0px; border-bottom-left-radius: 9px; border-bottom-right-radius: 0px; padding: 3px 11px 5px 6px; }
-        QPushButton#projectsDrawerTab:hover { background: %(surface_hover)s; border-color: %(border_default)s; border-top-color: transparent; }
-        QPushButton#projectsDrawerTab:pressed { background: %(surface_pressed)s; border-color: %(border_default)s; border-top-color: transparent; }
-        QWidget#projectsDrawerTabEdge { background: %(border_default)s; border: none; }
-        QToolButton#projectsPaneClose { background: transparent; border-color: transparent; }
-        QToolButton#projectsPaneClose:hover { background: %(surface_hover)s; }
-        QToolButton#projectsPaneClose:pressed { background: %(surface_pressed)s; }
         QPushButton[navUtility="true"] { min-height: 24px; max-height: 24px; padding: 1px 6px; }
         QToolButton[navUtility="true"] { min-height: 22px; max-height: 22px; padding: 3px 2px 1px 2px; }
         QPushButton[navUtilityStyle="framed"], QToolButton[navUtilityStyle="framed"] { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; }
@@ -393,7 +390,6 @@ def stylesheet():
         QListWidget#configGames { padding: 0px; }
         QWidget#clipScrollTopFade, QWidget#clipScrollBottomFade { background: transparent; border: none; }
         QWidget[role="sidebar"] QListWidget { background: %(surface_sidebar)s; }
-        QListWidget#projectsList::item:selected { background: %(surface_pressed)s; color: %(text_primary)s; }
         QListWidget[contentSurface="secondary"] { background: %(surface_subtle)s; }
         QListWidget::item { padding: 2px 4px; }
         QListWidget#configGames::item { padding: 0px; }
@@ -408,6 +404,11 @@ def stylesheet():
         QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }
         QMenu { border: 1px solid %(border_default)s; }
         QMenu::item { padding: 6px 24px; }
+        QMenu#projectMembershipMenu::item {
+            padding-left: %(project_menu_label_inset)spx;
+            padding-right: %(project_menu_trailing_inset)spx;
+        }
+        QMenu#projectMembershipMenu::indicator { width: 0px; height: 0px; }
         QMenu::item:selected, QMenuBar::item:selected { background: %(accent_selection)s; }
         QMenu::separator { height: 1px; background: %(border_subtle)s; margin: 4px 8px; }
         QTabWidget::pane { border: 1px solid %(border_subtle)s; background: %(surface_panel)s; }
@@ -451,8 +452,14 @@ def stylesheet():
 
 class ApplicationStyle(QProxyStyle):
     def drawPrimitive(self, element, option, painter, widget=None):
-        if element == QStyle.PrimitiveElement.PE_FrameFocusRect and isinstance(widget, QCheckBox):
-            return
+        if element == QStyle.PrimitiveElement.PE_FrameFocusRect:
+            if isinstance(widget, QCheckBox):
+                return
+            ancestor = widget if isinstance(widget, QAbstractItemView) else None
+            while ancestor is not None:
+                if isinstance(ancestor, QComboBox):
+                    return
+                ancestor = ancestor.parentWidget()
         super().drawPrimitive(element, option, painter, widget)
 
     def styleHint(self, hint, option=None, widget=None, returnData=None):

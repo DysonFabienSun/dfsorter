@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from functools import wraps
 from pathlib import Path
-from uuid import uuid4
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
@@ -21,6 +20,7 @@ from PySide6.QtCore import (
     QEvent,
     QObject,
     QPoint,
+    QRect,
     QSize,
     Qt,
     QThread,
@@ -30,6 +30,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QAction,
+    QColor,
     QDesktopServices,
     QIcon,
     QPainter,
@@ -47,7 +48,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -66,6 +66,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QStyleOptionMenuItem,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
@@ -84,7 +85,7 @@ from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .folder_preview_dialog import FolderPreviewDialog
 from .history import EditHistory
-from .output import prepare_export_manifest, run_export_manifest, safe_stem, share_clip, validate
+from .output import run_export_manifest, safe_stem, share_clip
 from .overview import (
     PERIOD_DAYS,
     capture_datetime,
@@ -98,6 +99,8 @@ from .parsing import (
     query_clips,
 )
 from .playback import Player, playback_start_settings, playback_volume
+from .project_export_dialog import ProjectExportDialog
+from .project_workspace import ProjectWorkspace
 from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
@@ -121,7 +124,6 @@ from .widgets import (
     CaptureFolderDelegate,
     ClipDelegate,
     ClipScrollFade,
-    EdgeChevron,
     Rating,
     SessionProgressBar,
     VerdictBar,
@@ -256,6 +258,76 @@ class CheckMenu(QMenu):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+
+class ProjectMembershipMenu(CheckMenu):
+    collectionRequested = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.collection_changes_enabled = True
+        self.setObjectName("projectMembershipMenu")
+        self.setToolTipsVisible(True)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            action = self.actionAt(event.position().toPoint())
+            if self.collection_changes_enabled and action and action.isEnabled() and action.data():
+                self.collectionRequested.emit(action.data())
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Menu:
+            action = self.activeAction()
+            if self.collection_changes_enabled and action and action.isEnabled() and action.data():
+                self.collectionRequested.emit(action.data())
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        size = SIZES["icon_md"]
+        gap = SIZES["menu_gap"]
+        check_size = SIZES["menu_check"]
+        check_column = SIZES["menu_check_column"]
+        color = COLORS["accent_default" if self.collection_changes_enabled else "text_disabled"]
+        for action in self.actions():
+            if not action.isCheckable() or not action.isVisible():
+                continue
+            rect = self.actionGeometry(action)
+            option = QStyleOptionMenuItem()
+            self.initStyleOption(option, action)
+            # Keep native action geometry and interaction, but draw an explicit
+            # check column instead of combining Qt's gutter with stylesheet padding.
+            selected = action == self.activeAction() and action.isEnabled()
+            painter.fillRect(rect, QColor(COLORS["accent_selection" if selected else "surface_panel"]))
+            text_color = COLORS["text_primary" if action.isEnabled() else "text_disabled"]
+            if action.isChecked():
+                icon("check", text_color, size=check_size).paint(
+                    painter, QRect(rect.left() + (check_column - check_size) // 2,
+                                   rect.center().y() - check_size // 2 + SIZES["menu_icon_y_offset"],
+                                   check_size, check_size)
+                )
+            divider = rect.left() + check_column
+            painter.setPen(QColor(COLORS["border_subtle"]))
+            painter.drawLine(divider, rect.top(), divider, rect.bottom())
+            label_rect = rect.adjusted(check_column + gap, 0, -(size + 2 * gap), 0)
+            painter.setFont(option.font)
+            painter.setPen(QColor(text_color))
+            label = option.fontMetrics.elidedText(action.text(), Qt.TextElideMode.ElideRight,
+                                                 max(0, label_rect.width()))
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             label)
+            if action.property("autoCollection"):
+                icon("refresh-cw", color, size=size).paint(
+                    painter, QRect(rect.right() + 1 - size - gap,
+                                   rect.center().y() - size // 2 + SIZES["menu_cycle_y_offset"],
+                                   size, size)
+                )
 
 
 class FilterMenuButton(QPushButton):
@@ -476,7 +548,6 @@ class Window(QMainWindow):
         self._editing_action_depth = 0
         self.restored_command = None
         self.drafts = {}
-        self.pane_overrides = {}
         self.space_down = False
         self.submit_resume = False
         self.consume_resume_space = False
@@ -562,21 +633,6 @@ class Window(QMainWindow):
         )
         navigation.addWidget(self.activities_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(12)
-        self.projects_toggle = button("Projects", self.toggle_projects)
-        set_icon(self.projects_toggle, "folder-open", size=16, y_offset=1, right_padding=1)
-        self.projects_toggle.setToolTip("Show Projects")
-        self.projects_toggle.setAccessibleName("Show Projects")
-        self.projects_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.projects_toggle.setObjectName("projectsDrawerTab")
-        self.projects_toggle.setFixedSize(96, 30)
-        self.projects_toggle.setIconSize(QSize(17, 16))
-        self.projects_toggle.setFont(font("md", "medium"))
-        self.projects_tab_edge = QWidget(self.projects_toggle)
-        self.projects_tab_edge.setObjectName("projectsDrawerTabEdge")
-        self.projects_tab_edge.setGeometry(91, 4, 1, 22)
-        self.projects_tab_edge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.projects_tab_chevron = EdgeChevron(self.projects_toggle)
-        self.projects_tab_chevron.setGeometry(83, 11, 5, 7)
         self.theme_button = tool("moon", "Switch to dark mode", self.toggle_theme)
         self.theme_button.setProperty("navUtility", True)
         self.theme_button.setProperty("navUtilityStyle", "ghost")
@@ -595,8 +651,6 @@ class Window(QMainWindow):
         navigation.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
         navigation.addSpacing(8)
         outer.addWidget(self.navigation_strip)
-        self.projects_toggle.setParent(self.central)
-        self.projects_toggle.raise_()
         self.splitter = QSplitter()
         self.splitter.setObjectName("workspaceSplitter")
         self.splitter.setHandleWidth(5)
@@ -767,110 +821,9 @@ class Window(QMainWindow):
         self.share_spinner.timeout.connect(self.advance_share_spinner)
         self.share_spinner_angle = 0
         self.activities.changed.connect(self.update_share_controls)
-        self.right, right_layout = page()
-        self.right.setObjectName("projectsPane")
-        right_layout.setContentsMargins(8, 4, 8, 4)
-        role(self.right, "sidebar")
-        projects_header = QHBoxLayout()
-        projects_header.setContentsMargins(0, 0, 0, 0)
-        projects_title_row, self.projects_heading = heading(
-            "Projects", "folder-open", "paneHeading", self.search.sizeHint().height()
-        )
-        projects_header.addLayout(projects_title_row)
-        projects_header.addStretch()
-        self.projects_close = tool("x", "Close Projects", self.toggle_projects)
-        self.projects_close.setObjectName("projectsPaneClose")
-        projects_header.addWidget(self.projects_close)
-        right_layout.addLayout(projects_header)
-        active_row = QWidget()
-        role(active_row, "transparent")
-        active_layout = QHBoxLayout(active_row)
-        active_layout.setContentsMargins(0, 0, 0, 0)
-        active_layout.setSpacing(4)
-        self.active_label = QLabel("Active:")
-        role(self.active_label, "secondary")
-        active_layout.addWidget(self.active_label)
-        self.active_project_name = QLabel()
-        self.active_project_name.setObjectName("projectsActiveName")
-        self.active_project_name.setWordWrap(True)
-        active_layout.addWidget(self.active_project_name, 1)
-        right_layout.addWidget(active_row)
-        self.active_row = active_row
-        self.projects = QListWidget()
-        self.projects.setObjectName("projectsList")
-        self.projects.itemDoubleClicked.connect(self.toggle_project_activation)
-        right_layout.addWidget(self.projects)
-        self.projects_empty = QWidget()
-        role(self.projects_empty, "transparent")
-        empty_layout = QVBoxLayout(self.projects_empty)
-        empty_layout.setContentsMargins(8, 0, 8, 0)
-        empty_layout.setSpacing(8)
-        empty_layout.addStretch(3)
-        empty_icon = QLabel()
-        empty_icon.setProperty("headingIcon", "folder")
-        empty_icon.setProperty("headingIconSize", 20)
-        empty_icon.setProperty("headingIconColorRole", "text_muted")
-        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_icon.setFixedSize(32, 32)
-        empty_icon.setPixmap(icon("folder", COLORS["text_muted"], size=20).pixmap(20, 20))
-        empty_layout.addWidget(empty_icon, 0, Qt.AlignmentFlag.AlignHCenter)
-        empty_title = QLabel("No projects yet")
-        role(empty_title, "paneHeading")
-        empty_layout.addWidget(empty_title, 0, Qt.AlignmentFlag.AlignHCenter)
-        create_project = button("Create project…", self.new_project)
-        set_icon(create_project, "plus")
-        empty_layout.addWidget(create_project, 0, Qt.AlignmentFlag.AlignHCenter)
-        empty_layout.addStretch(4)
-        right_layout.addWidget(self.projects_empty, 1)
-        self.projects_toolbar = QWidget()
-        self.projects_toolbar.setObjectName("projectsToolbar")
-        role(self.projects_toolbar, "transparent")
-        toolbar_layout = QVBoxLayout(self.projects_toolbar)
-        toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        toolbar_layout.setSpacing(4)
-        toolbar_divider = QWidget()
-        role(toolbar_divider, "divider")
-        toolbar_divider.setFixedHeight(1)
-        toolbar_layout.addWidget(toolbar_divider)
-        project_tools = QHBoxLayout()
-        project_tools.setContentsMargins(0, 0, 0, 0)
-        project_tools.setSpacing(4)
-        self.project_global_controls = []
-        self.projects.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
-        for text, callback in [
-            ("New project", self.new_project),
-            ("Rename", self.rename_project),
-            ("Activate", self.activate_project),
-            ("Deactivate", self.deactivate),
-            ("Add to project", lambda: self.membership(True)),
-            ("Remove selected clips", lambda: self.membership(False)),
-            ("Delete project", self.delete_project),
-        ]:
-            action = QAction(text, self.projects)
-            action.triggered.connect(callback)
-            self.projects.addAction(action)
-            names = {
-                "New project": "plus",
-                "Rename": "pencil",
-                "Activate": "check",
-                "Deactivate": "power",
-                "Add to project": "folder-plus",
-                "Remove selected clips": "folder-x",
-            }
-            if text in names:
-                control = tool(names[text], text, callback)
-                control.setProperty("projectsAction", True)
-                project_tools.addWidget(control)
-                if text in {"New project", "Rename", "Activate", "Deactivate"}:
-                    self.project_global_controls.append(control)
-        project_tools.addStretch()
-        toolbar_layout.addLayout(project_tools)
-        right_layout.addWidget(self.projects_toolbar)
-        self.splitter.addWidget(self.right)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
-        self.splitter.setStretchFactor(2, 0)
-        self.splitter.splitterMoved.connect(self.panes_resized)
+        self.splitter.setSizes([420, 980])
         self.command_area, command_layout = page()
         self.command_area.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         command_layout.setContentsMargins(12, 8 + self.fontMetrics().lineSpacing(), 12, 4)
@@ -1283,6 +1236,13 @@ class Window(QMainWindow):
         role(self.clip_status, "secondary")
         self.clip_status.setWordWrap(True)
         editing.addWidget(self.clip_status)
+        self.membership_button = QPushButton("Projects")
+        self.membership_button.setToolTip("Current clip memberships · Select one or more projects")
+        self.membership_menu = ProjectMembershipMenu(self.membership_button)
+        self.membership_menu.collectionRequested.connect(self.toggle_project_collection)
+        self.membership_menu.aboutToShow.connect(self.show_memberships)
+        self.membership_button.setMenu(self.membership_menu)
+        self.auto_collect_enabled = False
         triage = QHBoxLayout()
         self.triage_buttons = {}
         for text, state in [("Keep", "keep"), ("Discard", "discard"), ("Pending", None)]:
@@ -1294,6 +1254,7 @@ class Window(QMainWindow):
             self.triage_buttons[state] = control
             triage.addWidget(control)
         triage.addWidget(button("Change game", self.change_game))
+        triage.addWidget(self.membership_button)
         triage.addStretch()
         editing.addLayout(triage)
         stars = QHBoxLayout()
@@ -1349,39 +1310,10 @@ class Window(QMainWindow):
         )
         self.add_project_next.setEnabled(False)
         controls.addWidget(self.add_project_next)
-        exporting = self.pages["Export"][1]
-        export_heading = QLabel("Project export")
-        role(export_heading, "heading")
-        exporting.addWidget(export_heading)
-        export_explanation = QLabel("Copy eligible project clips without changing original files.")
-        role(export_explanation, "secondary")
-        exporting.addWidget(export_explanation)
-        self.export_project = QComboBox()
-        self.export_project.currentIndexChanged.connect(self.export_selection)
-        exporting.addWidget(self.export_project)
-        self.export_player = Player(self.settings, pane="Export")
-        self.export_player.volume_changed.connect(self.set_playback_volume)
-        self.export_player.previous_button.hide()
-        self.export_player.next_button.hide()
-        exporting.addWidget(self.export_player, 1)
-        self.export_errors = QPlainTextEdit()
-        self.export_errors.setReadOnly(True)
-        self.export_errors.setMaximumHeight(130)
-        exporting.addWidget(self.export_errors)
-        self.format_game = QComboBox()
-        self.format_game.currentIndexChanged.connect(self.show_format)
-        exporting.addWidget(self.format_game)
-        self.format_box = QWidget()
-        self.format_layout = QGridLayout(self.format_box)
-        exporting.addWidget(self.format_box)
-        self.formats = {}
-        self.export_destination = QLineEdit(str(self.settings.get("export_folder", "")))
-        exporting.addWidget(self.export_destination)
-        exporting.addWidget(button("Choose export folder", self.choose_export_folder))
-        self.group_rating = QCheckBox("Group by Rating")
-        exporting.addWidget(self.group_rating)
-        self.export_button = button("Export project", self.run_export)
-        exporting.addWidget(self.export_button)
+        self.workspace = ProjectWorkspace(self, self.pages["Export"][1])
+        self.export_project = self.workspace.selector
+        self.export_player = self.workspace.player
+        self.export_button = self.workspace.export_button
         self.config_editor = ConfigEditor(self)
         self.pages["Config"][1].setContentsMargins(
             SIZES["panel_padding"], 4, SIZES["panel_padding"], SIZES["panel_padding"]
@@ -1684,6 +1616,8 @@ class Window(QMainWindow):
 
     def position_transition_covers(self):
         target = self.centralWidget() if self.transition_scope == "page" else self.center
+        if self.transition_scope == "clip" and self.current_panel == "Export":
+            target = self.export_player.video_container
         self.transition_cover.setGeometry(
             target.mapTo(self.centralWidget(), QPoint(0, 0)).x(),
             target.mapTo(self.centralWidget(), QPoint(0, 0)).y(),
@@ -1860,8 +1794,6 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "transition_cover"):
             self.position_transition_covers()
-        if hasattr(self, "projects_toggle"):
-            self.position_projects_toggle()
 
     def effective_snapshot(self):
         if self.atomic_edit and self.current_id == self.atomic_edit.clip_id:
@@ -1897,12 +1829,10 @@ class Window(QMainWindow):
         self.context_clip_id = item.data(Qt.ItemDataRole.UserRole)
         if self.current_panel == "Home":
             self.highlight_home_clip(item)
-        else:
-            self.library.blockSignals(True)
-            self.library.clearSelection()
+        elif not item.isSelected():
             self.library.setCurrentItem(item)
+            self.library.clearSelection()
             item.setSelected(True)
-            self.library.blockSignals(False)
         self.clip_context_menu.popup(self.library.viewport().mapToGlobal(position))
 
     def highlight_home_clip(self, item):
@@ -2193,6 +2123,8 @@ class Window(QMainWindow):
             self.browse.set_fullscreen(False)
             self.thumbnails.retain(set())
         changing_panel = name != self.current_panel
+        if changing_panel and self.current_panel == "Export":
+            self.workspace.remember()
         if changing_panel:
             if self.share_watched_job is not None:
                 self.share_ignored_jobs.add(id(self.share_watched_job))
@@ -2239,7 +2171,6 @@ class Window(QMainWindow):
         if leaving_browse:
             # Clearing the player changes Browse's layout; do it after the page is hidden.
             self.browse.leave()
-        self.update_projects_visibility()
         for destination, control in self.nav.items():
             control.setChecked(destination == name)
         self.command_area.setVisible(name == "Editing")
@@ -2266,6 +2197,8 @@ class Window(QMainWindow):
         self.filters.setVisible(name not in {"Editing", "Export", "Config"})
         self.browse_filters.setVisible(name == "Browse")
         self.library_toolbar.setVisible(name not in {"Editing", "Export", "Config"})
+        self.workspace.controls.setVisible(name == "Export")
+        self.update_collection_controls()
         self.left_layout.setContentsMargins(
             0, 0 if name in {"Home", "Browse", "Session", "Config"} else 4,
             0 if name == "Config" else 8, 4,
@@ -2335,45 +2268,9 @@ class Window(QMainWindow):
         self.update_history_controls()
         self.refreshing = True
         projects = self.catalogue.projects()
-        active = self.catalogue.state("active_project")
-        self.add_project_next.setEnabled(bool(active))
-        project_selection = self.selected_id(self.projects)
-        self.projects.clear()
-        self.projects.setVisible(bool(projects))
-        self.projects_empty.setVisible(not projects)
-        self.projects_toolbar.setVisible(bool(projects))
-        active_indicator = icon("check", COLORS["accent_default"])
-        indicator_space = QPixmap(active_indicator.availableSizes()[0])
-        indicator_space.fill(Qt.GlobalColor.transparent)
-        inactive_indicator = QIcon(indicator_space)
-        for project in projects:
-            item = QListWidgetItem(project["name"])
-            item.setIcon(
-                active_indicator if project["project_id"] == active else inactive_indicator
-            )
-            item.setToolTip(
-                project["name"] + (" · Active project" if project["project_id"] == active else "")
-            )
-            item.setData(Qt.ItemDataRole.UserRole, project["project_id"])
-            self.projects.addItem(item)
-            if project["project_id"] == project_selection:
-                self.projects.setCurrentItem(item)
-        active_name = next(
-            (project["name"] for project in projects if project["project_id"] == active), None
-        )
-        self.active_project_name.setText(active_name or "")
-        self.active_row.setVisible(bool(active_name))
-        self.project_filter.set_options(
-            [(project["name"], project["project_id"]) for project in projects]
-        )
-        selected = self.export_project.currentData()
-        self.export_project.blockSignals(True)
-        self.export_project.clear()
-        self.export_project.addItem("Choose project", None)
-        for project in projects:
-            self.export_project.addItem(project["name"], project["project_id"])
-        self.export_project.setCurrentIndex(max(0, self.export_project.findData(selected)))
-        self.export_project.blockSignals(False)
+        self.update_collection_controls(projects)
+        self.project_filter.set_options([(project["name"], project["project_id"]) for project in projects])
+        self.workspace.refresh_references()
         self.game_filter.set_options(
             [("Uncategorized", ""), *((name, name) for name in self.registry.games)]
         )
@@ -2657,7 +2554,7 @@ class Window(QMainWindow):
 
     def render_card(self, item, clip):
         previous = item.data(CLIP_ROLE) or {}
-        compact_card = self.current_panel in {"Home", "Session", "Editing"}
+        compact_card = self.current_panel in {"Home", "Session", "Editing", "Export"}
         available = "" if self.source_available(clip["source_path"]) else " [unavailable]"
         card_title = tag_prefix(clip) + title(
             {**clip, "mainline": (clip.get("mainline") or "").strip()},
@@ -2704,7 +2601,7 @@ class Window(QMainWindow):
                     lowercase=self.settings.get("lowercase_generated_titles", True),
                     rich_styles=title_styles(
                         card=True,
-                        library=self.current_panel == "Export",
+                        library=False,
                         compact_card=compact_card,
                     ),
                     mainline_separator=" | ",
@@ -2842,17 +2739,7 @@ class Window(QMainWindow):
         return self.catalogue.clip(session["ids"][session["index"]])
 
     def expected_export_clip(self):
-        ids = self.catalogue.member_ids(self.export_project.currentData())
-        if not ids:
-            return None
-        selected = (
-            self.selected_id(self.library) if self.current_panel == "Export"
-            else self.library_page_states.get("Export", {}).get("current")
-        )
-        clip_id = selected if selected in ids else next(
-            clip["clip_id"] for clip in self.catalogue.clips() if clip["clip_id"] in ids
-        )
-        return self.catalogue.clip(clip_id)
+        return self.workspace.expected_clip()
 
     def clip_load_key(self, clip, pane="Editing"):
         if clip is None:
@@ -2969,6 +2856,8 @@ class Window(QMainWindow):
         scrollbar.setValue(target)
 
     def position_clip_page_once(self, panel):
+        if panel == "Export":
+            return
         if panel != self.current_panel or panel in self.positioned_clip_pages:
             return
         self.positioned_clip_pages.add(panel)
@@ -2998,12 +2887,14 @@ class Window(QMainWindow):
         self.refresh_library(reset_selection=True)
 
     def refresh_library(self, *, reset_selection=False):
+        if self.current_panel == "Export":
+            self.workspace.refresh(reset=reset_selection, restore=self.library_page_switch)
+            self.library_page_switch = False
+            return
         if not self._navigating:
             self.source_stats.clear()
             self.library_items_cache.clear()
         self.update_history_controls()
-        if getattr(self, "settings_dialog", None) is not None:
-            self.settings_dialog.refresh()
         if self.refreshing:
             return
         if self.current_panel == "Config":
@@ -3019,9 +2910,6 @@ class Window(QMainWindow):
                     session = self.catalogue.state("session")
                     mapping = {clip["clip_id"]: clip for clip in clips}
                     clips = [mapping[clip_id] for clip_id in session["ids"]] if session else []
-            elif self.current_panel == "Export":
-                ids = self.catalogue.member_ids(self.export_project.currentData())
-                clips = [clip for clip in clips if clip["clip_id"] in ids]
             else:
                 clips = self.filtered_clips(clips, self.current_panel)
             signature = tuple(
@@ -3141,7 +3029,8 @@ class Window(QMainWindow):
         elif self.current_panel == "Editing":
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
-            self.export_player.load(self.catalogue.clip(clip_id))
+            self.workspace.preview()
+            self.workspace.remember()
 
     def switch_editing_clip(self, clip_id):
         if self.atomic_edit:
@@ -3194,6 +3083,9 @@ class Window(QMainWindow):
         self.review_mode()
 
     def refresh_title_presentation(self):
+        if self.current_panel == "Export":
+            self.workspace.refresh()
+            return
         self.browse.render_title()
         for index in range(self.library.count()):
             item = self.library.item(index)
@@ -3207,7 +3099,7 @@ class Window(QMainWindow):
         if self.current_id:
             self.render_working_title(self.effective_clip())
 
-    def render_working_title(self, clip):
+    def render_working_title(self, clip, label=None):
         game = self.registry.game(clip["game"])
         title_fields = game.display_order if game else ["mainline"]
         has_title = any(
@@ -3238,7 +3130,7 @@ class Window(QMainWindow):
                 "— Working title not set</span>"
             )
         rendered = f'<span style="color:{COLORS["text_secondary"]}">{rendered}</span>'
-        self.working_title.setText(tag_prefix(clip, rich=True) + rendered)
+        (label if label is not None else self.working_title).setText(tag_prefix(clip, rich=True) + rendered)
 
     def render_clip(self):
         self.update_history_controls()
@@ -3477,10 +3369,11 @@ class Window(QMainWindow):
             if self.atomic_edit:
                 self.atomic_edit.draft = self.catalogue.draft_snapshot(
                     self.atomic_edit.draft, patch, editing=True,
-                    active_project=self.catalogue.state("active_project"), **kwargs
+                    auto_add_destination=self.auto_add_destination(), **kwargs
                 )
             else:
-                self.catalogue.patch(self.current_id, patch, editing=True, **kwargs)
+                self.catalogue.patch(self.current_id, patch, editing=True,
+                                     auto_add_destination=self.auto_add_destination(), **kwargs)
             self.render_clip()
         except (ValueError, OSError) as error:
             self.error(error)
@@ -3501,10 +3394,11 @@ class Window(QMainWindow):
             if self.atomic_edit:
                 self.atomic_edit.draft = self.catalogue.draft_snapshot(
                     self.atomic_edit.draft, patch, editing=True,
-                    active_project=self.catalogue.state("active_project")
+                    auto_add_destination=self.auto_add_destination()
                 )
             else:
-                self.catalogue.patch(self.current_id, patch, editing=True)
+                self.catalogue.patch(self.current_id, patch, editing=True,
+                                     auto_add_destination=self.auto_add_destination())
             if text.strip():
                 history = self.atomic_edit.history if self.atomic_edit else self.history[self.current_id]
                 history.append((text, result.inferred) if result.inferred else text)
@@ -3534,7 +3428,7 @@ class Window(QMainWindow):
             return
         if not self.ensure_range_complete():
             return
-        project_id = self.catalogue.state("active_project")
+        project_id = self.catalogue.state("review_destination")
         session = self.catalogue.state("session")
         if self.current_panel != "Editing" or not self.current_id or not project_id or not session:
             return
@@ -3544,7 +3438,7 @@ class Window(QMainWindow):
                 self.navigate(1)
             else:
                 self.render_clip()
-                self.statusBar().showMessage("Added to active project — end of session.", 12000)
+                self.statusBar().showMessage("Added to review destination — end of session.", 12000)
             self.review_mode()
         except (ValueError, OSError) as error:
             self.error(error)
@@ -3632,6 +3526,9 @@ class Window(QMainWindow):
 
     def navigate(self, offset):
         if self.atomic_edit:
+            return
+        if self.current_panel == "Export":
+            self.workspace.navigate(offset)
             return
         if self.current_panel == "Browse":
             index = self.library.currentRow() + offset
@@ -3953,60 +3850,6 @@ class Window(QMainWindow):
         for name, control in self.session_choices.items():
             control.setChecked(name == mode)
 
-    def toggle_projects(self):
-        if self.current_panel == "Session":
-            return
-        self.pane_overrides[self.isMaximized()] = not self.right.isVisible()
-        self.update_projects_visibility()
-
-    def panes_resized(self, position, index):
-        if self.right.isVisible() and self.splitter.sizes()[2] == 0:
-            if self.current_panel == "Session":
-                self.update_projects_visibility()
-                return
-            self.pane_overrides[self.isMaximized()] = False
-            self.update_projects_visibility()
-
-    def update_projects_visibility(self):
-        allowed = self.current_panel not in {"Browse", "Export", "Config"}
-        session_forces_open = self.current_panel == "Session"
-        visible = session_forces_open or (
-            allowed and self.pane_overrides.get(self.isMaximized(), self.isMaximized())
-        )
-        self.splitter.setCollapsible(2, not session_forces_open)
-        was_visible = self.right.isVisible()
-        left_width = self.splitter.sizes()[0]
-        self.right.setVisible(visible)
-        self.projects_toggle.setVisible(allowed and not visible)
-        self.projects_close.setVisible(not session_forces_open)
-        self.position_projects_toggle()
-        for action in self.projects.actions():
-            action.setEnabled(
-                not self.atomic_edit
-                or action.text() in {"Add to project", "Remove selected clips"}
-            )
-        for control in self.project_global_controls:
-            control.setEnabled(not self.atomic_edit)
-        if visible and self.splitter.sizes()[2] == 0:
-            self.splitter.setSizes([420, max(400, self.width() - 770), 350])
-        if session_forces_open and not was_visible:
-            sizes = self.splitter.sizes()
-            self.splitter.setSizes(
-                [left_width, max(0, sum(sizes) - left_width - sizes[2]), sizes[2]]
-            )
-
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "right"):
-            self.update_projects_visibility()
-
-    def position_projects_toggle(self):
-        self.projects_toggle.move(
-            self.central.width() - self.projects_toggle.width(),
-            self.navigation_strip.height(),
-        )
-        self.projects_toggle.raise_()
-
     @editing_action
     def edit_tag(self):
         if self.current_panel == "Browse":
@@ -4049,7 +3892,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to active project + Next (requires an active project; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “-- ” at start, “ -- ” elsewhere\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to review destination + Next (requires a destination; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “-- ” at start, “ -- ” elsewhere\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def update_library_hover_row(self, hovered=None):
@@ -4146,7 +3989,7 @@ class Window(QMainWindow):
             self.update_library_scroll_fades()
         if (
             event.type() in {QEvent.Type.Resize, QEvent.Type.Move}
-            and watched in (self.center, self.command_area)
+            and watched in (self.center, self.command_area, self.export_player.video_container)
             and self.transition_pending
         ):
             self.position_transition_covers()
@@ -4531,22 +4374,25 @@ class Window(QMainWindow):
             self.save_range(None, None)
 
     def new_project(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
+        if self.current_panel != "Export":
             return
         name, accepted = QInputDialog.getText(self, "New project", "Project name")
         if accepted:
             try:
-                self.catalogue.save_project(name)
+                project_id = self.catalogue.save_project(name)
                 self.refresh_references()
+                self.workspace.select_project(project_id, new=True)
             except ValueError as error:
                 self.error(error)
 
     def rename_project(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
+        if self.current_panel != "Export":
             return
-        project_id = self.selected_id(self.projects)
+        project_id = self.workspace.project_id
         if project_id:
-            name, accepted = QInputDialog.getText(self, "Rename project", "New name")
+            name, accepted = QInputDialog.getText(
+                self, "Rename project", "New name", text=self.export_project.currentText()
+            )
             if accepted:
                 try:
                     self.catalogue.save_project(name, project_id)
@@ -4554,59 +4400,90 @@ class Window(QMainWindow):
                 except ValueError as error:
                     self.error(error)
 
-    def toggle_project_activation(self, item):
-        if self.current_panel == "Browse" or self.atomic_edit:
-            return
-        self.projects.setCurrentItem(item)
-        if item.data(Qt.ItemDataRole.UserRole) == self.catalogue.state("active_project"):
-            self.deactivate()
-        else:
-            self.activate_project()
-
-    def activate_project(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
-            return
-        project_id = self.selected_id(self.projects)
-        if project_id:
-            self.catalogue.set_state("active_project", project_id)
-            self.refresh_references()
-
-    def deactivate(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
-            return
-        self.catalogue.set_state("active_project", None)
-        self.refresh_references()
-
     def delete_project(self):
-        if self.current_panel == "Browse" or self.atomic_edit:
+        if self.current_panel != "Export":
             return
-        project_id = self.selected_id(self.projects)
+        project_id = self.workspace.project_id
         if project_id and self.confirm(
             "Delete this project and its memberships? Clips and source files remain."
         ):
             self.catalogue.delete_project(project_id)
             self.refresh_references()
-            self.refresh_library()
+            self.workspace.refresh(restore=True)
+
+    def update_collection_controls(self, projects=None):
+        projects = self.catalogue.projects() if projects is None else projects
+        destination = self.catalogue.state("review_destination")
+        names = {project["project_id"]: project["name"] for project in projects}
+        if destination not in names:
+            if destination is not None:
+                self.catalogue.set_state("review_destination", None)
+            destination = None
+            self.auto_collect_enabled = False
+        active = bool(destination and self.auto_collect_enabled)
+        if self.membership_button.property("autoCollection") != active:
+            self.membership_button.setProperty("autoCollection", active)
+            self.membership_button.style().unpolish(self.membership_button)
+            self.membership_button.style().polish(self.membership_button)
+            self.membership_button.update()
+        self.membership_menu.collection_changes_enabled = not bool(self.atomic_edit)
+        for action in self.membership_menu.actions():
+            project_id = action.data()
+            action.setProperty("autoCollection", active and project_id == destination)
+            if project_id:
+                action.setToolTip(
+                    f"{action.text()} · {'Auto on' if active and project_id == destination else 'Auto off'}\n"
+                    "Left-click: current clip membership\n"
+                    + ("Collection changes unavailable in single-clip Editing" if self.atomic_edit
+                       else "Right-click or Menu key: toggle automatic collection of new Keep decisions")
+                )
+        self.membership_menu.update()
+        self.membership_button.setToolTip(
+            "Projects · Left-click checkboxes: current clip memberships\n"
+            + ("Collection changes unavailable in single-clip Editing\n" if self.atomic_edit
+               else "Right-click a project: toggle automatic collection of new Keep decisions\n")
+            + f"Collection destination: {names.get(destination, 'None')} · Auto {'on' if active else 'off'}"
+        )
+        self.membership_button.setAccessibleDescription(self.membership_button.toolTip())
+        self.add_project_next.setEnabled(bool(destination) and not self.atomic_edit)
+
+    def toggle_project_collection(self, project_id):
+        if self.current_panel != "Editing" or self.atomic_edit:
+            return
+        if project_id not in {project["project_id"] for project in self.catalogue.projects()}:
+            return
+        if self.auto_collect_enabled and self.catalogue.state("review_destination") == project_id:
+            self.auto_collect_enabled = False
+        else:
+            self.catalogue.set_state("review_destination", project_id)
+            self.auto_collect_enabled = True
+        self.update_collection_controls()
+
+    def auto_add_destination(self):
+        return self.catalogue.state("review_destination") if self.auto_collect_enabled else None
+
+    def show_memberships(self):
+        self.membership_menu.clear()
+        if not self.current_id:
+            return
+        members = self.effective_memberships()
+        for project in self.catalogue.projects():
+            action = self.membership_menu.addAction(project["name"])
+            action.setData(project["project_id"])
+            action.setCheckable(True)
+            action.setChecked(project["project_id"] in members)
+            action.toggled.connect(
+                lambda checked, project_id=project["project_id"]: self.membership(checked, project_id)
+            )
+        if not self.membership_menu.actions():
+            action = self.membership_menu.addAction("No projects · Create a project in Export")
+            action.setEnabled(False)
+        self.update_collection_controls()
 
     @editing_action
-    def membership(self, include):
-        if self.current_panel == "Browse":
-            return
-        project_id = self.selected_id(self.projects)
-        if not project_id:
-            self.error("Select a project first")
-            return
-        ids = [item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()]
-        for clip_id in ids:
-            if self.atomic_edit and clip_id == self.atomic_edit.clip_id:
-                self.atomic_edit.draft = self.catalogue.draft_snapshot(
-                    self.atomic_edit.draft, {}, membership=(project_id, include)
-                )
-            else:
-                self.catalogue.patch(clip_id, {}, membership=(project_id, include))
-        self.update_history_controls()
-        if self.current_panel == "Editing":
-            self.render_clip()
+    def membership(self, include, project_id):
+        if self.current_panel == "Editing" and self.current_id:
+            self.edit({}, membership=(project_id, include))
 
     def create_session(self, mode):
         if self.current_panel == "Browse" or self.atomic_edit:
@@ -4729,11 +4606,17 @@ class Window(QMainWindow):
             self.error(error)
 
     def update_history_controls(self):
+        for clip_id in self.catalogue.invalidated_clip_histories:
+            self.editing_histories.pop(clip_id, None)
+        self.catalogue.invalidated_clip_histories.clear()
         history = None
         if self.current_panel == "Config" and hasattr(self, "config_editor"):
             history = self.config_editor.edit_history()
         elif self.current_panel == "Editing" and self.current_id:
             history = self.editing_history()
+        elif self.current_panel == "Export" and hasattr(self, "workspace"):
+            coordinator = self.workspace.history()
+            history = coordinator.sync() if coordinator else None
         self.undo_button.setEnabled(bool(history and history.undo_stack))
         self.redo_button.setEnabled(bool(history and history.redo_stack))
         for action in getattr(self, "browse_write_actions", []):
@@ -4746,6 +4629,9 @@ class Window(QMainWindow):
             )
 
     def undo(self, redo=False):
+        if self.current_panel == "Export":
+            self.workspace.undo(redo)
+            return
         if self.current_panel == "Config":
             self.config_editor.undo(redo)
             return
@@ -5135,80 +5021,12 @@ class Window(QMainWindow):
         except (ValueError, OSError) as error:
             self.error(error)
 
-    def export_clips(self):
-        ids = self.catalogue.member_ids(self.export_project.currentData())
-        return [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
-
     def export_selection(self, *, refresh_library=True):
-        if self.refreshing:
-            return
-        clips = self.export_clips()
-        errors = validate(clips, self.registry)
-        role(self.export_errors, "error" if errors else "success")
-        self.export_errors.setPlainText(
-            "\n".join(message for clip_id, message in errors)
-            or f"Ready: {sum(clip['triage'] == 'keep' for clip in clips)} kept clips"
-        )
-        self.export_button.setEnabled(bool(self.export_project.currentData()) and not errors)
-        self.format_game.blockSignals(True)
-        self.format_game.clear()
-        self.format_game.addItems(
-            sorted({clip["game"] for clip in clips if clip["game"] in self.registry.games})
-        )
-        self.format_game.blockSignals(False)
-        self.show_format()
-        if self.current_panel == "Export":
+        if not self.refreshing:
             if refresh_library:
-                self.refresh_library()
-            current = self.selected_id(self.library)
-            clip = next((clip for clip in clips if clip["clip_id"] == current), None)
-            if clip is None and clips:
-                clip = clips[0]
-                self.library.blockSignals(True)
-                self.library.setCurrentRow(0)
-                self.library.blockSignals(False)
-            if clip is None:
-                if self.export_player.loaded_clip is not None:
-                    self.export_player.load(None)
-            elif not self.player_has_clip(self.export_player, clip):
-                self.export_player.load(clip)
-        else:
-            self.schedule_preload()
-
-    def show_format(self):
-        while self.format_layout.count():
-            item = self.format_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        game = self.registry.game(self.format_game.currentText())
-        if not game:
-            return
-        options = self.formats.setdefault(
-            game.name, {"fields": list(game.display_order), "prefix": True}
-        )
-        prefix = QCheckBox("Game code prefix")
-        prefix.setChecked(options["prefix"])
-        prefix.toggled.connect(lambda checked: options.update(prefix=checked))
-        self.format_layout.addWidget(prefix, 0, 0)
-        for index, field in enumerate(game.display_order, start=1):
-            check = QCheckBox(field)
-            check.setChecked(field in options["fields"])
-
-            def toggle(checked, field=field, options=options):
-                if checked and field not in options["fields"]:
-                    options["fields"].append(field)
-                elif not checked and field in options["fields"]:
-                    options["fields"].remove(field)
-
-            check.toggled.connect(toggle)
-            self.format_layout.addWidget(check, index // 3, index % 3)
-
-    def choose_export_folder(self):
-        directory = QFileDialog.getExistingDirectory(
-            self, "Export folder", self.export_destination.text()
-        )
-        if directory:
-            self.export_destination.setText(directory)
+                self.workspace.refresh()
+            else:
+                self.workspace.refresh_readiness()
 
     def save_settings(self):
         temporary = self.settings_path.with_suffix(".tmp")
@@ -5271,40 +5089,11 @@ class Window(QMainWindow):
         self.save_settings()
 
     def run_export(self):
-        if self.worker is not None or self.close_requested:
-            self.error("Wait for the current operation to finish")
-            return
-        destination = self.export_destination.text().strip()
-        if not destination:
-            self.error("Choose an export folder")
-            return
         project_id = self.export_project.currentData()
-        if not project_id:
-            self.error("Choose a project")
-            return
-        formats = deepcopy(self.formats)
-        group = self.group_rating.isChecked()
-        lowercase = self.settings.get("lowercase_generated_titles", True)
-        try:
-            ids = self.catalogue.member_ids(project_id)
-            clips = [clip for clip in self.catalogue.clips() if clip["clip_id"] in ids]
-            manifest = prepare_export_manifest(
-                clips, self.registry, destination, self.catalogue.folders(),
-                formats, group, lowercase=lowercase,
-            )
-            manifest["project_name"] = self.export_project.currentText()
-            manifest["choices"] = {
-                "project_id": project_id, "formats": formats,
-                "group_rating": group, "lowercase": lowercase,
-            }
-            job_id = str(uuid4())
-            self.catalogue.save_export_job(job_id, manifest, "Queued")
-        except (OSError, ValueError) as error:
-            self.error(error)
-            return
-        self.settings["export_folder"] = destination
-        self.save_settings()
-        self.add_export_job(job_id, f"Export · {self.export_project.currentText()}")
+        if project_id:
+            dialog = ProjectExportDialog(self, project_id)
+            dialog.exec()
+            dialog.deleteLater()
 
     def add_export_job(self, job_id, label, *, paused=False):
         record = next(record for record in self.catalogue.export_jobs()
@@ -5558,16 +5347,13 @@ class Window(QMainWindow):
         self.registry = Registry(self.root / "configs/games")
         self.refresh_references()
         self.refresh_library()
-        self.formats.clear()
         if self.current_panel == "Editing" and self.current_id:
             self.render_clip()
 
     def reset_layout(self):
-        self.pane_overrides.clear()
         self.showNormal()
         self.resize(1400, 918)
-        self.splitter.setSizes([420, 630, 350])
-        self.update_projects_visibility()
+        self.splitter.setSizes([420, 980])
 
     def closeEvent(self, event):
         if (

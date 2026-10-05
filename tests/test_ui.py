@@ -778,10 +778,9 @@ def test_session_pane_top_rows_preserve_heading_and_toolbar_insets(window, appli
         window.resize(width, height)
         application.processEvents()
         search_top = window.search.mapTo(window, QPoint()).y()
-        for label in (window.findChild(QLabel, "overviewHeading"), window.projects_heading):
+        for label in (window.findChild(QLabel, "overviewHeading"),):
             assert label.mapTo(window, QPoint()).y() == search_top - 4
             assert label.height() >= window.search.height()
-        assert window.left.mapTo(window, QPoint()).y() == window.right.mapTo(window, QPoint()).y()
     overview_top = window.findChild(QLabel, "overviewHeading").mapTo(window, QPoint()).y()
     window.panel("Home")
     application.processEvents()
@@ -973,12 +972,10 @@ def test_session_overview_scrolls_above_pinned_setup(
     assert "Resume session" not in controls
 
     setup_height = setup.height()
-    assert window.right.isVisible()
-    assert not window.projects_toggle.isVisible()
-    assert not window.projects_close.isVisible()
-    window.projects_toggle.click()
+    assert window.splitter.count() == 2
+    assert not hasattr(window, "projects_toggle")
     application.processEvents()
-    assert window.right.isVisible()
+    assert window.splitter.count() == 2
     assert abs(overview.width() - scroll.viewport().width()) <= 2
     assert setup.height() == setup_height
     assert scroll.verticalScrollBar().maximum() > 0
@@ -1346,7 +1343,7 @@ def test_atomic_save_preserves_existing_keep_and_membership(window, tmp_path):
     window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
     clip_id = window.catalogue.clips()[0]["clip_id"]
     project_id = window.catalogue.save_project("Project")
-    window.catalogue.set_state("active_project", project_id)
+    window.catalogue.set_state("review_destination", project_id)
     window.catalogue.patch(clip_id, {"triage": "keep"})
 
     window.start_atomic_edit(clip_id, "Home")
@@ -1482,12 +1479,8 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     project_id = window.catalogue.save_project("Project")
     window.refresh_references()
     window.start_atomic_edit(clip_id, "Home")
-    for index in range(window.projects.count()):
-        if window.projects.item(index).data(Qt.ItemDataRole.UserRole) == project_id:
-            window.projects.setCurrentRow(index)
-            break
     history = list(window.catalogue.undo_stack)
-    window.membership(True)
+    window.membership(True, project_id)
     window.command.setText("jett")
     window.submit()
     assert project_id in window.effective_memberships()
@@ -1551,9 +1544,9 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert not window.browse.share_button.isEnabled()
     assert not window.filters.isHidden() and window.search.isHidden()
     assert not window.browse_filters.isHidden()
-    assert window.command_area.isHidden() and window.right.isHidden()
+    assert window.command_area.isHidden() and window.splitter.count() == 2
     assert not window.undo_button.isEnabled()
-    assert not window.projects_toggle.isVisible()
+    assert not hasattr(window, "projects_toggle")
     window.toggle_browse_sort()
     assert window.library.item(0).data(Qt.ItemDataRole.UserRole) == ids[0]
     assert window.browse_id == ids[0]
@@ -1575,8 +1568,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
         window.edit_tag,
         window.new_project,
         window.delete_project,
-        window.activate_project,
-        lambda: window.membership(True),
+        lambda: window.membership(True, "absent"),
         lambda: window.create_session("all"),
         window.end_session,
         window.delete_rejected,
@@ -1855,7 +1847,7 @@ def test_browse_layout(window, application, tmp_path):
             <= browse.height()
         )
         assert browse.custom_title.width() > 200
-        assert window.right.isHidden()
+        assert window.splitter.count() == 2
         # Capture the composed desktop region: HWND capture omits D3D child surfaces.
         rect = window.geometry()
         window.screen().grabWindow(0, rect.x(), rect.y(), rect.width(), rect.height()).save(
@@ -1903,15 +1895,14 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
     settings = SettingsDialog(window)
     assert not hasattr(settings, "folders")
     assert window.pages["Home"][0].isAncestorOf(window.folders)
-    assert settings.projects.count() == 1
-    settings.projects.setCurrentRow(0)
-    settings.run_action(settings.projects, window.projects, window.activate_project)
-    assert window.catalogue.state("active_project") == project_id
+    assert not hasattr(settings, "projects")
     window.folders.setCurrentRow(0)
     window.toggle_folder()
     assert not window.catalogue.folders()[0]["enabled"]
     monkeypatch.setattr(window, "confirm", lambda message: True)
-    settings.run_action(settings.projects, window.projects, window.delete_project)
+    window.panel("Export")
+    window.workspace.select_project(project_id)
+    window.delete_project()
     assert not window.catalogue.projects()
     assert Path(window.catalogue.clip(ids[0])["source_path"]).exists()
     assert not window.settings_button.icon().isNull()
@@ -2182,7 +2173,6 @@ def test_playback_preferences_persist(window, application):
     assert [tabs.tabText(index) for index in range(tabs.count())] == [
         "General",
         "Appearance",
-        "Projects",
     ]
     assert tabs.currentIndex() == 0
     group_headings = {
@@ -2369,7 +2359,7 @@ def test_theme_switching_and_persistence(window, application):
         == 3
     )
     assert window.left.property("role") == "sidebar"
-    assert window.right.property("role") == "sidebar"
+    assert window.splitter.count() == 2
     assert window.shortcut_hint.property("role") == "helper"
     assert window.theme_button.toolTip() == "Switch to dark mode"
 
@@ -2564,7 +2554,7 @@ def test_keyboard_and_session_ui(window, application, tmp_path):
     assert window.catalogue.clip(ids[0])["triage"] == "keep"
     assert window.search.isHidden() and window.filters.isHidden()
     window.panel("Export")
-    assert window.right.isHidden() and window.command_area.isHidden()
+    assert window.splitter.count() == 2 and window.command_area.isHidden()
     window.panel("Session")
     assert not window.filters.isHidden()
 
@@ -2882,7 +2872,7 @@ def test_bracket_tag_rating_preview_and_third_party_title(window, application, t
     assert "font-size:13px" in tagged.data(CLIP_ROLE)["rich_title"]
 
 
-def test_clip_card_title_sizes_are_scoped_to_home_session_and_editing(window, tmp_path):
+def test_clip_card_title_sizes_are_shared_with_export(window, tmp_path):
     clip_id = add_clips(window, tmp_path)[0]
     window.catalogue.patch(clip_id, {"mainline": "Player clutch"})
     project = window.catalogue.save_project("Typography check")
@@ -2895,7 +2885,7 @@ def test_clip_card_title_sizes_are_scoped_to_home_session_and_editing(window, tm
         ("Session", True, 13, 14, 600),
         ("Editing", True, 13, 14, 600),
         ("Browse", False, 13, 14, 700),
-        ("Export", False, 14, 15, 700),
+        ("Export", True, 13, 14, 600),
     ):
         window.panel(panel)
         card = next(
@@ -2978,7 +2968,7 @@ def test_editing_undo_is_per_clip_and_disabled_on_other_pages(window, tmp_path):
     window.undo()
     assert window.catalogue.clip(ids[0])["rating"] is None
     project = window.catalogue.save_project("Clip history")
-    window.catalogue.set_state("active_project", project)
+    window.catalogue.set_state("review_destination", project)
     window.add_to_project_next()
     assert window.current_id == second_id
     assert window.catalogue.member_ids(project) == {ids[0]}
@@ -3027,11 +3017,7 @@ def test_staged_undo_keeps_changes_in_draft_and_covers_membership(window, tmp_pa
     project = window.catalogue.save_project("Undo project")
     window.refresh_references()
     window.start_atomic_edit(clip_id, "Home")
-    for index in range(window.projects.count()):
-        if window.projects.item(index).data(Qt.ItemDataRole.UserRole) == project:
-            window.projects.setCurrentRow(index)
-            break
-    window.membership(True)
+    window.membership(True, project)
     window.undo()
     assert project not in window.effective_memberships()
     window.undo(True)
@@ -3514,7 +3500,7 @@ def test_real_playback(window, application, tmp_path, codec):
     QTest.qWait(300)
     assert abs(window.splitter.sizes()[0] - left_width) < 10
     assert right_width == 0
-    assert window.right.isVisible()
+    assert window.splitter.count() == 2
     window.grab().save(str(artifact / f"maximized-{codec}.png"))
 
 
@@ -3719,7 +3705,7 @@ def test_review_drafts_rating_and_panes(window, application, tmp_path):
     window.panel("Editing")
     assert window.command.text() == "unfinished"
     assert application.focusWidget() is window.player
-    assert window.right.isHidden()
+    assert window.splitter.count() == 2
 
 
 def test_input_undo_and_title_presentation(window, application, tmp_path):
@@ -3753,17 +3739,15 @@ def test_input_undo_and_title_presentation(window, application, tmp_path):
     artifact = ROOT / "cache/verification"
     artifact.mkdir(parents=True, exist_ok=True)
     window.grab().save(str(artifact / "editing-populated.png"))
-    window.toggle_projects()
-    assert window.right.isVisible()
+    assert window.splitter.count() == 2
     window.showMaximized()
     application.processEvents()
-    window.toggle_projects()
-    assert window.right.isHidden()
+    assert window.splitter.count() == 2
     window.showNormal()
     application.processEvents()
-    assert window.right.isVisible()
+    assert window.splitter.count() == 2
     window.reset_layout()
-    assert window.right.isHidden()
+    assert window.splitter.count() == 2
 
 
 def test_editing_mouse_click_returns_to_review_without_losing_draft(
@@ -3987,7 +3971,7 @@ def test_pending_range_blocks_clip_and_session_changes(window, application, tmp_
     )
     window.catalogue.create_session([ids[0], next_id], replace=True)
     project = window.catalogue.save_project("No premature membership")
-    window.catalogue.set_state("active_project", project)
+    window.catalogue.set_state("review_destination", project)
     window.catalogue.patch(ids[0], {"metadata": {"agent": "Jett", "weapon": ["Vandal"]}})
     window.panel("Editing")
     position = [1000]
@@ -4665,7 +4649,7 @@ def test_background_locks_immediately_until_cancel_finishes(window, application)
     assert QApplication.activeModalWidget() is None
 
 
-def test_export_submits_frozen_manifest_without_modal(window, application, tmp_path, monkeypatch):
+def test_export_dialog_submits_frozen_manifest(window, application, tmp_path, monkeypatch):
     ids = add_clips(window, tmp_path)
     project = window.catalogue.save_project("Frozen export")
     window.catalogue.patch(
@@ -4674,13 +4658,15 @@ def test_export_submits_frozen_manifest_without_modal(window, application, tmp_p
     )
     window.refresh_references()
     window.export_project.setCurrentIndex(window.export_project.findData(project))
-    window.export_destination.setText(str(tmp_path / "output"))
+    from dfsorter.project_export_dialog import ProjectExportDialog
+    dialog = ProjectExportDialog(window, project)
+    dialog.destination.setText(str(tmp_path / "output"))
     submitted = []
     monkeypatch.setattr(
         window.activities, "submit",
         lambda kind, title, function, **kwargs: submitted.append((kind, title, kwargs)),
     )
-    window.run_export()
+    dialog.submit()
     assert submitted and submitted[0][0] == "Export"
     assert QApplication.activeModalWidget() is None
     record = window.catalogue.export_jobs()[0]
@@ -5288,12 +5274,12 @@ def test_all_panel_layouts(window, application, tmp_path):
         window.panel(name)
         if name == "Export":
             window.export_project.setCurrentIndex(window.export_project.findData(project))
-            assert not window.export_button.isEnabled()
+            assert window.export_button.isEnabled()
         application.processEvents()
         window.grab().save(str(artifact / f"{name.lower()}.png"))
 
 
-def test_add_project_next_requires_active_and_preserves_triage(window, application, tmp_path):
+def test_add_project_next_requires_destination_and_preserves_triage(window, application, tmp_path):
     add_clips(window, tmp_path)
     folder = window.catalogue.folders()[0]
     window.catalogue.ingest(
@@ -5310,7 +5296,7 @@ def test_add_project_next_requires_active_and_preserves_triage(window, applicati
     QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
     assert window.current_id == ids[0]
     assert not window.catalogue.member_ids(project)
-    window.catalogue.set_state("active_project", project)
+    window.catalogue.set_state("review_destination", project)
     window.refresh_references()
     assert window.add_project_next.isEnabled()
     window.command.setFocus()
@@ -5328,7 +5314,8 @@ def test_add_project_next_requires_active_and_preserves_triage(window, applicati
     assert [window.catalogue.clip(i)["triage"] for i in ids] == ["keep", "discard"]
     window.navigate(-1)
     assert window.command.text() == "unfinished note"
-    window.deactivate()
+    window.catalogue.set_state("review_destination", None)
+    window.update_collection_controls()
     assert not window.add_project_next.isEnabled()
 
 
@@ -5361,7 +5348,7 @@ def test_next_undefined_navigation_is_editing_only(window, application, tmp_path
 
 
 def test_settings_cog_preserves_actions_without_menu_bar(window, application, tmp_path):
-    from PySide6.QtWidgets import QMenuBar, QToolButton
+    from PySide6.QtWidgets import QMenuBar
 
     assert not window.findChildren(QMenuBar)
     assert window.settings_button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
@@ -5408,12 +5395,6 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
     assert len({control.geometry().center().y() for control in utilities}) == 1
     assert window.activities_button.size() == QSize(26, 26)
     assert window.activities_button.geometry().center().y() == utilities[0].geometry().center().y()
-    assert window.projects_toggle.height() == 30
-    assert window.projects_toggle.geometry().right() == window.central.width() - 1
-    assert window.projects_tab_edge.geometry().getRect() == (91, 4, 1, 22)
-    assert window.projects_tab_chevron.geometry().getRect() == (83, 11, 5, 7)
-    assert window.projects_toggle.font().pixelSize() == FONT_SIZES["md"]
-    assert window.projects_toggle.iconSize() == QSize(17, 16)
     assert window.undo_button.property("navUtilityStyle") == "ghost"
     assert window.redo_button.property("navUtilityStyle") == "ghost"
     assert window.activities_button.property("navUtilityStyle") == "ghost"
@@ -5441,161 +5422,7 @@ def test_settings_cog_preserves_actions_without_menu_bar(window, application, tm
 
     window.set_theme("dark", persist=False)
     assert window.theme_button.property("iconName") == "sun"
-    assert 1 <= (
-        painted_icon_height(window.theme_button)
-        - painted_icon_height(window.projects_toggle)
-    ) <= 3
-
-
-def test_projects_drawer_tab_and_pane_close(window):
-    assert not window.right.isVisible()
-    home_library_width = window.left.width()
-    assert window.projects_toggle.isVisible()
-    assert window.projects_toggle.objectName() == "projectsDrawerTab"
-    assert window.projects_heading.text() == "Projects"
-    assert window.projects_heading.property("role") == "paneHeading"
-    assert window.active_row.isHidden()
-    assert window.projects_toolbar.isHidden()
-    assert not window.findChild(QWidget, "projectsAccent")
-    assert [button.text() for button in window.projects_empty.findChildren(QPushButton)] == [
-        "Create project…"
-    ]
-
-    window.projects_toggle.click()
-
-    assert window.right.isVisible()
-    assert not window.projects_toggle.isVisible()
-    assert window.projects_close.isVisible()
-
-    window.projects_close.click()
-
-    assert not window.right.isVisible()
-    assert window.projects_toggle.isVisible()
-
-    window.panel("Browse")
-    assert not window.right.isVisible()
-    assert not window.projects_toggle.isVisible()
-
-    window.panel("Session")
-    assert window.right.isVisible()
-    assert abs(window.left.width() - home_library_width) <= 1
-    assert not window.projects_toggle.isVisible()
-    assert not window.projects_close.isVisible()
-    assert not window.splitter.isCollapsible(2)
-    window.projects_close.click()
-    assert window.right.isVisible()
-    window.splitter.setSizes([420, 1000, 0])
-    assert window.right.width() > 0
-
-    window.panel("Home")
-    assert not window.right.isVisible()
-    assert abs(window.left.width() - home_library_width) <= 1
-    assert window.projects_toggle.isVisible()
-
-    window.splitter.setSizes([500, 870, 0])
-    resized_library_width = window.left.width()
-    window.panel("Session")
-    assert abs(window.left.width() - resized_library_width) <= 1
-    window.panel("Home")
-    assert abs(window.left.width() - resized_library_width) <= 1
-    window.projects_toggle.click()
-    assert window.right.isVisible()
-    window.panel("Session")
-    window.panel("Home")
-    assert window.right.isVisible()
-    assert window.projects_close.isVisible()
-
-
-@pytest.mark.parametrize("theme", ["light", "dark"])
-def test_project_rows_keep_dimensions_when_activation_changes(window, application, theme):
-    window.set_theme(theme, persist=False)
-    window.panel("Session")
-    window.catalogue.save_project("Highlights")
-    window.catalogue.save_project("Other project")
-    window.refresh_references()
-    application.processEvents()
-    inactive_sizes = [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)]
-    assert inactive_sizes[0] == inactive_sizes[1]
-    window.projects.setCurrentRow(0)
-    window.activate_project()
-    application.processEvents()
-    assert [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)] == inactive_sizes
-    assert not window.projects.item(0).icon().pixmap(24, 24).toImage().isNull()
-    inactive_image = window.projects.item(1).icon().pixmap(24, 24).toImage()
-    assert not inactive_image.isNull()
-    assert all(inactive_image.pixelColor(x, y).alpha() == 0 for x in range(24) for y in range(24))
-    window.deactivate()
-    application.processEvents()
-    assert [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)] == inactive_sizes
-
-
-def test_project_double_click_toggles_target_activation(window, application):
-    window.panel("Session")
-    first = window.catalogue.save_project("First")
-    second = window.catalogue.save_project("Second")
-    window.refresh_references()
-
-    def double_click(row):
-        application.processEvents()
-        point = window.projects.visualItemRect(window.projects.item(row)).center()
-        QTest.mouseClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=point)
-        QTest.mouseDClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=point)
-        application.processEvents()
-
-    double_click(0)
-    assert window.catalogue.state("active_project") == first
-    double_click(1)
-    assert window.catalogue.state("active_project") == second
-    assert window.selected_id(window.projects) == second
-    double_click(1)
-    assert window.catalogue.state("active_project") is None
-    blank = QPoint(10, window.projects.viewport().height() - 10)
-    QTest.mouseDClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=blank)
-    assert window.catalogue.state("active_project") is None
-
-
-@pytest.mark.parametrize("mode", ["Browse", "atomic"])
-def test_project_double_click_respects_activation_restrictions(window, application, tmp_path, mode):
-    project_id = window.catalogue.save_project("Highlights")
-    window.catalogue.set_state("active_project", project_id)
-    window.refresh_references()
-    if mode == "atomic":
-        clip_id = add_clips(window, tmp_path)[0]
-        window.start_atomic_edit(clip_id, "Home")
-    else:
-        window.panel("Browse")
-    application.processEvents()
-    window.projects.itemDoubleClicked.emit(window.projects.item(0))
-    assert window.catalogue.state("active_project") == project_id
-    window.catalogue.set_state("active_project", None)
-    window.projects.itemDoubleClicked.emit(window.projects.item(0))
-    assert window.catalogue.state("active_project") is None
-
-
-def test_projects_utility_pane_active_state_and_toolbar(window, application):
-    window.set_theme("dark", persist=False)
-    window.panel("Session")
-    project_id = window.catalogue.save_project("Highlights")
-    window.refresh_references()
-    application.processEvents()
-    assert window.active_row.isHidden()
-    assert window.projects_toolbar.isVisible()
-    actions = window.projects_toolbar.findChildren(QToolButton)
-    assert [action.toolTip() for action in actions] == [
-        "New project", "Rename", "Activate", "Deactivate", "Add to project", "Remove selected clips"
-    ]
-    assert all(action.property("projectsAction") for action in actions)
-    assert len({action.width() for action in actions}) == 1
-    assert len({action.height() for action in actions}) == 1
-    window.projects.setCurrentRow(0)
-    window.activate_project()
-    application.processEvents()
-    assert window.catalogue.state("active_project") == project_id
-    assert window.active_row.isVisible()
-    assert window.active_label.text() == "Active:"
-    assert window.active_project_name.text() == "Highlights"
-    window.deactivate()
-    assert window.active_row.isHidden()
+    assert painted_icon_height(window.theme_button) > 0
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -5603,7 +5430,7 @@ def test_facelift_heading_icons_share_title_centerline(window, application, them
     window.set_theme(theme, persist=False)
     for panel, names in (
         ("Home", ("Capture folders",)),
-        ("Session", ("Library overview", "No active session", "Projects")),
+        ("Session", ("Library overview", "No active session")),
     ):
         window.panel(panel)
         application.processEvents()
@@ -5620,8 +5447,8 @@ def test_facelift_heading_icons_share_title_centerline(window, application, them
                 glyph.mapToGlobal(glyph.rect().center()).y()
                 - label.mapToGlobal(label.rect().center()).y()
             ) <= 1
-            assert glyph.property("headingIconSize") == (16 if name == "Projects" else 24)
-            assert label.font().pixelSize() == (16 if name == "Projects" else 22)
+            assert glyph.property("headingIconSize") == 24
+            assert label.font().pixelSize() == 22
             image = label.grab().toImage()
             painted_rows = [
                 y for y in range(image.height())
@@ -5640,7 +5467,7 @@ def test_heading_icons_are_unbacked_centered_and_unclipped(window, application, 
     window.set_theme(theme, persist=False)
     for panel, names in (
         ("Home", ("Capture folders",)),
-        ("Session", ("Library overview", "No active session", "Projects")),
+        ("Session", ("Library overview", "No active session")),
     ):
         window.panel(panel)
         application.processEvents()
@@ -5651,7 +5478,7 @@ def test_heading_icons_are_unbacked_centered_and_unclipped(window, application, 
                 if child.parent() is label.parent() and child.property("headingIcon")
             )
             assert glyph.property("role") is None
-            expected_size = QSize(20, 20) if name == "Projects" else QSize(32, 32)
+            expected_size = QSize(32, 32)
             if name == "Library overview":
                 expected_size.setHeight(min(32, window.search.sizeHint().height()))
             assert glyph.size() == expected_size
@@ -5716,9 +5543,13 @@ def test_history_controls_availability(window, tmp_path):
     window.panel("Home")
     project = window.catalogue.save_project("History controls")
     window.refresh_references()
-    window.projects.setCurrentRow(0)
+    window.panel("Export")
+    window.workspace.select_project(project, new=True)
+    window.workspace.verdict.setCurrentIndex(0)
     window.library.setCurrentRow(0)
-    window.membership(True)
+    window.workspace.selected_action.click()
+    available(True, False)
+    window.panel("Home")
     available(False, False)
     window.catalogue.delete_project(project)
     window.refresh_references()
@@ -5835,6 +5666,7 @@ def test_library_selection_reaches_both_row_boundaries(
     window.catalogue.ingest(folder, [{"path": str(path), "game": None} for path in paths])
     ids = [clip["clip_id"] for clip in window.catalogue.clips()]
     window.set_theme(theme)
+    window.refresh_library()
     window.library.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     for panel in ("Home", "Browse", "Session"):
         window.panel(panel)
@@ -5930,8 +5762,8 @@ def test_library_selection_reaches_both_row_boundaries(
     rect = window.library.visualItemRect(window.library.item(1))
     image = window.library.viewport().grab().toImage()
     x = rect.center().x()
-    assert rect.height() == 57
-    assert image.pixelColor(rect.right() - 1, rect.top()) != QColor(COLORS["accent_selection"])
+    assert 54 < rect.height() < 85
+    assert image.pixelColor(rect.right() - 1, rect.top()) == QColor(COLORS["accent_selection"])
     assert image.pixelColor(x, rect.top()) == QColor(COLORS["accent_selection"])
     assert image.pixelColor(x, rect.bottom()) == QColor(COLORS["accent_selection"])
     assert image.pixelColor(x, window.library.visualItemRect(window.library.item(2)).top()) != QColor(

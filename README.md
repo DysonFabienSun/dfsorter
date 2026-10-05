@@ -29,7 +29,7 @@ The catalogue, settings, and editable game definitions remain in that folder und
 1. Open DFSorter and, on **Home**, choose **Add folder…**. Select a recorder folder containing game-named subfolders. Review the scan preview and add the folder; clips will appear in the library without being copied.
 2. Open **Browse** to play recordings and find clips with search and filters. Select a clip to watch it, or double-click a clip on Home or Session to open it in Browse. Use **Edit clip…** to work on that clip directly.
 3. Open **Session** to create a review queue from selected clips, the first N results, or all current results. **Editing** then opens the queue: add a working title or other metadata, and mark clips Keep or Discard as the review progresses.
-4. Add kept clips to a **Project**. Use **Share** for an individual clip or marked range, or open **Export** to copy a project's ready clips to an output folder.
+4. Open **Export**, create a project, filter **Library**, and **Add all matching** or **Add selected**. Preview and remove exceptions in **Project clips**, then open **Export…** to configure and queue whole-file copies. Use **Share** for an individual clip or marked range.
 
 The sections below give a little more context for each part of the app. The top navigation switches between pages; the theme toggle and settings menu are at the upper right.
 
@@ -49,11 +49,11 @@ Session shows an overview of the library and sets up a review queue. Search, fil
 
 ### Editing
 
-Editing is where clips in a Session are reviewed. Play the selected clip, enter metadata in the command bar, and decide whether to Keep or Discard it. The field checklist previews the command before it is saved. Ratings, tags, descriptions, and In/Out points can add context; the Projects pane can collect clips for a later export. **Edit clip…** from Browse provides the same workspace for a single clip.
+Editing is where clips in a Session are reviewed. Play the selected clip, enter metadata in the command bar, and decide whether to Keep or Discard it. The field checklist previews the command before it is saved. Ratings, tags, descriptions, and In/Out points can add context; the Projects checkbox menu changes current-clip memberships. Right-click a project in the same menu to collect newly kept clips automatically; cycling arrows mark the destination, and Projects has a cyan outline while collection is enabled. Right-click the active project again to turn collection off; auto-add starts off each launch. **Edit clip…** from Browse provides the same workspace for a single clip.
 
 ### Projects
 
-Projects group clips for export. Open the **Projects** pane to create or select a project and manage its clips. When the project is ready, open **Export**, choose the project and an output folder, and review any clips that need attention before exporting. Project Export copies whole original video files; it does not trim them to In/Out points.
+Projects group clips for export. **Export** owns project creation, rename, deletion, assembly and output. Library and Project clips have independent search, verdict/game filters and inclusive capture-date bounds. Bulk additions and removals each have one-step Undo/Redo. Readiness categories expose Pending and blocked clips for atomic Editing. **Export…** opens setup with settings remembered per project after successful submission. Assembly preserves verdicts and never creates a Session. Project Export copies whole original video files; In/Out points do not trim these copies.
 
 ### Configs
 

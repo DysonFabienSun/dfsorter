@@ -281,7 +281,7 @@ def test_tag_column_migration_preserves_catalogue(catalogue, clips, version):
     assert migrated.clips() == before
     assert migrated.state("session") == session
     assert migrated.member_ids(project) == {clip_id}
-    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 7
+    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 9
     assert Catalogue(catalogue.path).clips() == before
     migrated.patch(clip_id, {"tag": "Highlight"})
     migrated.undo()
@@ -538,14 +538,14 @@ def test_invalid_config_is_reported(tmp_path):
 def test_patch_undo_membership_and_live_session(catalogue, clips, registry):
     clip_id = clips[0]["clip_id"]
     project_id = catalogue.save_project("Montage")
-    catalogue.set_state("active_project", project_id)
+    catalogue.set_state("review_destination", project_id)
     ids = [clip["clip_id"] for clip in reversed(clips)]
     catalogue.create_session(ids)
     catalogue.navigate(1)
     catalogue.patch(clip_id, parse_command("jett vandal R5", "VALORANT", registry), editing=True)
     assert catalogue.clip(clip_id)["triage"] is None
     assert not catalogue.member_ids(project_id)
-    catalogue.patch(clip_id, {"triage": "keep"}, editing=True)
+    catalogue.patch(clip_id, {"triage": "keep"}, editing=True, auto_add_destination=project_id)
     assert catalogue.member_ids(project_id) == {clip_id}
     catalogue.undo()
     assert catalogue.clip(clip_id)["triage"] is None

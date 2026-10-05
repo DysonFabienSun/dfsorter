@@ -3,6 +3,7 @@ from functools import lru_cache
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QEvent,
     QPointF,
     QRect,
     QRectF,
@@ -334,10 +335,11 @@ def refresh_icons(root):
 
 
 class PulsingToolButton(QToolButton):
-    """A toolbar button with a slow danger outline, without fading its content."""
+    """A toolbar button with a slow semantic outline, without fading its content."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, color_role="status_danger"):
         super().__init__(parent)
+        self.color_role = color_role
         self.pulsing = False
         self.outline_opacity = 1.0
         self.pulse_animation = QVariantAnimation(self)
@@ -357,7 +359,7 @@ class PulsingToolButton(QToolButton):
         if self.pulsing == pulsing:
             return
         self.pulsing = pulsing
-        if pulsing and self.isVisible():
+        if pulsing and self.isVisible() and self.isEnabled():
             self.pulse_animation.start()
         else:
             self.pulse_animation.stop()
@@ -365,8 +367,16 @@ class PulsingToolButton(QToolButton):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self.pulsing:
+        if self.pulsing and self.isEnabled():
             self.pulse_animation.start()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.EnabledChange and hasattr(self, "pulse_animation"):
+            if self.pulsing and self.isEnabled() and self.isVisible():
+                self.pulse_animation.start()
+            else:
+                self.pulse_animation.stop()
 
     def hideEvent(self, event):
         self.pulse_animation.stop()
@@ -378,7 +388,7 @@ class PulsingToolButton(QToolButton):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(COLORS["status_danger"])
+        color = QColor(COLORS[self.color_role])
         color.setAlphaF(self.outline_opacity)
         painter.setPen(QPen(color, 2))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -417,7 +427,11 @@ class ClipDelegate(QStyledItemDelegate):
             + 14
         )
         minimum = SIZES["browse_card"] if browse else SIZES["compact_card" if compact_card else "card"]
-        return QSize(100, max(minimum, height) + SIZES["card_gap"])
+        project_height = (
+            QFontMetrics(font("sm", base=option.font)).height() + 4
+            if data.get("project_workspace") else 0
+        )
+        return QSize(100, max(minimum, height) + SIZES["card_gap"] + project_height)
 
     def paint(self, painter, option, index):
         painter.save()
@@ -563,6 +577,8 @@ class ClipDelegate(QStyledItemDelegate):
         line_height = max(title_metrics.height(), round(line.height()))
         line_gap = 3 if compact_card else 2
         block_height = line_height + line_gap + detail_metrics.height()
+        if data.get("project_workspace"):
+            block_height += detail_metrics.height() + 4
         optical_y = -1 if metadata_row else 0
         text_y = optical_y + (1 if compact_card else 0)
         area.moveTop(card.top() + (card.height() - block_height) // 2 + text_y)
@@ -712,6 +728,23 @@ class ClipDelegate(QStyledItemDelegate):
             center_y = baseline + ink.y() + ink.height() / 2 - 1
             center = QPointF(area.left() + 3, center_y)
         painter.drawEllipse(center, 4, 4)
+        if data.get("project_workspace"):
+            painter.setFont(detail_font)
+            painter.setPen(QColor(COLORS["text_secondary"]))
+            status = QRect(detail.left(), detail.bottom() + 4, detail.width(), detail.height())
+            member = data.get("project_member")
+            if member:
+                icon("folder", COLORS["text_muted"], size=12).paint(
+                    painter, QRect(status.left(), status.center().y() - 6, 12, 12)
+                )
+                status.adjust(16, 0, 0, 0)
+            text = "In project" if member else "Outside project"
+            if data.get("project_reason"):
+                text += " · " + data["project_reason"]
+            painter.drawText(
+                status, Qt.AlignmentFlag.AlignVCenter,
+                detail_metrics.elidedText(text, Qt.TextElideMode.ElideRight, status.width()),
+            )
         painter.restore()
 
 

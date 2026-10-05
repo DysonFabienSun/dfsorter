@@ -7,8 +7,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -160,47 +158,10 @@ class SettingsDialog(QDialog):
         appearance_layout.addStretch()
         self.theme.currentIndexChanged.connect(self.save_theme_preference)
         tabs.addTab(appearance, "Appearance")
-        self.projects = QListWidget()
-        for title, listing, source, actions in [
-            (
-                "Projects",
-                self.projects,
-                window.projects,
-                [
-                    ("New", window.new_project),
-                    ("Rename", window.rename_project),
-                    ("Activate", window.activate_project),
-                    ("Deactivate", window.deactivate),
-                    ("Delete", window.delete_project),
-                ],
-            ),
-        ]:
-            page = QWidget()
-            body = QVBoxLayout(page)
-            body.addWidget(
-                QLabel(
-                    "Projects reference library clips. Deleting a project keeps its clips and files."
-                )
-            )
-            body.addWidget(listing)
-            controls = QHBoxLayout()
-            for label, callback in actions:
-                control = QPushButton(label)
-                if label == "Delete":
-                    role(control, "danger")
-                control.clicked.connect(
-                    lambda checked=False, listing=listing, source=source, callback=callback: (
-                        self.run_action(listing, source, callback)
-                    )
-                )
-                controls.addWidget(control)
-            body.addLayout(controls)
-            tabs.addTab(page, title)
         tabs.setCurrentIndex(0)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
         layout.addWidget(close)
-        self.refresh()
         self.installEventFilter(self)
         for widget in self.findChildren(QWidget):
             if widget.focusPolicy() == Qt.FocusPolicy.NoFocus:
@@ -283,25 +244,3 @@ class SettingsDialog(QDialog):
         if tips_were_enabled != self.editing_tips.isChecked():
             self.window.update_tips_enabled()
         self.window.update_editing_bottom_size()
-
-    def refresh(self):
-        for listing, source in [
-            (self.projects, self.window.projects),
-        ]:
-            selected = self.window.selected_id(listing)
-            listing.clear()
-            for index in range(source.count()):
-                item = QListWidgetItem(source.item(index))
-                listing.addItem(item)
-                if item.data(Qt.ItemDataRole.UserRole) == selected:
-                    listing.setCurrentItem(item)
-
-    def run_action(self, listing, source, callback):
-        selected = self.window.selected_id(listing)
-        source.setCurrentRow(-1)
-        for index in range(source.count()):
-            if source.item(index).data(Qt.ItemDataRole.UserRole) == selected:
-                source.setCurrentRow(index)
-                break
-        callback()
-        self.refresh()

@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -23,9 +24,12 @@ class Catalogue:
         self.path = path
         self.undo_stack = []
         self.redo_stack = []
+        self.membership_revisions = defaultdict(int)
+        self.invalidated_clip_histories = set()
+        self.removed_clip_ids = set()
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 8:
+            if version > 9:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -108,7 +112,25 @@ class Catalogue:
                 "CREATE INDEX IF NOT EXISTS tag_casefold_identity "
                 "ON clips(casefold(tag)) WHERE tag IS NOT NULL"
             )
-            database.execute("PRAGMA user_version = 8")
+            if version < 9:
+                if "output_preferences" not in {
+                    row["name"] for row in database.execute("PRAGMA table_info(projects)")
+                }:
+                    database.execute(
+                        "ALTER TABLE projects ADD COLUMN output_preferences TEXT NOT NULL DEFAULT '{}'"
+                    )
+                legacy = database.execute(
+                    "SELECT value FROM state WHERE key='active_project'"
+                ).fetchone()
+                legacy_id = json.loads(legacy[0]) if legacy else None
+                if isinstance(legacy_id, str) and database.execute(
+                    "SELECT 1 FROM projects WHERE project_id=?", (legacy_id,)
+                ).fetchone():
+                    database.execute(
+                        "INSERT OR IGNORE INTO state VALUES ('review_destination', ?)", (legacy[0],)
+                    )
+                database.execute("DELETE FROM state WHERE key='active_project'")
+            database.execute("PRAGMA user_version = 9")
 
     def export_jobs(self):
         return [
@@ -304,6 +326,7 @@ class Catalogue:
             if cancelled():
                 raise InterruptedError("Scan cancelled")
         if removed:
+            self._invalidate_removed_clips(clip_id for clip_id, _game in removed)
             self.undo_stack.clear()
             self.redo_stack.clear()
         return removed
@@ -341,6 +364,11 @@ class Catalogue:
             session = {"ids": ids, "index": ids.index(current)} if ids else None
             database.execute("UPDATE state SET value=? WHERE key='session'", (json.dumps(session),))
 
+    def _invalidate_removed_clips(self, clip_ids):
+        clip_ids = set(clip_ids)
+        self.invalidated_clip_histories.update(clip_ids)
+        self.removed_clip_ids.update(clip_ids)
+
     def remove_unlinked(self, clip_ids):
         with self.connection() as database:
             database.execute("BEGIN IMMEDIATE")
@@ -356,6 +384,7 @@ class Catalogue:
                     "Some clips are linked to a folder now. Review the selection again."
                 )
             self._purge_clips(database, clip_ids)
+        self._invalidate_removed_clips(clip_ids)
         self.undo_stack.clear()
         self.redo_stack.clear()
 
@@ -375,6 +404,7 @@ class Catalogue:
             ):
                 raise ValueError("Clip availability changed. Review the list again.")
             self._purge_clips(database, clip_ids)
+        self._invalidate_removed_clips(clip_ids)
         self.undo_stack.clear()
         self.redo_stack.clear()
 
@@ -450,6 +480,7 @@ class Catalogue:
                 self._purge_clips(database, ids)
             database.execute("DELETE FROM folders WHERE folder_id=?", (folder_id,))
         if purge:
+            self._invalidate_removed_clips(ids)
             self.undo_stack.clear()
             self.redo_stack.clear()
 
@@ -497,7 +528,10 @@ class Catalogue:
         self.hidden_deleted_ids()
 
     def projects(self):
-        return self.rows("SELECT * FROM projects ORDER BY name COLLATE NOCASE")
+        return [
+            {**row, "output_preferences": json.loads(row["output_preferences"])}
+            for row in self.rows("SELECT * FROM projects ORDER BY name COLLATE NOCASE")
+        ]
 
     def save_project(self, name, project_id=None):
         if not name.strip():
@@ -505,7 +539,7 @@ class Catalogue:
         project_id = project_id or uuid4().hex
         with self.connection() as database:
             database.execute(
-                "INSERT INTO projects VALUES (?,?) ON CONFLICT(project_id) "
+                "INSERT INTO projects(project_id,name) VALUES (?,?) ON CONFLICT(project_id) "
                 "DO UPDATE SET name=excluded.name",
                 (project_id, name.strip()),
             )
@@ -513,11 +547,79 @@ class Catalogue:
 
     def delete_project(self, project_id):
         with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            affected = {row[0] for row in database.execute(
+                "SELECT clip_id FROM members WHERE project_id=?", (project_id,)
+            )}
             database.execute("DELETE FROM projects WHERE project_id=?", (project_id,))
-        if self.state("active_project") == project_id:
-            self.set_state("active_project", None)
+            database.execute(
+                "DELETE FROM state WHERE key IN ('review_destination','workspace_project') "
+                "AND value=?", (json.dumps(project_id),)
+            )
+        self.membership_revisions[project_id] += 1
+        self.invalidated_clip_histories.update(affected)
         self.undo_stack.clear()
         self.redo_stack.clear()
+
+    def batch_membership(self, project_id, clip_ids, include, *, expected=None):
+        """Change only the requested pairs, atomically; return exactly the changed IDs.
+
+        expected is an optional boolean membership precondition for history replay.
+        """
+        ids = tuple(dict.fromkeys(clip_ids))
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            if not database.execute(
+                "SELECT 1 FROM projects WHERE project_id=?", (project_id,)
+            ).fetchone():
+                raise ValueError("Project no longer exists")
+            existing = {row[0] for row in database.execute("SELECT clip_id FROM clips")}
+            if not set(ids) <= existing:
+                raise ValueError("Clip selection changed; no memberships were changed")
+            members = {row[0] for row in database.execute(
+                "SELECT clip_id FROM members WHERE project_id=?", (project_id,)
+            )}
+            if expected is not None and any((clip_id in members) != expected for clip_id in ids):
+                raise ValueError("Membership history is stale; no memberships were changed")
+            changed = tuple(clip_id for clip_id in ids if (clip_id in members) != include)
+            database.executemany(
+                "INSERT INTO members VALUES (?,?)" if include else
+                "DELETE FROM members WHERE project_id=? AND clip_id=?",
+                [(project_id, clip_id) for clip_id in changed],
+            )
+        if changed:
+            self.membership_revisions[project_id] += 1
+            affected = set(changed)
+            self.invalidated_clip_histories.update(affected)
+            for stack in (self.undo_stack, self.redo_stack):
+                stack[:] = [operation for operation in stack
+                            if operation[0][0]["clip_id"] not in affected]
+        return changed
+
+    def enqueue_project_export(self, project_id, job_id, manifest, preferences, *, expected_clips):
+        """Commit a prepared job and preferences only if its input snapshot is still current."""
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            rows = database.execute(
+                "SELECT clips.* FROM clips JOIN members USING(clip_id) WHERE project_id=?",
+                (project_id,),
+            ).fetchall()
+            current = {row["clip_id"]: {**dict(row), "metadata": json.loads(row["metadata"])}
+                       for row in rows}
+            if current != {clip["clip_id"]: clip for clip in expected_clips}:
+                raise ValueError("Project changed during export preparation; review setup again")
+            if not manifest.get("items"):
+                raise ValueError("No exportable clips")
+            updated = database.execute(
+                "UPDATE projects SET output_preferences=? WHERE project_id=?",
+                (json.dumps(preferences), project_id),
+            )
+            if not updated.rowcount:
+                raise ValueError("Project no longer exists")
+            database.execute(
+                "INSERT INTO export_jobs VALUES (?,?,?,?)",
+                (job_id, json.dumps(manifest), "Queued", now()),
+            )
 
     def member_ids(self, project_id):
         return {
@@ -539,7 +641,7 @@ class Catalogue:
 
     def draft_snapshot(
         self, snapshot, patch, *, editing=False, replace_metadata=False, membership=None,
-        active_project=None,
+        auto_add_destination=None,
     ):
         before = deepcopy(snapshot)
         after = deepcopy(snapshot)
@@ -575,10 +677,10 @@ class Catalogue:
             raise ValueError("In/Out range must have 0 <= In < Out")
         if (
             editing and clip["triage"] == "keep" and before[0]["triage"] != "keep"
-            and active_project
+            and auto_add_destination
         ):
-            if active_project not in memberships:
-                memberships.append(active_project)
+            if auto_add_destination not in memberships:
+                memberships.append(auto_add_destination)
         if membership:
             project_id, include = membership
             if include and project_id not in memberships:
@@ -590,6 +692,7 @@ class Catalogue:
 
     def _restore(self, snapshot):
         clip, memberships = snapshot
+        previous_memberships = set(self.memberships(clip["clip_id"]))
         fields = [
             "game",
             "triage",
@@ -614,6 +717,8 @@ class Catalogue:
                 "INSERT INTO members VALUES (?,?)",
                 [(project_id, clip["clip_id"]) for project_id in memberships],
             )
+        for project_id in previous_memberships.symmetric_difference(memberships):
+            self.membership_revisions[project_id] += 1
 
     def commit_snapshot(self, baseline, draft):
         if baseline == draft:
@@ -669,15 +774,18 @@ class Catalogue:
                 [(project_id, clip_id) for project_id in memberships],
             )
         after = self._snapshot(clip_id)
+        for project_id in set(baseline[1]).symmetric_difference(after[1]):
+            self.membership_revisions[project_id] += 1
         self.undo_stack.append((deepcopy(baseline), after))
         self.redo_stack.clear()
         return True
 
-    def patch(self, clip_id, patch, editing=False, replace_metadata=False, membership=None):
+    def patch(self, clip_id, patch, editing=False, replace_metadata=False, membership=None,
+              *, auto_add_destination=None):
         before = self._snapshot(clip_id)
         after = self.draft_snapshot(
             before, patch, editing=editing, replace_metadata=replace_metadata,
-            membership=membership, active_project=self.state("active_project"),
+            membership=membership, auto_add_destination=auto_add_destination,
         )
         if before == after:
             return
