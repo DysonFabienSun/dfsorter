@@ -4397,8 +4397,11 @@ def test_home_clip_left_click_retains_inert_highlight_without_context_menu(
 ):
     add_clips(window, tmp_path)
     window.panel("Home")
+    # Synthetic catalogue ingestion bypasses Home's normal scan-result refresh.
+    window.refresh_library()
     application.processEvents()
     item = window.library.item(0)
+    assert item is not None
     popups = []
     monkeypatch.setattr(window.clip_context_menu, "popup", popups.append)
 

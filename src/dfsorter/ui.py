@@ -1,6 +1,7 @@
 import html
 import logging
 import os
+import sqlite3
 import stat
 import sys
 import threading
@@ -18,6 +19,7 @@ import yaml
 from PySide6.QtCore import (
     QCoreApplication,
     QEvent,
+    QItemSelectionModel,
     QObject,
     QPoint,
     QRect,
@@ -123,6 +125,7 @@ from .widgets import (
     FOLDER_ROLE,
     CaptureFolderDelegate,
     ClipDelegate,
+    ClipList,
     ClipScrollFade,
     Rating,
     SessionProgressBar,
@@ -131,6 +134,7 @@ from .widgets import (
     icon,
     refresh_icons,
     set_icon,
+    storage_gb,
     success_check_icon,
     tag_prefix,
     tool,
@@ -205,10 +209,6 @@ class FieldReminder(QLabel):
             document.setTextWidth(-1)
             result.setWidth(round(document.idealWidth() + 1))
         return result
-
-
-def storage_gb(size):
-    return f"{size / (1024**3):.2f} GB"
 
 
 def folder_storage(paths, cancelled):
@@ -775,7 +775,7 @@ class Window(QMainWindow):
         )
         self.session_header.hide()
         outer_left_layout.insertWidget(1, self.session_header)
-        self.library = QListWidget()
+        self.library = ClipList()
         self.library.library_hover_row = -1
         self.library.setObjectName("clipLibrary")
         self.library.setMouseTracking(True)
@@ -1837,8 +1837,14 @@ class Window(QMainWindow):
         if self.current_panel == "Home":
             self.highlight_home_clip(item)
         elif not item.isSelected():
-            self.library.setCurrentItem(item)
-            self.library.clearSelection()
+            if self.current_panel == "Export":
+                if not self.ensure_range_complete():
+                    return
+                self.library.clearSelection()
+                self.library.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
+            else:
+                self.library.setCurrentItem(item)
+                self.library.clearSelection()
             item.setSelected(True)
         self.clip_context_menu.popup(self.library.viewport().mapToGlobal(position))
 
@@ -1873,6 +1879,10 @@ class Window(QMainWindow):
     def start_atomic_edit(self, clip_id, origin=None):
         if self.atomic_edit:
             return
+        if not self.ensure_range_complete():
+            return
+        if self.current_panel == "Export":
+            self.workspace.remember()
         baseline = self.catalogue.snapshot(clip_id)
         baseline[1].sort()
         self.atomic_edit = AtomicEditState(
@@ -2220,6 +2230,8 @@ class Window(QMainWindow):
             if name in {"Home", "Browse", "Editing"}
             else QListWidget.SelectionMode.ExtendedSelection
         )
+        self.library.membership_selection = name == "Export"
+        self.library.selectionModel().member_type = None
         self.library.blockSignals(library_signals_blocked)
         if stamp != self.reference_stamp:
             self.refresh_references()
@@ -3036,6 +3048,10 @@ class Window(QMainWindow):
         elif self.current_panel == "Editing":
             self.switch_editing_clip(clip_id)
         elif self.current_panel == "Export":
+            loaded = self.export_player.loaded_clip
+            if loaded and loaded["clip_id"] != clip_id and not self.ensure_range_complete():
+                self.workspace.restore_selection()
+                return
             self.workspace.preview()
             self.workspace.remember()
 
@@ -4207,7 +4223,7 @@ class Window(QMainWindow):
                 self.command.setFocus()
             return True
         if (
-            self.current_panel in {"Browse", "Editing"}
+            self.current_panel in {"Browse", "Editing", "Export"}
             and key in {Qt.Key.Key_Up, Qt.Key.Key_Down}
             and modifiers == Qt.KeyboardModifier.NoModifier
         ):
@@ -4251,7 +4267,7 @@ class Window(QMainWindow):
                     if not event.isAutoRepeat():
                         self.reject_enter_armed = True
                     return True
-            if self.current_panel in {"Browse", "Editing"} and event.key() in {
+            if self.current_panel in {"Browse", "Editing", "Export"} and event.key() in {
                 Qt.Key.Key_I,
                 Qt.Key.Key_O,
             }:
@@ -4280,11 +4296,17 @@ class Window(QMainWindow):
         return self.pending_in is not None or self.pending_out is not None
 
     def range_endpoints(self):
-        clip = self.effective_clip()
+        clip = self.range_clip()
         return (
             self.pending_in if self.pending_in is not None else clip["in_ms"],
             self.pending_out if self.pending_out is not None else clip["out_ms"],
         )
+
+    def range_clip(self):
+        if self.current_panel == "Export":
+            # The loaded preview owns pending endpoints even during a rejected row change.
+            return self.export_player.loaded_clip
+        return self.effective_clip() if self.current_id else None
 
     def ensure_range_complete(self):
         if not self.has_pending_range():
@@ -4299,31 +4321,37 @@ class Window(QMainWindow):
         self.range_block_message = f"{reason}, or use Clear range."
         self.update_range_warning()
         self.update_command_state()
-        self.range_warning.setToolTip(f"{reason}, or use Clear range, before leaving this clip.")
+        warning = self.workspace.range_warning if self.current_panel == "Export" else self.range_warning
+        warning.setToolTip(f"{reason}, or use Clear range, before leaving this clip.")
         return False
 
     def update_range_warning(self):
-        start, end = self.range_endpoints() if self.current_id else (None, None)
+        clip = self.range_clip()
+        start, end = self.range_endpoints() if clip else (None, None)
         has_endpoint = start is not None or end is not None
         missing = start is None or end is None
-        visible = self.current_panel == "Editing" and bool(self.current_id)
+        visible = self.current_panel in {"Editing", "Export"} and bool(clip)
         visible = visible and has_endpoint and (missing or not 0 <= start < end)
-        self.range_warning.setText("I/O not set" if missing else "I/O invalid")
-        self.range_warning.setToolTip(
+        warning = self.workspace.range_warning if self.current_panel == "Export" else self.range_warning
+        glyph = self.workspace.range_warning_icon if self.current_panel == "Export" else self.range_warning_icon
+        glyph.setPixmap(icon("triangle-alert", COLORS["status_danger"], size=12).pixmap(12, 12))
+        warning.setText("I/O not set" if missing else "I/O invalid")
+        warning.setToolTip(
             "Set both In and Out to complete the range."
             if missing
             else "In must be earlier than Out."
         )
-        self.range_warning.setVisible(visible)
-        self.range_warning_icon.setVisible(visible)
+        warning.setVisible(visible)
+        glyph.setVisible(visible)
         if not visible and getattr(self, "range_block_message", ""):
             self.range_block_message = ""
             self.update_command_state()
 
     def reset_pending_range(self):
         self.pending_in = self.pending_out = None
-        self.player.seek.pending_in = self.player.seek.pending_out = None
-        self.player.seek.update()
+        player = self.active_player()
+        player.seek.pending_in = player.seek.pending_out = None
+        player.seek.update()
 
     def mark_in(self):
         self.mark_range_point("in")
@@ -4336,14 +4364,15 @@ class Window(QMainWindow):
         if self.current_panel == "Browse":
             self.browse.mark(endpoint)
             return
-        if self.current_panel != "Editing" or not self.current_id:
+        if self.current_panel not in {"Editing", "Export"} or not self.range_clip():
             return
-        position = self.player.media.position()
+        player = self.active_player()
+        position = player.media.position()
         if endpoint == "in":
-            self.pending_in = self.player.seek.pending_in = position
+            self.pending_in = player.seek.pending_in = position
         else:
-            self.pending_out = self.player.seek.pending_out = position
-        self.player.seek.update()
+            self.pending_out = player.seek.pending_out = position
+        player.seek.update()
         start, end = self.range_endpoints()
         if start is None or end is None or not 0 <= start < end:
             self.ensure_range_complete()
@@ -4355,6 +4384,27 @@ class Window(QMainWindow):
     @editing_action
     def save_range(self, start, end):
         if self.current_panel == "Browse":
+            return
+        if self.current_panel == "Export":
+            clip = self.range_clip()
+            if clip is None:
+                return
+            try:
+                changed = self.catalogue.update_range(
+                    clip["clip_id"], start, end, expected=(clip["in_ms"], clip["out_ms"])
+                )
+                if changed:
+                    self.editing_histories.pop(clip["clip_id"], None)
+                updated = self.catalogue.clip(clip["clip_id"])
+                self.export_player.loaded_clip = updated
+                self.workspace.clips = [updated if row["clip_id"] == clip["clip_id"] else row
+                                        for row in self.workspace.clips]
+                self.export_player.seek.marker_range = (start, end)
+                self.reset_pending_range()
+                self.update_range_warning()
+                self.update_share_controls()
+            except (ValueError, sqlite3.Error) as error:
+                self.error(error)
             return
         try:
             if self.atomic_edit:
@@ -4377,11 +4427,13 @@ class Window(QMainWindow):
         if self.current_panel == "Browse":
             self.browse.clear_range()
             return
-        if self.current_panel == "Editing" and self.current_id:
+        if self.current_panel in {"Editing", "Export"} and self.range_clip():
             self.save_range(None, None)
 
     def new_project(self):
         if self.current_panel != "Export":
+            return
+        if not self.ensure_range_complete():
             return
         name, accepted = QInputDialog.getText(self, "New project", "Project name")
         if accepted:
@@ -4409,6 +4461,8 @@ class Window(QMainWindow):
 
     def delete_project(self):
         if self.current_panel != "Export":
+            return
+        if not self.ensure_range_complete():
             return
         project_id = self.workspace.project_id
         if project_id and self.confirm(
@@ -5096,6 +5150,8 @@ class Window(QMainWindow):
         self.save_settings()
 
     def run_export(self):
+        if not self.ensure_range_complete():
+            return
         project_id = self.export_project.currentData()
         if project_id:
             dialog = ProjectExportDialog(self, project_id)
@@ -5147,6 +5203,8 @@ class Window(QMainWindow):
         context = (
             ("Browse", self.browse.clip["clip_id"]) if self.current_panel == "Browse" and self.browse.clip
             else ("Editing", self.current_id) if self.current_panel == "Editing" and self.current_id
+            else ("Export", self.workspace.preview_clip()["clip_id"])
+            if self.current_panel == "Export" and self.workspace.preview_clip()
             else None
         )
         if context != self.share_context:
@@ -5178,22 +5236,29 @@ class Window(QMainWindow):
             self.browse.share_button.setIcon(QIcon())
             set_icon(self.browse.fullscreen_share_button, "share-2")
         self.browse.update_share()
-        completed_edit = self.share_completed and context == ("Editing", self.current_id)
-        self.edit_share_button.setEnabled(bool(self.current_id) and not sharing_edit and not completed_edit)
-        hint = ("Share in progress · Open Output Jobs for progress" if sharing_edit
-                else "Shared" if completed_edit else "Share")
-        self.edit_share_button.setToolTip(hint)
-        self.edit_share_button.setAccessibleName(hint)
-        if self.edit_share_button.property("shareCompleted") != completed_edit:
-            self.edit_share_button.setProperty("shareCompleted", completed_edit)
-            self.edit_share_button.style().unpolish(self.edit_share_button)
-            self.edit_share_button.style().polish(self.edit_share_button)
-        if not sharing_edit:
-            if completed_edit:
-                self.edit_share_button.setIcon(success_check_icon(20))
-            else:
-                set_icon(self.edit_share_button, "share-2")
-        if sharing_edit or sharing_browse:
+        export_clip = self.workspace.preview_clip() if self.current_panel == "Export" else None
+        export_id = export_clip["clip_id"] if export_clip else None
+        sharing_export = bool(export_id and self.activities.active_share(export_id))
+        for pane, control, clip_id, sharing in (
+            ("Editing", self.edit_share_button, self.current_id, sharing_edit),
+            ("Export", self.workspace.share_button, export_id, sharing_export),
+        ):
+            completed = bool(clip_id and self.share_completed and context == (pane, clip_id))
+            control.setEnabled(bool(clip_id) and not sharing and not completed)
+            hint = ("Share in progress · Open Output Jobs for progress" if sharing
+                    else "Shared" if completed else "Share")
+            control.setToolTip(hint)
+            control.setAccessibleName(hint)
+            if control.property("shareCompleted") != completed:
+                control.setProperty("shareCompleted", completed)
+                control.style().unpolish(control)
+                control.style().polish(control)
+            if not sharing:
+                if completed:
+                    control.setIcon(success_check_icon(20))
+                else:
+                    set_icon(control, "share-2")
+        if sharing_edit or sharing_browse or sharing_export:
             if not self.share_spinner.isActive():
                 self.share_spinner.start()
             self.advance_share_spinner()
@@ -5208,6 +5273,9 @@ class Window(QMainWindow):
             (self.browse.fullscreen_share_button,
              self.browse.clip["clip_id"] if self.browse.clip else None, 20),
             (self.edit_share_button, self.current_id, 20),
+            (self.workspace.share_button,
+             self.workspace.preview_clip()["clip_id"]
+             if self.current_panel == "Export" and self.workspace.preview_clip() else None, 20),
         ):
             if not self.activities.active_share(clip_id):
                 continue
@@ -5233,7 +5301,7 @@ class Window(QMainWindow):
             return
         if self.activities.active_share(clip["clip_id"]):
             return
-        if self.share_completed and self.share_context == ("Editing", clip["clip_id"]):
+        if self.share_completed and self.share_context == (self.current_panel, clip["clip_id"]):
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Share clip")
@@ -5253,7 +5321,7 @@ class Window(QMainWindow):
             return
         if self.atomic_edit and not self.ensure_range_complete():
             return
-        if self.current_panel == "Editing" and self.has_pending_range():
+        if self.current_panel in {"Editing", "Export"} and self.has_pending_range():
             layout.addRow(
                 QLabel("Range changes are pending; selected range uses the saved markers.")
             )
@@ -5345,7 +5413,8 @@ class Window(QMainWindow):
             clip_id=clip["clip_id"], subtitle=f"{safe_stem(stem)}.mp4",
             destination=folder,
         )
-        self.flash_share(self.edit_share_button)
+        self.flash_share(self.workspace.share_button if self.current_panel == "Export"
+                         else self.edit_share_button)
 
     def open_configs(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.root / "configs/games")))

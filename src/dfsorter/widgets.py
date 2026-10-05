@@ -4,6 +4,8 @@ from functools import lru_cache
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
+    QItemSelection,
+    QItemSelectionModel,
     QPointF,
     QRect,
     QRectF,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QStyle,
     QStyledItemDelegate,
     QToolButton,
@@ -41,6 +44,100 @@ from .theme import COLORS, FONT_SIZES, RADII, SIZES, font, role
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
 FOLDER_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+def storage_gb(size):
+    return f"{size / (1024**3):.2f} GB"
+
+
+class ClipSelectionModel(QItemSelectionModel):
+    """Constrain Export batches at the shared list's selection boundary."""
+
+    def __init__(self, listing):
+        super().__init__(listing.model(), listing)
+        self.listing = listing
+        self.member_type = None
+        self.selectionChanged.connect(self.reset_empty_type)
+
+    def reset_empty_type(self, *_):
+        if not self.selectedIndexes():
+            self.member_type = None
+
+    def setCurrentIndex(self, index, command):
+        listing = self.listing
+        if (listing.membership_selection and listing.preview_guard and index.isValid()
+                and index != self.currentIndex()
+                and not listing.preview_guard(index.data(Qt.ItemDataRole.UserRole))):
+            return
+        super().setCurrentIndex(index, command)
+
+    def select(self, selection, command):
+        listing = self.listing
+        if listing.membership_selection and command & (
+            self.SelectionFlag.Select | self.SelectionFlag.Toggle
+        ):
+            indexes = selection.indexes() if isinstance(selection, QItemSelection) else [selection]
+            indexes = [index for index in indexes if index.isValid()]
+            if not self.selectedIndexes():
+                self.member_type = None
+            if indexes and self.member_type is None:
+                current = self.currentIndex()
+                first = current if current in indexes else indexes[0]
+                self.member_type = bool((first.data(CLIP_ROLE) or {}).get("project_member"))
+            filtered = QItemSelection()
+            for index in indexes:
+                if bool((index.data(CLIP_ROLE) or {}).get("project_member")) == self.member_type:
+                    filtered.select(index, index)
+            selection = filtered
+        super().select(selection, command)
+        if not self.selectedIndexes():
+            self.member_type = None
+
+
+class ClipList(QListWidget):
+    def __init__(self):
+        super().__init__()
+        self.membership_selection = False
+        self.preview_guard = None
+        self.setSelectionModel(ClipSelectionModel(self))
+
+    def selectionCommand(self, index, event=None):
+        if self.membership_selection and self.preview_guard and index != self.currentIndex():
+            if not self.preview_guard(index.data(Qt.ItemDataRole.UserRole)):
+                return QItemSelectionModel.SelectionFlag.NoUpdate
+        if (self.membership_selection and index.isValid()
+                and event is not None and hasattr(event, "modifiers")):
+            if not event.modifiers() & (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+            ):
+                self.selectionModel().member_type = bool(
+                    (index.data(CLIP_ROLE) or {}).get("project_member")
+                )
+        return super().selectionCommand(index, event)
+
+    def mousePressEvent(self, event):
+        target = self.indexAt(event.position().toPoint())
+        if (self.membership_selection and target.isValid() and target != self.currentIndex()
+                and self.preview_guard
+                and not self.preview_guard(target.data(Qt.ItemDataRole.UserRole))):
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if (self.membership_selection and self.preview_guard
+                and event.key() in {Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Home,
+                                    Qt.Key.Key_End, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown}
+                and not self.preview_guard(None)):
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def setCurrentIndex(self, index):
+        if self.membership_selection and self.preview_guard and index != self.currentIndex():
+            if not self.preview_guard(index.data(Qt.ItemDataRole.UserRole)):
+                return
+        super().setCurrentIndex(index)
 
 
 def heading(text, icon_name, heading_role="sectionHeading", row_height=None):
@@ -441,6 +538,7 @@ class ClipDelegate(QStyledItemDelegate):
         browse = data.get("browse_details") is not None
         card = option.rect.adjusted(1, 1, -1, -SIZES["card_gap"] - 1)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        danger_selection = data.get("danger_selection", False)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
         compact_card = data.get("compact_card", False)
@@ -451,7 +549,10 @@ class ClipDelegate(QStyledItemDelegate):
             or self.parent().library_hover_row == previous_index.row()
         )
         if selected or hovered:
-            painter.setBrush(QColor(COLORS["accent_selection" if selected else "surface_hover"]))
+            painter.setBrush(QColor(COLORS[
+                ("status_danger_soft" if danger_selection else "accent_selection")
+                if selected else "surface_hover"
+            ]))
             painter.setPen(Qt.PenStyle.NoPen)
             if selected and compact_card:
                 painter.drawRect(active_card)
@@ -475,7 +576,7 @@ class ClipDelegate(QStyledItemDelegate):
         if selected and not browse:
             painter.fillRect(
                 QRect(active_card.left(), active_card.top(), 2, active_card.height()),
-                QColor(COLORS["accent_default"]),
+                QColor(COLORS["status_danger" if danger_selection else "accent_default"]),
             )
         compact_time = data.get("compact_time")
         metadata_row = not browse

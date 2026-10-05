@@ -2,12 +2,23 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import test_ui
 from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QInputDialog, QTabWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QInputDialog,
+    QLabel,
+    QStyle,
+    QStyleOptionViewItem,
+    QTabWidget,
+)
 
 from dfsorter.catalogue import Catalogue
 from dfsorter.output import prepare_export_manifest, run_export_manifest
@@ -15,7 +26,9 @@ from dfsorter.playback import playback_start_settings
 from dfsorter.project_export_dialog import ProjectExportDialog, normalized_preferences
 from dfsorter.project_workspace import MembershipHistory, WorkspaceView, filter_candidates
 from dfsorter.settings_dialog import SettingsDialog
+from dfsorter.theme import COLORS
 from dfsorter.ui import ROOT, Window
+from dfsorter.widgets import CLIP_ROLE
 
 application = test_ui.application
 window = test_ui.window
@@ -242,6 +255,388 @@ def seed_workspace(window, tmp_path, count=30):
     window.panel("Export")
     window.workspace.select_project(project, new=True)
     return ids, project
+
+
+def selected_ids(window):
+    return {item.data(Qt.ItemDataRole.UserRole) for item in window.library.selectedItems()}
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_export_size_counts_ready_originals_independently_of_workspace_view(
+    window, application, tmp_path, monkeypatch, theme
+):
+    ids, project = seed_workspace(window, tmp_path, 6)
+    window.set_theme(theme, persist=False)
+    window.catalogue.batch_membership(project, ids, True)
+    window.catalogue.patch(ids[0], {"in_ms": 100, "out_ms": 900})
+    window.catalogue.patch(ids[2], {"triage": None})
+    window.catalogue.patch(ids[3], {"mainline": None})
+    window.catalogue.patch(ids[4], {"triage": "discard"})
+    Path(window.catalogue.clip(ids[5])["source_path"]).unlink()
+    sizes = {clip["source_path"]: int(size * 2**30)
+             for clip, size in zip(window.catalogue.clips(), [1.5, 0.25, 3, 4, 5, 6])}
+    original_stat = Path.stat
+
+    def sized_stat(path, *args, **kwargs):
+        result = original_stat(path, *args, **kwargs)
+        if str(path) in sizes:
+            fields = list(result)
+            fields[6] = sizes[str(path)]
+            return os.stat_result(fields)
+        return result
+
+    monkeypatch.setattr(Path, "stat", sized_stat)
+    workspace = window.workspace
+    workspace.refresh()
+    assert workspace.categories["Ready"] == set(ids[:2])
+    assert workspace.export_size.text() == "Estimated export: 1.75 GB"
+    assert "1,073,741,824 bytes" in workspace.export_size.toolTip()
+    window.library.clearSelection()
+    workspace.skipped_ids[project].update(ids[:2])
+    workspace.search.setText("no matching recordings")
+    assert not workspace.state.visible
+    assert workspace.export_size.text() == "Estimated export: 1.75 GB"
+    application.processEvents()
+    label_rect = workspace.export_size.geometry()
+    button_rect = workspace.export_button.geometry()
+    assert label_rect.right() < button_rect.left()
+    assert abs(label_rect.center().y() - button_rect.center().y()) <= 1
+    # A fresh readiness update must see current sizes rather than stale stat cache entries.
+    sizes[window.catalogue.clip(ids[0])["source_path"]] = 2 * 2**30
+    workspace.refresh_readiness()
+    assert workspace.export_size.text() == "Estimated export: 2.25 GB"
+    window.catalogue.batch_membership(project, ids[:1], False)
+    workspace.refresh_readiness()
+    assert workspace.export_size.text() == "Estimated export: 0.25 GB"
+    other = window.catalogue.save_project("Empty project")
+    window.refresh_references()
+    workspace.select_project(other, new=True)
+    assert workspace.export_size.text() == "Estimated export: 0.00 GB"
+    workspace.select_project(None)
+    assert workspace.export_size.text() == "Estimated export: — GB"
+
+
+@pytest.mark.parametrize("first", [0, 1])
+def test_export_selection_membership_mouse_and_keyboard(window, application, tmp_path, first):
+    ids, project = seed_workspace(window, tmp_path, 5)
+    window.catalogue.batch_membership(project, ids[::2], True)
+    window.workspace.refresh()
+    listing = window.library
+    listing.setFocus()
+
+    def click(row, modifier=Qt.KeyboardModifier.NoModifier):
+        QTest.mouseClick(listing.viewport(), Qt.MouseButton.LeftButton, modifier,
+                         listing.visualItemRect(listing.item(row)).center())
+
+    click(first)
+    click(1 - first, Qt.KeyboardModifier.ControlModifier)
+    assert selected_ids(window) == {ids[first]}
+    click(first)
+    click(4, Qt.KeyboardModifier.ShiftModifier)
+    assert selected_ids(window) == set(ids[first:5:2])
+    QTest.keyClick(listing, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert selected_ids(window) == set(ids[first::2])
+    listing.clearSelection()
+    listing.setCurrentRow(1 - first, listing.selectionModel().SelectionFlag.NoUpdate)
+    QTest.keyClick(listing, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert selected_ids(window) == set(ids[1 - first::2])
+    click(first)
+    assert selected_ids(window) == {ids[first]}
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_library_member_actions_and_danger_selection(window, tmp_path, theme):
+    ids, project = seed_workspace(window, tmp_path, 2)
+    window.set_theme(theme, persist=False)
+    window.catalogue.batch_membership(project, ids[:1], True)
+    window.workspace.refresh()
+    listing = window.library
+    listing.clearSelection()
+    listing.item(0).setSelected(True)
+    workspace = window.workspace
+    assert workspace.selected_action.text() == "Remove selected (1)"
+    assert workspace.matching_action.text() == "Remove all matching (1)"
+    assert workspace.skip_action.isHidden()
+    assert listing.item(0).data(CLIP_ROLE)["danger_selection"]
+    image = QImage(500, 100, QImage.Format.Format_ARGB32)
+    image.fill(QColor(COLORS["surface_workspace"]))
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, 500, 100)
+    option.font = listing.font()
+    option.state = QStyle.StateFlag.State_Selected
+    painter = QPainter(image)
+    listing.itemDelegate().paint(painter, option, listing.model().index(0, 0))
+    painter.end()
+    assert image.pixelColor(1, 15) == QColor(COLORS["status_danger"])
+    assert image.pixelColor(5, 2) == QColor(COLORS["status_danger_soft"])
+    listing.clearSelection()
+    assert workspace.selected_action.text() == "Add selected (0)"
+    assert not workspace.selected_action.isEnabled()
+    assert not workspace.skip_action.isEnabled()
+    assert workspace.matching_action.text() == "Add all matching (1)"
+
+
+def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_path, monkeypatch):
+    ids, project = seed_workspace(window, tmp_path, 100)
+    workspace = window.workspace
+    confirmations = []
+    monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or True)
+    workspace.matching_action.click()
+    assert not confirmations
+    assert not selected_ids(window)
+    assert window.library.selectionModel().member_type is None
+    assert window.selected_id(window.library) == ids[0]
+    window.library.item(0).setSelected(True)
+    assert workspace.matching_action.text() == "Remove all matching (100)"
+    workspace.matching_action.click()
+    assert len(confirmations) == 1
+    assert not window.catalogue.member_ids(project)
+    assert not selected_ids(window)
+    window.undo()
+    assert window.catalogue.member_ids(project) == set(ids)
+    assert not selected_ids(window)
+    select_view(window, "Project clips")
+    assert workspace.matching_action.text() == "Remove all matching (100)"
+    workspace.matching_action.click()
+    assert len(confirmations) == 2
+    assert not window.catalogue.member_ids(project)
+    window.undo()
+    assert not selected_ids(window)
+    window.undo(True)
+    assert not selected_ids(window)
+
+
+@pytest.mark.parametrize("view", ["Library", "Project clips"])
+@pytest.mark.parametrize("count", [20, 21])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_remove_all_matching_confirmation_threshold_and_cancellation(
+    window, tmp_path, monkeypatch, view, count, accepted
+):
+    ids, project = seed_workspace(window, tmp_path, count + 5)
+    workspace = window.workspace
+    workspace.history().apply(ids[:count], True)
+    workspace.refresh()
+    if view == "Project clips":
+        select_view(window, view)
+    window.library.clearSelection()
+    window.library.item(0).setSelected(True)
+    window.library.verticalScrollBar().setValue(100)
+    selection = selected_ids(window)
+    current = window.selected_id(window.library)
+    scroll = window.library.verticalScrollBar().value()
+    history = workspace.history().sync()
+    before = window.catalogue.clips()
+    confirmations = []
+    monkeypatch.setattr(window, "confirm",
+                        lambda message: confirmations.append(message) or accepted)
+    workspace.matching_action.click()
+    assert len(confirmations) == (1 if count > 20 else 0)
+    if confirmations:
+        assert f"{count} matching clips" in confirmations[0]
+    if count > 20 and not accepted:
+        assert window.catalogue.member_ids(project) == set(ids[:count])
+        assert selected_ids(window) == selection
+        assert window.selected_id(window.library) == current
+        assert window.library.verticalScrollBar().value() == scroll
+        assert len(history.undo_stack) == 1 and not history.redo_stack
+    else:
+        assert not window.catalogue.member_ids(project)
+        assert not selected_ids(window)
+        assert len(history.undo_stack) == 2
+        window.undo()
+        assert window.catalogue.member_ids(project) == set(ids[:count])
+    assert window.catalogue.clips() == before
+
+
+def test_remove_selected_above_threshold_does_not_confirm(window, tmp_path, monkeypatch):
+    ids, project = seed_workspace(window, tmp_path, 21)
+    workspace = window.workspace
+    workspace.matching_action.click()
+    select_view(window, "Project clips")
+    window.library.selectAll()
+    confirmations = []
+    monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or False)
+    workspace.selected_action.click()
+    assert not confirmations
+    assert not window.catalogue.member_ids(project)
+
+
+def test_skip_masks_member_visibility_isolation_and_restart(
+    window, application, tmp_path, close_window
+):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    workspace = window.workspace
+    before = window.catalogue.clips()
+    workspace.skip_selected()
+    assert workspace.state.visible == ids[1:]
+    assert not selected_ids(window)
+    assert window.catalogue.clips() == before
+    assert not window.catalogue.member_ids(project)
+    assert workspace.matching_action.text() == "Add all matching (2)"
+    other = window.catalogue.save_project("Other")
+    window.refresh_references()
+    workspace.select_project(other, new=True)
+    assert workspace.state.visible == ids
+    workspace.select_project(project)
+    assert workspace.state.visible == ids[1:]
+    window.catalogue.batch_membership(project, ids[:1], True)
+    workspace.refresh()
+    assert workspace.state.visible == ids
+    window.catalogue.batch_membership(project, ids[:1], False)
+    workspace.refresh()
+    assert workspace.state.visible == ids[1:]
+    window.close()
+    application.processEvents()
+    restarted = Window(window.root)
+    try:
+        assert not restarted.workspace.skipped_ids
+        restarted.panel("Export")
+        select_view(restarted, "Library")
+        assert restarted.workspace.state.visible == ids
+    finally:
+        close_window(restarted, application)
+
+
+def test_typed_skip_history_chronology_and_stale_replay(catalogue, clips):
+    ids = [clip["clip_id"] for clip in clips]
+    project = catalogue.save_project("Project")
+    skipped = set()
+    history = MembershipHistory(catalogue, project, skipped)
+    history.apply(ids[:1], True)
+    assert history.skip(ids) == tuple(ids[1:])
+    assert history.skip(ids) == ()
+    assert len(history.sync().undo_stack) == 2
+    history.undo()
+    assert not skipped and catalogue.member_ids(project) == {ids[0]}
+    history.undo()
+    assert not catalogue.member_ids(project)
+    history.undo(True)
+    history.undo(True)
+    assert skipped == set(ids[1:])
+    skipped.clear()
+    with pytest.raises(ValueError, match="stale"):
+        history.undo()
+    assert not history.sync().undo_stack
+
+
+def test_transactional_range_only_update(catalogue, clips):
+    clip_id = clips[0]["clip_id"]
+    project = catalogue.save_project("Project")
+    catalogue.set_state("review_destination", project)
+    before = catalogue.clip(clip_id)
+    assert catalogue.update_range(clip_id, 100, 900, expected=(None, None))
+    assert catalogue.clip(clip_id) == {**before, "in_ms": 100, "out_ms": 900}
+    assert not catalogue.member_ids(project)
+    assert clip_id in catalogue.invalidated_clip_histories
+    with pytest.raises(ValueError, match="stale"):
+        catalogue.update_range(clip_id, 200, 800, expected=(None, None))
+    with pytest.raises(ValueError, match="earlier"):
+        catalogue.update_range(clip_id, 900, 100, expected=(100, 900))
+    assert catalogue.update_range(clip_id, None, None, expected=(100, 900))
+    assert catalogue.clip(clip_id) == before
+
+
+def test_export_pending_range_guards_and_immediate_save(window, tmp_path, monkeypatch):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    workspace = window.workspace
+    other = window.catalogue.save_project("Other")
+    window.refresh_references()
+    monkeypatch.setattr(workspace.player.media, "position", lambda: 100)
+    window.mark_in()
+    assert window.has_pending_range()
+    assert not workspace.range_warning.isHidden()
+    QTest.mouseClick(window.library.viewport(), Qt.MouseButton.LeftButton,
+                     pos=window.library.visualItemRect(window.library.item(1)).center())
+    assert selected_ids(window) == {ids[0]}
+    workspace.navigate(1)
+    assert window.selected_id(window.library) == ids[0]
+    workspace.search.setText("absent")
+    assert workspace.search.text() == ""
+    workspace.views.setCurrentText("Project clips")
+    assert workspace.view == "Library"
+    workspace.select_project(other)
+    assert workspace.project_id == project
+    workspace.skip_selected()
+    assert not workspace.skipped_ids[project]
+    workspace.selected_action.click()
+    assert not window.catalogue.member_ids(project)
+    window.start_atomic_edit(ids[0], "Export")
+    assert window.atomic_edit is None
+    window.panel("Home")
+    assert window.current_panel == "Export"
+    window.run_export()
+    assert not window.catalogue.export_jobs()
+    monkeypatch.setattr(workspace.player.media, "position", lambda: 50)
+    window.mark_out()
+    assert window.has_pending_range()
+    assert workspace.range_warning.text() == "I/O invalid"
+    monkeypatch.setattr(workspace.player.media, "position", lambda: 900)
+    window.mark_out()
+    assert not window.has_pending_range()
+    saved = window.catalogue.clip(ids[0])
+    assert (saved["in_ms"], saved["out_ms"]) == (100, 900)
+    assert not workspace.history().sync().undo_stack
+    assert not window.catalogue.member_ids(project)
+    workspace.navigate(1)
+    assert window.selected_id(window.library) == ids[1]
+
+
+@pytest.mark.parametrize("result", ["Completed", "Failed", "Cancelled"])
+def test_export_share_feedback_and_atomic_return(window, tmp_path, monkeypatch, result):
+    ids, project = seed_workspace(window, tmp_path, 2)
+    workspace = window.workspace
+    job = SimpleNamespace(kind="Share", state="Running")
+    monkeypatch.setattr(window.activities, "jobs", [job])
+    monkeypatch.setattr(window.activities, "active_share",
+                        lambda clip_id: job if clip_id == ids[0] and job.state == "Running" else None)
+    window.update_share_controls()
+    assert not workspace.share_button.isEnabled()
+    assert "progress" in workspace.share_button.toolTip()
+    job.state = result
+    window.update_share_controls()
+    assert workspace.share_button.property("shareCompleted") == (result == "Completed")
+    assert workspace.share_button.toolTip() == ("Shared" if result == "Completed" else "Share")
+    assert workspace.share_button.isEnabled() == (result != "Completed")
+    workspace.navigate(1)
+    assert not workspace.share_button.property("shareCompleted")
+    workspace.skip_selected()
+    workspace.edit_preview()
+    assert window.atomic_edit.clip_id == ids[1]
+    window.edit({"rating": 4})
+    assert window.save_atomic_edit()
+    assert window.current_panel == "Export"
+    assert workspace.project_id == project and workspace.view == "Library"
+    assert workspace.state.visible == ids[1:]
+    assert window.selected_id(window.library) == ids[1]
+    workspace.edit_preview()
+    window.edit({"rating": 5})
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.revert_atomic_edit()
+    assert window.current_panel == "Export"
+    assert workspace.state.visible == ids[1:]
+    assert window.catalogue.clip(ids[1])["rating"] == 4
+
+
+def test_export_share_pending_range_uses_saved_markers(window, tmp_path, monkeypatch):
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.save_range(100, 900)
+    monkeypatch.setattr(window.export_player.media, "position", lambda: 1000)
+    window.mark_in()
+    assert window.has_pending_range()
+
+    def cancel(dialog):
+        labels = [label.text() for label in dialog.findChildren(QLabel)]
+        assert "Range changes are pending; selected range uses the saved markers." in labels
+        choices = dialog.findChildren(QComboBox)
+        assert choices[0].currentData() is True
+        assert "0.100–0.900s" in choices[0].currentText()
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(QDialog, "exec", cancel)
+    window.share()
+    assert window.has_pending_range()
+    assert not window.activities.jobs
+    assert not window.catalogue.member_ids(project)
 
 
 def select_view(window, view):
@@ -749,6 +1144,25 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
     for maximized in (False, True):
         window.showMaximized() if maximized else window.showNormal()
         application.processEvents()
+        for view in ("Library", "Project clips"):
+            select_view(window, view)
+            application.processEvents()
+            workspace = window.workspace
+            assert workspace.category.isHidden() == (view != "Project clips")
+            if view == "Project clips":
+                assert workspace.category.text() == "All members"
+                assert workspace.selected_action.geometry().right() < workspace.category.x()
+                assert workspace.category.geometry().right() < workspace.matching_action.x()
+                assert workspace.category.y() == workspace.selected_action.y()
+                assert workspace.category.y() == workspace.matching_action.y()
+            for label, checkbox in (
+                (workspace.from_label, workspace.outside),
+                (workspace.through_label, workspace.unavailable),
+            ):
+                if not checkbox.isHidden():
+                    assert label.mapTo(workspace.controls, QPoint()).x() == checkbox.mapTo(
+                        workspace.controls, QPoint()
+                    ).x()
         assert window.splitter.count() == 2
         assert window.workspace.controls.width() <= window.left.width()
         assert window.library.horizontalScrollBar().maximum() == 0

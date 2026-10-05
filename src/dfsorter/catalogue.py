@@ -561,6 +561,29 @@ class Catalogue:
         self.undo_stack.clear()
         self.redo_stack.clear()
 
+    def update_range(self, clip_id, start, end, *, expected):
+        """Save only range columns, without Editing collection side effects."""
+        if (start, end) != (None, None) and (
+            not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end
+        ):
+            raise ValueError("In must be earlier than Out")
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            row = database.execute(
+                "SELECT in_ms, out_ms FROM clips WHERE clip_id=?", (clip_id,)
+            ).fetchone()
+            if row is None or tuple(row) != tuple(expected):
+                raise ValueError("Saved range changed; range update is stale")
+            if tuple(row) == (start, end):
+                return False
+            database.execute(
+                "UPDATE clips SET in_ms=?, out_ms=? WHERE clip_id=?", (start, end, clip_id)
+            )
+        self.invalidated_clip_histories.add(clip_id)
+        for stack in (self.undo_stack, self.redo_stack):
+            stack[:] = [operation for operation in stack if operation[0][0]["clip_id"] != clip_id]
+        return True
+
     def batch_membership(self, project_id, clip_ids, include, *, expected=None):
         """Change only the requested pairs, atomically; return exactly the changed IDs.
 

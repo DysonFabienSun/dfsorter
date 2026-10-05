@@ -1,6 +1,7 @@
-"""Project assembly, independent filters, readiness and membership-only history."""
+"""Project assembly, independent filters, readiness and temporary candidate history."""
 
 import sqlite3
+import stat
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -9,6 +10,7 @@ from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,7 +27,7 @@ from .output import validate
 from .parsing import query_clips
 from .playback import Player, playback_start_settings
 from .theme import role
-from .widgets import CLIP_ROLE, tool
+from .widgets import CLIP_ROLE, storage_gb, tool
 
 
 @dataclass
@@ -106,17 +108,20 @@ def filter_candidates(
 
 
 class MembershipHistory:
-    def __init__(self, catalogue, project_id):
+    def __init__(self, catalogue, project_id, skipped=None):
         self.catalogue = catalogue
         self.project_id = project_id
         self.history = EditHistory()
+        self.skipped = skipped if skipped is not None else set()
+        self.last_kind = None
         self.revision = catalogue.membership_revisions[project_id]
 
     def sync(self):
         revision = self.catalogue.membership_revisions[self.project_id]
         removed = self.catalogue.removed_clip_ids
+        self.skipped.difference_update(removed)
         references_removed = any(
-            removed.intersection(operation.before[0])
+            removed.intersection(operation.before[1])
             for stack in (self.history.undo_stack, self.history.redo_stack)
             for operation in stack
         )
@@ -130,7 +135,20 @@ class MembershipHistory:
         changed = self.catalogue.batch_membership(self.project_id, ids, include)
         self.revision = self.catalogue.membership_revisions[self.project_id]
         if changed:
-            self.history.record((changed, not include), (changed, include))
+            self.history.record(("membership", changed, not include), ("membership", changed, include))
+        return changed
+
+    def skip(self, ids):
+        self.sync()
+        if self.project_id not in {project["project_id"] for project in self.catalogue.projects()}:
+            raise ValueError("Project no longer exists")
+        members = self.catalogue.member_ids(self.project_id)
+        existing = {clip["clip_id"] for clip in self.catalogue.clips()}
+        changed = tuple(dict.fromkeys(clip_id for clip_id in ids
+                                      if clip_id in existing - members - self.skipped))
+        if changed:
+            self.skipped.update(changed)
+            self.history.record(("skip", changed, False), ("skip", changed, True))
         return changed
 
     def undo(self, redo=False):
@@ -141,9 +159,22 @@ class MembershipHistory:
         expected = operation.before if redo else operation.after
         target = operation.after if redo else operation.before
         try:
-            changed = self.catalogue.batch_membership(
-                self.project_id, target[0], target[1], expected=expected[1]
-            )
+            self.last_kind = target[0]
+            if target[0] == "skip":
+                existing = {clip["clip_id"] for clip in self.catalogue.clips()}
+                projects = {project["project_id"] for project in self.catalogue.projects()}
+                if (self.project_id not in projects or not set(target[1]) <= existing
+                        or any((clip_id in self.skipped) != expected[2] for clip_id in target[1])):
+                    raise ValueError("Temporary skip history is stale")
+                changed = target[1]
+                if target[2]:
+                    self.skipped.update(changed)
+                else:
+                    self.skipped.difference_update(changed)
+            else:
+                changed = self.catalogue.batch_membership(
+                    self.project_id, target[1], target[2], expected=expected[2]
+                )
         except (ValueError, sqlite3.Error):
             self.history = EditHistory()
             raise
@@ -160,6 +191,7 @@ class ProjectWorkspace:
         self.states = {}
         self.project_views = {}
         self.histories = {}
+        self.skipped_ids = {}
         self.valid = True
         self.loading = False
         self.members = set()
@@ -203,31 +235,42 @@ class ProjectWorkspace:
             control.setMinimumContentsLength(6)
             row.addWidget(control, 1)
         body.addLayout(row)
-        dates = QHBoxLayout()
+        filters = QGridLayout()
+        self.filters_layout = filters
+        filters.setHorizontalSpacing(body.spacing())
+        filters.setVerticalSpacing(body.spacing())
+        filters.setColumnStretch(1, 1)
+        filters.setColumnStretch(3, 1)
         self.from_date = QLineEdit()
         self.through_date = QLineEdit()
-        for label, control in [("From", self.from_date), ("Through", self.through_date)]:
-            dates.addWidget(QLabel(label))
+        self.from_label = QLabel("From")
+        self.through_label = QLabel("Through")
+        for column, label, control in (
+            (0, self.from_label, self.from_date),
+            (2, self.through_label, self.through_date),
+        ):
+            filters.addWidget(label, 0, column)
             control.setPlaceholderText("YYYY-MM-DD")
-            control.setAccessibleName(f"Capture date {label.lower()} (inclusive, local time)")
+            control.setAccessibleName(f"Capture date {label.text().lower()} (inclusive, local time)")
             control.setClearButtonEnabled(True)
-            dates.addWidget(control, 1)
-        body.addLayout(dates)
-        row = QHBoxLayout()
+            filters.addWidget(control, 0, column + 1)
         self.outside = QCheckBox("Outside project")
         self.unavailable = QCheckBox("Unavailable sources")
-        row.addWidget(self.outside)
-        row.addWidget(self.unavailable)
-        body.addLayout(row)
+        filters.addWidget(self.outside, 1, 0, 1, 2)
+        filters.addWidget(self.unavailable, 1, 2, 1, 2)
+        body.addLayout(filters)
         self.category = QPushButton("All members")
         self.category.clicked.connect(lambda: self.open_category(None))
-        body.addWidget(self.category)
         row = QHBoxLayout()
         self.selected_action = QPushButton()
+        self.skip_action = QPushButton()
         self.matching_action = QPushButton()
         self.selected_action.clicked.connect(lambda: self.change_membership(False))
         self.matching_action.clicked.connect(lambda: self.change_membership(True))
+        self.skip_action.clicked.connect(self.skip_selected)
         row.addWidget(self.selected_action, 1)
+        row.addWidget(self.skip_action, 1)
+        row.addWidget(self.category, 1)
         row.addWidget(self.matching_action, 1)
         body.addLayout(row)
         self.summary = QLabel()
@@ -273,6 +316,36 @@ class ProjectWorkspace:
         self.player.volume_changed.connect(window.set_playback_volume)
         self.player.previous.connect(lambda: self.navigate(-1))
         self.player.next.connect(lambda: self.navigate(1))
+        window.library.preview_guard = self.allow_preview
+        self.range_warning_icon = QLabel()
+        self.range_warning = QLabel("I/O not set")
+        role(self.range_warning, "error")
+        warning = QHBoxLayout()
+        warning.setSpacing(3)
+        for widget in (self.range_warning_icon, self.range_warning):
+            policy = widget.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            widget.setSizePolicy(policy)
+            widget.hide()
+            warning.addWidget(widget)
+        self.player.controls.insertLayout(1, warning)
+        self.range_controls = []
+        for name, label, callback in (
+            ("list-start", "Set In · I", window.mark_in),
+            ("list-end", "Set Out · O", window.mark_out),
+            ("brackets", "Clear range", window.clear_range),
+            ("share-2", "Share", window.share),
+        ):
+            control = tool(name, label, callback)
+            self.player.controls.addWidget(control)
+            self.range_controls.append(control)
+        self.share_button = self.range_controls[-1]
+        divider = QWidget()
+        divider.setFixedSize(1, 20)
+        role(divider, "divider")
+        self.player.controls.addWidget(divider, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.edit_button = tool("pencil", "Edit clip…", self.edit_preview)
+        self.player.controls.addWidget(self.edit_button)
         layout.addWidget(self.player, 1)
         self.working_title = QLabel()
         self.working_title.setObjectName("workingTitle")
@@ -287,7 +360,13 @@ class ProjectWorkspace:
         self.export_button = QPushButton("Export…")
         role(self.export_button, "primary")
         self.export_button.clicked.connect(window.run_export)
-        layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignRight)
+        export_row = QHBoxLayout()
+        export_row.addStretch()
+        self.export_size = QLabel()
+        role(self.export_size, "secondary")
+        export_row.addWidget(self.export_size, 0, Qt.AlignmentFlag.AlignVCenter)
+        export_row.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(export_row)
         self.views.currentTextChanged.connect(self.switch_view)
         self.selector.currentIndexChanged.connect(self.switch_project)
         for control in (self.search, self.from_date, self.through_date):
@@ -302,30 +381,42 @@ class ProjectWorkspace:
         QMessageBox.information(
             self.window,
             "Project assembly and export",
-            "1. Choose a project\n"
+            "1. Choose a project and collect clips\n"
             "Select an existing project or use New project… to create one. "
+            "Collect through Editing’s Projects auto-add or bulk actions in Library. "
             "More contains Rename and Delete.\n\n"
-            "2. Find clips in Library\n"
-            "Library shows catalogue clips for collection. It initially shows Keep clips "
-            "with available sources. Search, game, verdict and capture-date filters narrow "
-            "the results. Outside project hides clips already included.\n\n"
-            "3. Add clips\n"
-            "Add all matching includes every filtered result, including offscreen rows. "
-            "Existing members are skipped. Add selected includes only selected rows.\n\n"
-            "4. Remove exceptions in Project clips\n"
+            "2. Refine candidates in Library\n"
+            "Search, game, verdict and capture-date filters narrow the results. "
+            "Outside project hides saved members. Add selected collects nonmembers; "
+            "member selections offer Remove selected. All matching acts on every filtered "
+            "result of that membership type, including offscreen rows. Plain-click starts "
+            "a new selection. Ctrl-click adds separate rows of the same membership type; "
+            "Shift-click selects only that type within a range. Ctrl+A follows the selection "
+            "type, or the current row’s type when nothing is selected.\n\n"
+            "3. Remove exceptions in Project clips\n"
             "To include a broad set except a few recordings, add all matching first. "
             "Switch to Project clips, click the first exception, Ctrl-click the others, "
-            "then use Remove selected. Each batch has one Undo/Redo step.\n\n"
-            "5. Preview and check readiness\n"
-            "Click a row to preview it. Ctrl-click selects separate rows; Shift-click "
-            "selects a range; Ctrl+A selects all filtered results while the list has focus. "
-            "Ready, Pending, Blocked and Skipped count the whole project. Click a category "
-            "to inspect it; All members returns to the complete project. "
-            "Edit clip… opens single-clip Editing. Pending and Blocked clips must be "
-            "resolved or removed before export; Discard clips are skipped.\n\n"
+            "then use Remove selected, or filter and Remove all matching. Removal changes "
+            "membership only; removing more than 20 matching members asks for confirmation. "
+            "Return to Library and use Skip selected on nonmember "
+            "exceptions to hide those candidates for this project until restart. Saved "
+            "members remain visible. Add, remove and skip batches share Undo/Redo; "
+            "successful actions clear selection.\n\n"
+            "4. Optionally edit or share a clip\n"
+            "Set In and Set Out save a completed valid range immediately. Complete a pending "
+            "range or use Clear range before leaving the clip. Share uses the saved range "
+            "or whole clip. Edit clip… opens single-clip Editing; Save or Revert returns "
+            "to the originating project and view. Range saves are outside Export Undo/Redo.\n\n"
+            "5. Inspect Project clips and readiness\n"
+            "Ready clips can export; Pending clips need a verdict; Blocked clips have an "
+            "unavailable source or invalid export metadata; Skipped counts Discard members. "
+            "These counts cover the whole project. Click a category to inspect it; "
+            "All members returns to the complete project. Resolve or remove Pending and "
+            "Blocked clips before export. Temporary candidate skips do not affect readiness.\n\n"
             "6. Export the project\n"
             "Export… opens destination and filename settings. Submission exports the "
-            "project’s eligible members, regardless of row selection or list filters. "
+            "project’s eligible saved members, regardless of row selection, list filters "
+            "or temporary candidate skips. "
             "Settings are remembered separately for each project after submission.\n\n"
             "Project assembly preserves verdicts, metadata and original files and does "
             "not create a Session. Export copies whole files; In/Out points do not trim them.",
@@ -348,12 +439,21 @@ class ProjectWorkspace:
         if not self.project_id:
             return None
         return self.histories.setdefault(
-            self.project_id, MembershipHistory(self.window.catalogue, self.project_id)
+            self.project_id, MembershipHistory(
+                self.window.catalogue, self.project_id,
+                self.skipped_ids.setdefault(self.project_id, set()),
+            )
         )
 
     def refresh_references(self):
         self.loading = True
         projects = self.window.catalogue.projects()
+        existing = {project["project_id"] for project in projects}
+        for mapping in (self.histories, self.skipped_ids, self.project_views):
+            for project_id in set(mapping) - existing:
+                mapping.pop(project_id)
+        self.states = {key: state for key, state in self.states.items()
+                       if key[0] is None or key[0] in existing}
         if self.project_id not in {project["project_id"] for project in projects}:
             self.project_id = None
         self.selector.clear()
@@ -383,6 +483,11 @@ class ProjectWorkspace:
     def switch_project(self, *_):
         if self.loading:
             return
+        if not self.window.ensure_range_complete():
+            self.loading = True
+            self.selector.setCurrentIndex(max(0, self.selector.findData(self.project_id)))
+            self.loading = False
+            return
         self.remember()
         self.project_views[self.project_id] = self.view
         self.project_id = self.selector.currentData()
@@ -400,6 +505,9 @@ class ProjectWorkspace:
 
     def switch_view(self, view):
         if self.loading:
+            return
+        if not self.window.ensure_range_complete():
+            self.load_controls()
             return
         self.remember()
         self.pending_view = None
@@ -448,14 +556,22 @@ class ProjectWorkspace:
         self.outside.setChecked(state.outside)
         self.unavailable.setChecked(state.unavailable)
         self.outside.setVisible(self.view == "Library")
+        self.filters_layout.removeWidget(self.unavailable)
+        self.filters_layout.addWidget(
+            self.unavailable, 1, 2 if self.view == "Library" else 0, 1, 2
+        )
         self.category.setVisible(self.view == "Project clips")
-        self.category.setText(
+        self.category.setToolTip(
             f"{state.readiness} · Return to all members" if state.readiness else "All members"
         )
+        self.category.setAccessibleName(self.category.toolTip())
         self.loading = False
 
     def filters_changed(self, *_):
         if self.loading:
+            return
+        if not self.window.ensure_range_complete():
+            self.load_controls()
             return
         state = self.state
         state.query = self.search.text()
@@ -469,6 +585,8 @@ class ProjectWorkspace:
         self.refresh(reset=True)
 
     def open_category(self, category):
+        if not self.window.ensure_range_complete():
+            return
         self.remember()
         self.view = "Project clips"
         previous = self.state
@@ -492,10 +610,35 @@ class ProjectWorkspace:
             control.setText(f"{name} {len(self.categories[name])}")
             control.setEnabled(bool(self.project_id))
         self.export_button.setEnabled(bool(self.project_id))
+        self.update_export_size(clips)
         self.more.setEnabled(bool(self.project_id))
         self.empty.setVisible(not self.project_id)
 
-    def refresh(self, *, reset=False, restore=False):
+    def update_export_size(self, clips):
+        total = 0
+        known = bool(self.project_id)
+        for clip in clips:
+            if clip["clip_id"] not in self.categories["Ready"]:
+                continue
+            try:
+                source = Path(clip["source_path"]).stat()
+                if not stat.S_ISREG(source.st_mode):
+                    raise OSError("Source is no longer a file")
+                total += source.st_size
+            except OSError:
+                known = False
+                break
+        self.export_size.setText(f"Estimated export: {storage_gb(total) if known else '— GB'}")
+        self.export_size.setToolTip(
+            "Total original-file size of Ready project members. "
+            "Pending, Blocked and Discard clips are excluded. "
+            "Selection, filters, temporary skips and In/Out ranges do not affect this estimate. "
+            "1 GB = 2³⁰ bytes (1,073,741,824 bytes)."
+            + (" Choose a project to estimate export size." if not self.project_id
+               else " Ready source sizes could not be read." if not known else "")
+        )
+
+    def refresh(self, *, reset=False, restore=False, deselect=False):
         window = self.window
         if window.current_panel != "Export":
             self.refresh_readiness()
@@ -532,6 +675,7 @@ class ProjectWorkspace:
             self.valid = True
             window.library_error.clear()
             window.library_error.hide()
+        clips = self.mask_candidates(clips)
         state = self.state
         ids = [clip["clip_id"] for clip in clips]
         if reset:
@@ -548,6 +692,8 @@ class ProjectWorkspace:
             if state.current:
                 state.selected.add(state.current)
         state.selected.intersection_update(ids)
+        if deselect:
+            state.selected.clear()
         state.visible = ids
         self.clips = clips
         listing = window.library
@@ -560,7 +706,8 @@ class ProjectWorkspace:
             is_member = clip["clip_id"] in self.members
             membership = "In project" if is_member else "Outside project"
             reason = self.errors.get(clip["clip_id"], "").partition(": ")[2]
-            data.update(project_member=is_member, project_reason=reason, project_workspace=True)
+            data.update(project_member=is_member, project_reason=reason, project_workspace=True,
+                        danger_selection=self.view == "Library" and is_member)
             item.setData(CLIP_ROLE, data)
             detail = " · ".join(part for part in (membership, reason) if part)
             item.setToolTip(item.toolTip() + ("\n" + detail if detail else ""))
@@ -572,6 +719,8 @@ class ProjectWorkspace:
         listing.doItemsLayout()
         listing.verticalScrollBar().setValue(state.scroll)
         listing.blockSignals(False)
+        if deselect:
+            listing.selectionModel().member_type = None
         self.summary.setText(
             f"{len(clips)} clips"
             + (f" · {unknown} unknown capture dates excluded" if unknown else "")
@@ -589,6 +738,12 @@ class ProjectWorkspace:
         self.pending_view = None
         clip_id = self.window.selected_id(self.window.library)
         clip = next((clip for clip in self.clips if clip["clip_id"] == clip_id), None)
+        previous = self.player.loaded_clip
+        if previous and (not clip or previous["clip_id"] != clip_id):
+            if not self.window.ensure_range_complete():
+                self.restore_selection()
+                return
+            self.window.reset_pending_range()
         prepared = self.window.take_prepared_clip("Export", clip)
         same_source = (
             clip is not None
@@ -608,6 +763,46 @@ class ProjectWorkspace:
         index = self.window.library.currentRow()
         self.player.previous_button.setEnabled(index > 0)
         self.player.next_button.setEnabled(0 <= index < self.window.library.count() - 1)
+        for control in (*self.range_controls, self.edit_button):
+            control.setEnabled(clip is not None)
+        self.window.update_range_warning()
+        self.window.update_share_controls()
+
+    def preview_clip(self):
+        clip_id = self.window.selected_id(self.window.library)
+        return next((clip for clip in self.clips if clip["clip_id"] == clip_id), None)
+
+    def allow_preview(self, clip_id):
+        loaded = self.player.loaded_clip
+        return (bool(loaded and loaded["clip_id"] == clip_id)
+                or self.window.ensure_range_complete())
+
+    def restore_selection(self):
+        listing = self.window.library
+        listing.blockSignals(True)
+        listing.clearSelection()
+        for row in range(listing.count()):
+            item = listing.item(row)
+            clip_id = item.data(Qt.ItemDataRole.UserRole)
+            if clip_id == self.state.current:
+                listing.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
+            item.setSelected(clip_id in self.state.selected)
+        listing.blockSignals(False)
+        self.update_actions()
+
+    def mask_candidates(self, clips, view=None, members=None):
+        skipped = self.skipped_ids.get(self.project_id, set())
+        skipped.difference_update(self.window.catalogue.removed_clip_ids)
+        if (view or self.view) == "Project clips":
+            return clips
+        members = self.members if members is None else members
+        return [clip for clip in clips if clip["clip_id"] not in skipped
+                or clip["clip_id"] in members]
+
+    def edit_preview(self):
+        clip = self.preview_clip()
+        if clip:
+            self.window.start_atomic_edit(clip["clip_id"], "Export")
 
     def expected_clip(self, view=None):
         window = self.window
@@ -631,12 +826,15 @@ class ProjectWorkspace:
             )
         except ValueError:
             clips = [clip for clip in clips if clip["clip_id"] in state.visible]
+        clips = self.mask_candidates(clips, view, members)
         return next(
             (clip for clip in clips if clip["clip_id"] == state.current),
             clips[0] if clips else None,
         )
 
     def navigate(self, offset):
+        if not self.window.ensure_range_complete():
+            return
         listing = self.window.library
         index = listing.currentRow() + offset
         if 0 <= index < listing.count():
@@ -650,15 +848,20 @@ class ProjectWorkspace:
         selected = {
             item.data(Qt.ItemDataRole.UserRole) for item in self.window.library.selectedItems()
         }
-        include = self.view == "Library"
+        self.state.selected = selected
+        include = self.view == "Library" and not bool(selected & self.members)
         count = len(selected - self.members if include else selected & self.members)
-        matching = len(set(self.state.visible) - self.members)
+        matching = len(set(self.state.visible) - self.members if include
+                       else set(self.state.visible) & self.members)
         self.selected_action.setText(f"{'Add' if include else 'Remove'} selected ({count})")
-        self.matching_action.setText(f"Add all matching ({matching})")
-        self.matching_action.setVisible(include)
+        self.skip_action.setText(f"Skip selected ({count})")
+        self.skip_action.setVisible(include)
+        self.matching_action.setText(f"{'Add' if include else 'Remove'} all matching ({matching})")
+        self.matching_action.setVisible(True)
         enabled = bool(self.project_id and self.valid)
         self.selected_action.setEnabled(enabled and bool(count))
         self.matching_action.setEnabled(enabled and bool(matching))
+        self.skip_action.setEnabled(enabled and include and bool(count))
 
     def invalidate_clip_histories(self, ids):
         for clip_id in ids:
@@ -667,7 +870,9 @@ class ProjectWorkspace:
     def change_membership(self, all_matching):
         if not self.project_id or not self.valid:
             return
-        include = self.view == "Library"
+        selected = {item.data(Qt.ItemDataRole.UserRole)
+                    for item in self.window.library.selectedItems()}
+        include = self.view == "Library" and not bool(selected & self.members)
         ids = (
             tuple(self.state.visible)
             if all_matching
@@ -675,9 +880,23 @@ class ProjectWorkspace:
                 item.data(Qt.ItemDataRole.UserRole) for item in self.window.library.selectedItems()
             )
         )
+        ids = tuple(clip_id for clip_id in ids if (clip_id in self.members) != include)
+        clip = self.preview_clip()
+        if clip and self.window.has_pending_range() and clip["clip_id"] in ids:
+            if not self.window.ensure_range_complete():
+                return
+        if all_matching and not include and len(ids) > 20:
+            if not self.window.confirm(
+                f"Remove all {len(ids)} matching clips from this project? "
+                "Clip metadata and original files remain unchanged."
+            ):
+                return
+        changed = ()
         try:
             changed = self.history().apply(ids, include)
             self.invalidate_clip_histories(changed)
+            if changed:
+                self.clear_selection()
             self.window.statusBar().showMessage(
                 f"{'Added' if include else 'Removed'} {len(changed)} clips; "
                 f"{len(ids) - len(changed)} {'already included' if include else 'already absent'}.",
@@ -685,13 +904,45 @@ class ProjectWorkspace:
             )
         except (ValueError, sqlite3.Error) as error:
             self.window.error(error)
-        self.refresh()
+        self.refresh(restore=True, deselect=bool(changed))
+
+    def clear_selection(self):
+        self.remember()
+        self.state.selected.clear()
+        self.window.library.clearSelection()
+        self.window.library.selectionModel().member_type = None
+
+    def skip_selected(self):
+        if not self.project_id or not self.valid or self.view != "Library":
+            return
+        ids = {item.data(Qt.ItemDataRole.UserRole)
+               for item in self.window.library.selectedItems()} - self.members
+        clip = self.preview_clip()
+        if clip and clip["clip_id"] in ids and not self.window.ensure_range_complete():
+            return
+        try:
+            changed = self.history().skip(ids)
+        except (ValueError, sqlite3.Error) as error:
+            self.window.error(error)
+            return
+        if changed:
+            self.clear_selection()
+            self.window.statusBar().showMessage(f"Skipped {len(changed)} candidates until restart.", 12000)
+            self.refresh(restore=True, deselect=True)
 
     def undo(self, redo=False):
         if not self.project_id:
             return
+        if not self.window.ensure_range_complete():
+            return
+        changed = ()
         try:
-            self.invalidate_clip_histories(self.history().undo(redo))
+            history = self.history()
+            changed = history.undo(redo)
+            if history.last_kind == "membership":
+                self.invalidate_clip_histories(changed)
+            if changed:
+                self.clear_selection()
         except (ValueError, sqlite3.Error) as error:
             self.window.error(error)
-        self.refresh()
+        self.refresh(restore=True, deselect=bool(changed))

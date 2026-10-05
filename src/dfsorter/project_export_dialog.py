@@ -167,6 +167,8 @@ class ProjectExportDialog(QDialog):
 
     def submit(self):
         window = self.window
+        if not window.ensure_range_complete():
+            return
         self.refresh_readiness()
         if not self.submit_button.isEnabled():
             return

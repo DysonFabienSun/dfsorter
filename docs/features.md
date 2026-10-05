@@ -1,3 +1,16 @@
+# Export collection and player refinements
+
+- [x] Project clips places All members between Remove selected and Remove all matching, replacing Skip selected's middle slot and eliminating its separate row. Active readiness remains available in its tooltip/accessibility text. Remove all matching asks for confirmation above 20 members in either view; cancellation preserves membership, selection, preview, viewport and history. Twelve focused threshold/cancellation, offscreen-batch and Light/Dark layout cases pass; the updated normal Light capture was inspected. Scoped lint and diff review pass.
+- [x] Export date labels and checkbox rows share grid columns: From aligns with Outside project, and Through aligns with Unavailable sources, including Project clips where Outside project is hidden. Existing Light/Dark normal/maximized layout checks pass; the updated normal Light capture was inspected. Scoped lint and diff review pass.
+- [x] Estimated export size appears immediately left of Export… in the same right-aligned row, using shared secondary text and binary GB (2³⁰ bytes). It totals current original-file sizes of Ready members only, independently of selection, filtering, temporary skips and ranges; project/readiness refreshes update the estimate.
+- [x] Homogeneous shared-list selection in Export, Library member danger styling, Add/Remove all matching across offscreen results, and selection clearing after successful batches and history replay.
+- [x] Per-project temporary candidate skips with chronological typed Undo/Redo, stale-state checks, cleanup and restart reset; saved members and Discard readiness remain independent.
+- [x] Editing-style Export range/Share/Edit controls, pending-range transition guards, transactional range-only saves outside workspace history, shared Share feedback and atomic return state.
+- [x] Assembly guide, main specification, UI Layout Guide and README workflow updated.
+- [x] Focused regression cases added for collection, homogeneous selection, member styling, skips/history, saved ranges/guards, Share feedback and atomic return. Scoped lint and diff review pass.
+- [x] After test authorization, all 39 workspace cases, 19 related shared UI cases, two catalogue range/atomic cases and three real Share-output cases pass (63 total). The existing Home-selection test's synthetic-ingestion setup now refreshes the list; its empty-list failure reproduced on the committed baseline. Scoped lint and diff review pass.
+- [ ] Manual visual acceptance remains pending. The isolated 300-clip export passes but prints pre-existing deferred playback callback errors during Qt teardown; the initial combined workspace run exited without a summary, so all workspace cases were verified in smaller runs.
+
 # Export project workspace
 
 - [x] Export owns project creation, rename, deletion, Library / Project clips assembly and export setup. The former Projects pane, hanging tab, activation controls, Session visibility overrides and Settings Projects tab are retired; historical entries below describing them are superseded.
