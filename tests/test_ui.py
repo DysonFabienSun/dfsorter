@@ -6144,7 +6144,7 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
     assert window.game_filter.all_selected()
     assert window.project_filter.all_selected()
     assert [action.text() for action in window.project_filter.menu().actions()] == [
-        "All projects",
+        "All clips",
         "",
         "No projects",
     ]
@@ -6170,6 +6170,61 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
         assert restarted.unavailable_toggle.property("iconName") == "eye"
     finally:
         restarted.close()
+
+
+@pytest.mark.parametrize("panel", ["Home", "Browse", "Session"])
+def test_project_filter_all_clips_is_separate_from_all_named_projects(window, tmp_path, panel):
+    captures = tmp_path / "project-filter-captures"
+    captures.mkdir()
+    paths = [captures / f"clip-{number}.mp4" for number in range(3)]
+    for path in paths:
+        path.write_bytes(b"test")
+    folder_id = window.catalogue.add_folder(captures)
+    window.catalogue.ingest(folder_id, [{"path": str(path), "game": None} for path in paths])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    first = window.catalogue.save_project("First")
+    second = window.catalogue.save_project("Second")
+    window.catalogue.batch_membership(first, [ids[0]], True)
+    window.catalogue.batch_membership(second, [ids[1]], True)
+    window.refresh_references()
+    control = window.project_filter
+
+    def actions():
+        return {action.text(): action for action in control.menu().actions() if action.text()}
+
+    def visible_ids():
+        return {clip["clip_id"] for clip in window.filtered_clips(window.catalogue.clips(), panel)}
+
+    assert actions()["All clips"].isChecked()
+    assert not actions()["First"].isChecked()
+    assert not actions()["Second"].isChecked()
+    assert visible_ids() == set(ids)
+    actions()["All clips"].trigger()
+    assert control.all_selected()
+    actions()["First"].trigger()
+    assert not actions()["All clips"].isChecked()
+    assert visible_ids() == {ids[0]}
+    actions()["Second"].trigger()
+    assert not control.all_selected()
+    assert control.selected_values() == {first, second}
+    assert visible_ids() == set(ids[:2])
+    actions()["First"].trigger()
+    assert visible_ids() == {ids[1]}
+    actions()["Second"].trigger()
+    assert actions()["All clips"].isChecked()
+    assert visible_ids() == set(ids)
+    control.set_selected_values({first, second})
+    assert not control.all_selected()
+    assert visible_ids() == set(ids[:2])
+    actions()["All clips"].trigger()
+    assert not actions()["First"].isChecked()
+    assert not actions()["Second"].isChecked()
+    assert visible_ids() == set(ids)
+    control.set_selected_values({first})
+    control.set_options([("Second", second)])
+    assert control.all_selected()
+    assert actions()["All clips"].isChecked()
+    assert visible_ids() == set(ids)
 
 
 def test_filter_button_labels_follow_selected_options(window, application):

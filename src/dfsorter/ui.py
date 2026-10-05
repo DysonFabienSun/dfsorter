@@ -333,11 +333,14 @@ class ProjectMembershipMenu(CheckMenu):
 class FilterMenuButton(QPushButton):
     selectionChanged = Signal()
 
-    def __init__(self, label, all_label, options=(), selected=None, empty_text=None):
+    def __init__(
+        self, label, all_label, options=(), selected=None, empty_text=None, *, exclusive_all=False
+    ):
         super().__init__(label)
         self.label = label
         self.all_label = all_label
         self.empty_text = empty_text
+        self.exclusive_all = exclusive_all
         self._all_selected = selected is None
         self._selected = set(selected or ())
         self._options = []
@@ -354,6 +357,8 @@ class FilterMenuButton(QPushButton):
             self._selected.clear()
         elif not self._all_selected:
             self._selected.intersection_update(values)
+            if self.exclusive_all and not self._selected:
+                self._all_selected = True
         self._rebuild_menu()
 
     def selected_values(self):
@@ -364,7 +369,7 @@ class FilterMenuButton(QPushButton):
     def set_selected_values(self, selected):
         values = {value for _label, value in self._options}
         selected = set(selected).intersection(values)
-        self._all_selected = selected == values
+        self._all_selected = not selected if self.exclusive_all else selected == values
         self._selected = set() if self._all_selected else selected
         self._rebuild_menu()
         self.selectionChanged.emit()
@@ -394,7 +399,9 @@ class FilterMenuButton(QPushButton):
             for label, value in self._options:
                 action = self._menu.addAction(label)
                 action.setCheckable(True)
-                action.setChecked(self._all_selected or value in self._selected)
+                action.setChecked(
+                    (self._all_selected and not self.exclusive_all) or value in self._selected
+                )
                 action.triggered.connect(
                     lambda checked=False, value=value: self._toggle_value(value, checked)
                 )
@@ -404,19 +411,19 @@ class FilterMenuButton(QPushButton):
             empty.setEnabled(False)
 
     def _toggle_all(self, checked):
-        self._all_selected = checked
+        self._all_selected = checked or self.exclusive_all
         self._selected.clear()
         self._rebuild_menu()
         self.selectionChanged.emit()
 
     def _toggle_value(self, value, checked):
-        selected = self.selected_values()
+        selected = set(self._selected) if self.exclusive_all else self.selected_values()
         if checked:
             selected.add(value)
         else:
             selected.discard(value)
         values = {option_value for _label, option_value in self._options}
-        self._all_selected = selected == values
+        self._all_selected = not selected if self.exclusive_all else selected == values
         self._selected = set() if self._all_selected else selected
         self._rebuild_menu()
         self.selectionChanged.emit()
@@ -701,7 +708,7 @@ class Window(QMainWindow):
             "Games", "All games", [("Uncategorized", "")]
         )
         self.project_filter = FilterMenuButton(
-            "Projects", "All projects", empty_text="No projects"
+            "Projects", "All clips", empty_text="No projects", exclusive_all=True
         )
         for control in (self.clip_filter, self.game_filter, self.project_filter):
             control.selectionChanged.connect(self.refresh_library_from_controls)
