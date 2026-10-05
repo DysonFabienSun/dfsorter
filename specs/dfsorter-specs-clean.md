@@ -866,6 +866,8 @@ At most one Project may be active at a time.
 
 Projects may be created, renamed, activated, deactivated, and deleted.
 
+Double-clicking a project row toggles its activation: an inactive project becomes the sole active project, and the active project is deactivated. The existing restrictions on activation in Browse and atomic Editing also apply to double-clicking.
+
 Deleting a Project removes only the Project and its memberships. It never deletes clip catalogue entries or source videos.
 
 The right project pane provides access to these operations and shows which Project, if any, is currently active.

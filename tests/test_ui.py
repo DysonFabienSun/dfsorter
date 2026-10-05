@@ -5506,6 +5506,72 @@ def test_projects_drawer_tab_and_pane_close(window):
     assert window.projects_close.isVisible()
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_project_rows_keep_dimensions_when_activation_changes(window, application, theme):
+    window.set_theme(theme, persist=False)
+    window.panel("Session")
+    window.catalogue.save_project("Highlights")
+    window.catalogue.save_project("Other project")
+    window.refresh_references()
+    application.processEvents()
+    inactive_sizes = [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)]
+    assert inactive_sizes[0] == inactive_sizes[1]
+    window.projects.setCurrentRow(0)
+    window.activate_project()
+    application.processEvents()
+    assert [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)] == inactive_sizes
+    assert not window.projects.item(0).icon().pixmap(24, 24).toImage().isNull()
+    inactive_image = window.projects.item(1).icon().pixmap(24, 24).toImage()
+    assert not inactive_image.isNull()
+    assert all(inactive_image.pixelColor(x, y).alpha() == 0 for x in range(24) for y in range(24))
+    window.deactivate()
+    application.processEvents()
+    assert [window.projects.visualItemRect(window.projects.item(i)).size() for i in range(2)] == inactive_sizes
+
+
+def test_project_double_click_toggles_target_activation(window, application):
+    window.panel("Session")
+    first = window.catalogue.save_project("First")
+    second = window.catalogue.save_project("Second")
+    window.refresh_references()
+
+    def double_click(row):
+        application.processEvents()
+        point = window.projects.visualItemRect(window.projects.item(row)).center()
+        QTest.mouseClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        QTest.mouseDClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        application.processEvents()
+
+    double_click(0)
+    assert window.catalogue.state("active_project") == first
+    double_click(1)
+    assert window.catalogue.state("active_project") == second
+    assert window.selected_id(window.projects) == second
+    double_click(1)
+    assert window.catalogue.state("active_project") is None
+    blank = QPoint(10, window.projects.viewport().height() - 10)
+    QTest.mouseDClick(window.projects.viewport(), Qt.MouseButton.LeftButton, pos=blank)
+    assert window.catalogue.state("active_project") is None
+
+
+@pytest.mark.parametrize("mode", ["Browse", "atomic"])
+def test_project_double_click_respects_activation_restrictions(window, application, tmp_path, mode):
+    project_id = window.catalogue.save_project("Highlights")
+    window.catalogue.set_state("active_project", project_id)
+    window.refresh_references()
+    if mode == "atomic":
+        clip_id = add_clips(window, tmp_path)[0]
+        window.start_atomic_edit(clip_id, "Home")
+    else:
+        window.panel("Browse")
+    application.processEvents()
+    window.projects.itemDoubleClicked.emit(window.projects.item(0))
+    assert window.catalogue.state("active_project") == project_id
+    window.catalogue.set_state("active_project", None)
+    window.projects.itemDoubleClicked.emit(window.projects.item(0))
+    assert window.catalogue.state("active_project") is None
+
+
 def test_projects_utility_pane_active_state_and_toolbar(window, application):
     window.set_theme("dark", persist=False)
     window.panel("Session")

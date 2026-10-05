@@ -343,6 +343,8 @@ Browse uses a 64 px row with an 84 × 48 px letterboxed thumbnail before the two
 
 ### Projects
 
+Project rows reserve the active indicator space in both states, keeping identical row dimensions and label alignment when activation changes.
+
 Use a compact folder icon and semibold heading, expanding project list, and bottom utility toolbar. Keep the pane on the sidebar surface, darker than the central workspace in Dark mode, with a subtle 1 px left divider and 8 px horizontal / 4 px vertical insets. Do not frame it as a card or add a decorative accent rule. The heading row shares the search control height. Show `Active:` as muted secondary text with only the active project name in cyan; hide the entire line when no project is active. Keep the active-project row indicator. The empty state sits slightly above center with a quiet small icon, brief title, and only a Create project action; hide the bottom toolbar. When populated, the toolbar has a subtle top divider, evenly spaced 28 px icon actions, hover states, and tooltips. Apply this composition wherever Projects appears. Keep destructive deletion in the context menu and preserve enabled, disabled and checked states through shared styling.
 
 ## 4. Sparse-page composition

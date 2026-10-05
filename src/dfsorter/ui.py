@@ -798,6 +798,7 @@ class Window(QMainWindow):
         self.active_row = active_row
         self.projects = QListWidget()
         self.projects.setObjectName("projectsList")
+        self.projects.itemDoubleClicked.connect(self.toggle_project_activation)
         right_layout.addWidget(self.projects)
         self.projects_empty = QWidget()
         role(self.projects_empty, "transparent")
@@ -2341,10 +2342,15 @@ class Window(QMainWindow):
         self.projects.setVisible(bool(projects))
         self.projects_empty.setVisible(not projects)
         self.projects_toolbar.setVisible(bool(projects))
+        active_indicator = icon("check", COLORS["accent_default"])
+        indicator_space = QPixmap(active_indicator.availableSizes()[0])
+        indicator_space.fill(Qt.GlobalColor.transparent)
+        inactive_indicator = QIcon(indicator_space)
         for project in projects:
             item = QListWidgetItem(project["name"])
-            if project["project_id"] == active:
-                item.setIcon(icon("check", COLORS["accent_default"]))
+            item.setIcon(
+                active_indicator if project["project_id"] == active else inactive_indicator
+            )
             item.setToolTip(
                 project["name"] + (" · Active project" if project["project_id"] == active else "")
             )
@@ -4547,6 +4553,15 @@ class Window(QMainWindow):
                     self.refresh_references()
                 except ValueError as error:
                     self.error(error)
+
+    def toggle_project_activation(self, item):
+        if self.current_panel == "Browse" or self.atomic_edit:
+            return
+        self.projects.setCurrentItem(item)
+        if item.data(Qt.ItemDataRole.UserRole) == self.catalogue.state("active_project"):
+            self.deactivate()
+        else:
+            self.activate_project()
 
     def activate_project(self):
         if self.current_panel == "Browse" or self.atomic_edit:
