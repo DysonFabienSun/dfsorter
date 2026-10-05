@@ -575,6 +575,8 @@ The Session stores the current clip index across application restarts.
 
 While Editing, the left pane shows only Session clips in the frozen order and does not expose sorting or filters. An Editing-only header above the clip list shows **Session clips**, the current numeric position such as **17 / 50**, and a compact icon-only **Next pending clip** button on the right, with a downward navigation icon and an explanatory tooltip. It jumps to the next pending clip later in frozen Session order without changing metadata or verdicts, preserving drafts. It does not wrap; if none exists ahead, it stays on the current clip and reports that fact.
 
+After the final clip in frozen Session order receives a Keep or Discard verdict, if any Session clips remain pending, the Next pending clip button shows a slowly pulsating red outline. Keep this reminder while earlier pending clips are reviewed; remove it when no clips remain pending or the final clip's verdict is cleared. The reminder does not change navigation behavior.
+
 A completed Session remains active for review. Ending a completed Session clears it immediately without confirmation. Ending a Session with pending clips retains confirmation. After ending, open Session and select Pending in the shared Clips filter; later manual filter choices persist normally.
 
 The Session view should display progress and the proportions/counts of:
@@ -597,7 +599,7 @@ The Editing layout provides:
 - player and clip information in the center;
 - collapsible projects on the right, following the normal/maximized visibility rules;
 - command bar at the bottom of the center pane, allowing the left clip list to use the full pane height.
-- a compact footer below the Editing clip list leads with decided progress `(Kept + Rejected)/Total`, followed by rejected count in parentheses, for example `38/50 (5 rejected)`. Update immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
+- a compact footer below the Editing clip list leads with decided progress `(Kept + Rejected)/Total`, followed by rejected count in parentheses, for example `38/50 (5 rejected)`. Skipped pending clips do not count as decided. While the final-clip pending reminder is active, append a middle dot and red pending text, for example `38/50 (5 rejected) · 12 still pending`. Count pending verdicts even when sources are unavailable. Update immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
 
 ### 13.1 Clip Display
 

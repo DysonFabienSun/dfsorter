@@ -1,7 +1,16 @@
 import html
 from functools import lru_cache
 
-from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPointF,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QFontMetrics,
@@ -26,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from .app_paths import ROOT
-from .theme import COLORS, FONT_SIZES, SIZES, font, role
+from .theme import COLORS, FONT_SIZES, RADII, SIZES, font, role
 
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -324,8 +333,63 @@ def refresh_icons(root):
             )
 
 
-def tool(name, label, callback):
-    control = QToolButton()
+class PulsingToolButton(QToolButton):
+    """A toolbar button with a slow danger outline, without fading its content."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pulsing = False
+        self.outline_opacity = 1.0
+        self.pulse_animation = QVariantAnimation(self)
+        self.pulse_animation.setDuration(3000)
+        self.pulse_animation.setStartValue(1.0)
+        self.pulse_animation.setKeyValueAt(0.5, 0.25)
+        self.pulse_animation.setEndValue(1.0)
+        self.pulse_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self.pulse_animation.setLoopCount(-1)
+        self.pulse_animation.valueChanged.connect(self._update_outline)
+
+    def _update_outline(self, opacity):
+        self.outline_opacity = opacity
+        self.update()
+
+    def set_pulsing(self, pulsing):
+        if self.pulsing == pulsing:
+            return
+        self.pulsing = pulsing
+        if pulsing and self.isVisible():
+            self.pulse_animation.start()
+        else:
+            self.pulse_animation.stop()
+        self.update()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.pulsing:
+            self.pulse_animation.start()
+
+    def hideEvent(self, event):
+        self.pulse_animation.stop()
+        super().hideEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.pulsing or not self.isEnabled():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(COLORS["status_danger"])
+        color.setAlphaF(self.outline_opacity)
+        painter.setPen(QPen(color, 2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(
+            QRectF(self.rect()).adjusted(1, 1, -1, -1),
+            RADII["control"], RADII["control"],
+        )
+
+
+def tool(name, label, callback, *, pulsing=False):
+    control = PulsingToolButton() if pulsing else QToolButton()
     set_icon(control, name)
     size = (
         SIZES["icon_lg"]

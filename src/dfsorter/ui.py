@@ -706,6 +706,7 @@ class Window(QMainWindow):
             "list-todo",
             "Next pending clip",
             self.navigate_next_undefined,
+            pulsing=True,
         )
         self.next_undefined_button.setProperty("sessionAction", True)
         session_header_layout.addWidget(
@@ -2525,6 +2526,7 @@ class Window(QMainWindow):
             bool(session) and self.current_panel == "Editing" and not self.atomic_edit
         )
         if self.atomic_edit:
+            self.next_undefined_button.set_pulsing(False)
             self.session_position.clear()
             return
         if session:
@@ -2542,8 +2544,16 @@ class Window(QMainWindow):
             self.session_position.setText(f"{session['index'] + 1} / {total}")
             processed = sum(decided)
             rejected = sum(clips[clip_id]["triage"] == "discard" for clip_id in session["ids"])
+            pending = total - processed
+            remind_pending = bool(decided and decided[-1] and pending)
+            self.next_undefined_button.set_pulsing(remind_pending)
             self.session_counts.setText(
                 f"{processed}/{total} ({rejected} rejected)"
+                + (
+                    f' · <span style="color: {COLORS["status_danger"]}">'
+                    f'{pending} still pending</span>'
+                    if remind_pending else ""
+                )
             )
             last_processed = max((index + 1 for index, value in enumerate(decided) if value), default=0)
             self.session_progress.set_states(states, processed, last_processed)
@@ -2557,6 +2567,7 @@ class Window(QMainWindow):
                 )
             )
         else:
+            self.next_undefined_button.set_pulsing(False)
             self.session_position.clear()
             self.session_counts.clear()
             self.session_progress.set_states((), 0, 0)

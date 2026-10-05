@@ -3089,6 +3089,76 @@ def test_command_validation_colors_and_save_feedback(window, application, tmp_pa
     assert window.command_feedback.text() == ""
 
 
+def test_session_pending_reminder_after_final_verdict(window, application, tmp_path, monkeypatch):
+    monkeypatch.setattr(window, "auto_scan", lambda: None)
+    captures = tmp_path / "pending-reminder"
+    captures.mkdir()
+    folder = window.catalogue.add_folder(captures)
+    paths = [captures / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"video")
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"} for path in paths])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids)
+    window.refresh_references()
+    window.panel("Editing")
+    button = window.next_undefined_button
+    window.switch_editing_clip(ids[-1])
+    assert window.session_counts.text() == "0/3 (0 rejected)"
+    assert not button.pulsing
+
+    # An unavailable pending source still needs a verdict.
+    paths[0].unlink()
+    window.edit({"triage": "discard"})
+    application.processEvents()
+    assert button.pulsing
+    assert button.pulse_animation.state() == button.pulse_animation.State.Running
+    assert window.session_counts.text() == (
+        f'1/3 (1 rejected) · <span style="color: {COLORS["status_danger"]}">'
+        '2 still pending</span>'
+    )
+    button.pulse_animation.setCurrentTime(0)
+    bright = button.grab().toImage()
+    button.pulse_animation.setCurrentTime(1500)
+    faint = button.grab().toImage()
+    assert bright != faint
+    assert button.outline_opacity == pytest.approx(0.25)
+
+    for mode in ("dark", "light"):
+        window.set_theme(mode, persist=False)
+        assert f'color: {COLORS["status_danger"]}' in window.session_counts.text()
+        assert button.pulsing
+        assert wait_for(application, lambda: not window.transition_pending)
+        artifact = ROOT / "cache/verification/pending-reminder"
+        artifact.mkdir(parents=True, exist_ok=True)
+        button.pulse_animation.setCurrentTime(0)
+        window.left.grab().save(str(artifact / f"{mode}.png"))
+
+    window.undo()
+    assert not button.pulsing
+    assert window.session_counts.text() == "0/3 (0 rejected)"
+    window.undo(True)
+    assert button.pulsing
+    window.switch_editing_clip(ids[0])
+    assert button.pulsing
+    window.edit({"triage": "keep"})
+    assert "1 still pending" in window.session_counts.text()
+    window.switch_editing_clip(ids[1])
+    window.edit({"triage": "discard"})
+    assert window.session_counts.text() == "3/3 (2 rejected)"
+    assert not button.pulsing
+    window.undo()
+    assert button.pulsing
+    window.panel("Session")
+    assert button.pulse_animation.state() == button.pulse_animation.State.Stopped
+    window.panel("Editing")
+    assert button.pulse_animation.state() == button.pulse_animation.State.Running
+    window.catalogue.set_state("session", None)
+    window.refresh_session_status()
+    assert not button.pulsing
+    assert window.session_counts.text() == ""
+
+
 def test_editing_session_counts_and_list_height(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     folder = window.catalogue.folders()[0]
