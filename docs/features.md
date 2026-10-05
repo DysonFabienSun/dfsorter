@@ -1,5 +1,7 @@
 # Export collection and player refinements
 
+- [x] Group by Rating exports use R1–R5 and lowercase unrated folders.
+
 - [x] Export-started Output Jobs stays open until dismissed. Successful Share and Export jobs leave a green navigation-icon outline until its next click or keyboard activation, including while other jobs run.
 
 - [x] Export setup fits all filename checkbox rows in a content-height outline without scrolling, omits readiness details, and queues blocked projects for failure reporting in Output jobs before copying.

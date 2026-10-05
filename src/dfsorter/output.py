@@ -140,7 +140,7 @@ def export_project(
         )
         directory = destination
         if group_rating:
-            directory /= f"Rating {clip['rating']}" if clip["rating"] else "Unrated"
+            directory /= f"R{clip['rating']}" if clip["rating"] else "unrated"
         progress(f"Copying {Path(clip['source_path']).name}")
         try:
             result.completed.append(copy_one(clip, directory, stem, cancelled=cancelled))
@@ -177,7 +177,7 @@ def prepare_export_manifest(clips, registry, destination, folders, formats=None,
             lowercase=lowercase,
         ))
         directory = (
-            f"Rating {clip['rating']}" if clip["rating"] else "Unrated"
+            f"R{clip['rating']}" if clip["rating"] else "unrated"
         ) if group_rating else ""
         items.append({
             "clip_id": clip["clip_id"], "source_path": str(source),

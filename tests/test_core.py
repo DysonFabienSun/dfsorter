@@ -735,7 +735,7 @@ def test_export_validation_and_preservation(catalogue, clips, registry, tmp_path
         catalogue.clips(), registry, destination, catalogue.folders(), group_rating=True
     )
     assert not result.error and len(result.completed) == 3
-    rated = next(Path(path) for path in result.completed if "Rating 4" in path)
+    rated = next(Path(path) for path in result.completed if Path(path).parent.name == "R4")
     assert rated.read_bytes() == before[clips[0]["source_path"]]
     assert not list(destination.rglob("*.xmp"))
     assert all(Path(path).read_bytes() == content for path, content in before.items())
@@ -747,6 +747,23 @@ def test_export_validation_and_preservation(catalogue, clips, registry, tmp_path
     with pytest.raises(ValueError, match="configured game"):
         export_project(catalogue.clips(), registry, tmp_path / "blocked", catalogue.folders())
     assert not (tmp_path / "blocked").exists()
+
+
+@pytest.mark.parametrize("rating, folder", [(1, "R1"), (2, "R2"), (3, "R3"),
+                                          (4, "R4"), (5, "R5"), (None, "unrated")])
+def test_grouped_export_rating_folder_names(catalogue, clips, registry, tmp_path, rating, folder):
+    catalogue.patch(clips[0]["clip_id"], {
+        "triage": "keep", "mainline": "Example", "rating": rating,
+    })
+    clip = catalogue.clip(clips[0]["clip_id"])
+    manifest = prepare_export_manifest(
+        [clip], registry, tmp_path / "output", catalogue.folders(), group_rating=True,
+    )
+    assert manifest["items"][0]["directory"] == folder
+    catalogue.save_export_job("rating-folders", manifest, "Queued")
+    result = run_export_manifest(catalogue, "rating-folders")
+    assert result.error is None
+    assert Path(result.completed[0]).parent == tmp_path / "output" / folder
 
 
 def test_export_minimum_metadata_and_yaml_suggestions(catalogue, clips, registry):

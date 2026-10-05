@@ -954,7 +954,7 @@ The default Project Export is **flat**: all exported videos are copied directly 
 
 DFSorter does not attempt to infer arbitrary organizational folders from game metadata in v1.
 
-An optional **Group by Rating** export mode may instead create one subdirectory per rating value, plus an `Unrated` group for clips with no rating. The exact cosmetic folder names may be chosen consistently by the implementation.
+An optional **Group by Rating** export mode may instead create subdirectories named `R1`, `R2`, `R3`, `R4` and `R5` for the corresponding rating values, plus lowercase `unrated` for clips with no rating. New exports use these names; already queued jobs retain the directory names frozen in their manifests.
 
 No general-purpose "group by arbitrary field" directory builder is required in v1.
 
