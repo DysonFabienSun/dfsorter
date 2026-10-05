@@ -1,5 +1,7 @@
 # Export collection and player refinements
 
+- [x] Export-started Output Jobs stays open until dismissed. Successful Share and Export jobs leave a green navigation-icon outline until its next click or keyboard activation, including while other jobs run.
+
 - [x] Export setup fits all filename checkbox rows in a content-height outline without scrolling, omits readiness details, and queues blocked projects for failure reporting in Output jobs before copying.
 
 - [x] Export setup lists Keep games as code plus a live generated filename from a real clip, using export naming rules and full-text tooltips. The full included mainline is underlined in selected examples and popup entries, with semantic ranges tracked through filename sanitization and display elision. Prefix options show their code on a separate row; remaining fields pack at natural widths and wrap with the dialog. Pending/Discard-only games are omitted, blocked Keep games remain configurable, and Cancel retains preference isolation.

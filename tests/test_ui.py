@@ -4828,7 +4828,7 @@ def test_activities_auto_open_close_and_repeat_after_idle(window, application):
         release.wait(5)
         return type("Result", (), {"completed": []})()
 
-    first = window.activities.submit("Export", "First", operation)
+    first = window.activities.submit("Share", "First", operation)
     try:
         assert wait_for(application, lambda: window.activities.menu.isVisible())
         assert window.activities.auto_close_timer.isActive()
@@ -4847,7 +4847,7 @@ def test_activities_auto_open_close_and_repeat_after_idle(window, application):
     assert wait_for(application, lambda: first.state == "Completed")
 
     release.clear()
-    second = window.activities.submit("Export", "Second", operation)
+    second = window.activities.submit("Share", "Second", operation)
     try:
         assert wait_for(application, lambda: window.activities.menu.isVisible())
         assert window.activities.auto_close_timer.isActive()
@@ -4871,6 +4871,80 @@ def test_activities_auto_open_close_and_repeat_after_idle(window, application):
         release.set()
         wait_for(application, lambda: second.state == "Completed", timeout=6)
     assert wait_for(application, lambda: second.state == "Completed")
+
+
+def test_export_jobs_popup_stays_open_on_start_finish_and_resume(window, application):
+    release = threading.Event()
+
+    def operation(cancelled, progress):
+        release.wait(5)
+        return type("Result", (), {"completed": []})()
+
+    activities = window.activities
+    job = activities.submit("Export", "Export example", operation)
+    try:
+        assert wait_for(application, lambda: activities.menu.isVisible())
+        assert not activities.auto_close_timer.isActive()
+        release.set()
+        assert wait_for(application, lambda: job.state == "Completed")
+        assert activities.menu.isVisible()
+        activities.close_button.click()
+        assert not activities.menu.isVisible()
+        release.clear()
+        resumed = activities.submit("Export", "Resume example", operation,
+                                    paused=True, record_id="saved-job")
+        activities.resume(resumed)
+        assert wait_for(application, lambda: activities.menu.isVisible())
+        assert not activities.auto_close_timer.isActive()
+    finally:
+        release.set()
+        wait_for(application, lambda: not activities.busy(), timeout=6)
+        activities.menu.hide()
+
+
+@pytest.mark.parametrize("kind", ["Share", "Export"])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_output_completion_outline_waits_for_icon_click(window, application, kind, theme):
+    window.set_theme(theme, persist=False)
+    activities = window.activities
+    release = threading.Event()
+
+    def running(cancelled, progress):
+        release.wait(5)
+        return "done"
+
+    background = activities.submit("Export", "Still running", running)
+    try:
+        assert wait_for(application, lambda: activities.menu.isVisible())
+        complete = activities.submit(kind, "Finished", lambda cancelled, progress: "done")
+        assert wait_for(application, lambda: complete.state == "Completed")
+        assert background.state == "Running"
+        assert activities.button.property("activityBusy")
+        assert activities.button.property("activityCompleted")
+        picture = activities.button.grab().toImage()
+        assert picture.pixelColor(0, picture.height() // 2).name() == COLORS["status_success"].lower()
+        activities.menu.hide()
+        assert activities.button.property("activityCompleted")
+        activities.button.clicked.emit()
+        assert not activities.button.property("activityCompleted")
+    finally:
+        release.set()
+        wait_for(application, lambda: background.state == "Completed", timeout=6)
+        activities.menu.hide()
+    assert activities.button.property("activityCompleted")
+    activities.eventFilter(activities.button, QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier,
+    ))
+    assert not activities.button.property("activityCompleted")
+
+    def fail(cancelled, progress):
+        raise ValueError("Failed output")
+
+    failed = activities.submit(kind, "Failed", fail)
+    assert wait_for(application, lambda: failed.state == "Failed")
+    assert not activities.button.property("activityCompleted")
+    assert activities.button.property("activityAttention")
+    activities.menu.hide()
 
 
 def test_output_jobs_empty_state_and_theme(window, application):

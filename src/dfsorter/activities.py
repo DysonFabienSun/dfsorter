@@ -80,6 +80,8 @@ class Activities(QObject):
         super().__init__(parent)
         self.jobs: list[OutputJob] = []
         self.button = button
+        self.unseen_completion = False
+        button.clicked.connect(self.acknowledge_completion)
         self.menu = QMenu(button)
         self.menu.setObjectName("activitiesMenu")
         self._auto_opening = False
@@ -144,6 +146,7 @@ class Activities(QObject):
         button.setMenu(self.menu)
         button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._update_button()
+        button.installEventFilter(self)
 
     def busy(self):
         return any(job.state in {"Queued", "Running", "Cancelling"} for job in self.jobs)
@@ -170,16 +173,18 @@ class Activities(QObject):
         self._update_button()
         self.changed.emit()
         if not paused:
+            if kind == "Export":
+                self.auto_close_timer.stop()
             QTimer.singleShot(0, self._schedule)
             if not was_busy:
-                QTimer.singleShot(0, self._open_for_first_job)
+                QTimer.singleShot(0, lambda: self._open_for_first_job(auto_close=kind != "Export"))
         return job
 
     def _menu_shown(self):
         if not self._auto_opening:
             self.auto_close_timer.stop()
 
-    def _open_for_first_job(self):
+    def _open_for_first_job(self, *, auto_close=True):
         if not self.busy() or self.menu.isVisible() or not self.button.isVisible():
             return
         self._auto_opening = True
@@ -188,9 +193,18 @@ class Activities(QObject):
                                                        self.button.height())))
         self.menu.windowHandle().installEventFilter(self)
         self._auto_opening = False
-        self.auto_close_timer.start(4000)
+        if auto_close:
+            self.auto_close_timer.start(4000)
 
     def eventFilter(self, watched, event):
+        if watched is self.button and (
+            (event.type() == QEvent.Type.MouseButtonPress
+             and event.button() == Qt.MouseButton.LeftButton)
+            or (event.type() == QEvent.Type.KeyPress and not event.isAutoRepeat()
+                and event.key() in {Qt.Key.Key_Space, Qt.Key.Key_Return,
+                                    Qt.Key.Key_Enter, Qt.Key.Key_Down})
+        ):
+            self.acknowledge_completion()
         if self.auto_close_timer.isActive() and event.type() in {
             QEvent.Type.Enter,
             QEvent.Type.HoverEnter,
@@ -201,6 +215,11 @@ class Activities(QObject):
         }:
             self.auto_close_timer.stop()
         return super().eventFilter(watched, event)
+
+    def acknowledge_completion(self):
+        if self.unseen_completion:
+            self.unseen_completion = False
+            self._update_button()
 
     def _add_row(self, job):
         self.empty.setVisible(False)
@@ -358,6 +377,7 @@ class Activities(QObject):
         )
         self.button.setProperty("activityBusy", bool(active))
         self.button.setProperty("activityAttention", bool(attention) and not active)
+        self.button.setProperty("activityCompleted", self.unseen_completion)
         self.button.style().unpolish(self.button)
         self.button.style().polish(self.button)
 
@@ -405,6 +425,7 @@ class Activities(QObject):
         else:
             job.state = "Completed"
             job.percent = 100
+            self.unseen_completion = True
         if worker.error:
             job.detail = str(worker.error)
         elif getattr(worker.result, "error", None):
@@ -456,6 +477,8 @@ class Activities(QObject):
         if not self._resumable(job):
             return
         was_busy = self.busy()
+        if job.kind == "Export":
+            self.auto_close_timer.stop()
         job.state = "Queued"
         job.percent = 0
         job.detail = "Waiting to resume"
@@ -463,7 +486,7 @@ class Activities(QObject):
         self._update_button()
         self._schedule()
         if not was_busy:
-            QTimer.singleShot(0, self._open_for_first_job)
+            QTimer.singleShot(0, lambda: self._open_for_first_job(auto_close=job.kind != "Export"))
 
     def dismiss(self, job):
         if self._active(job):

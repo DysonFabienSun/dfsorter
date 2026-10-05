@@ -368,6 +368,7 @@ def stylesheet():
         QToolButton#activitiesButton[activityBusy="true"] { background: %(accent_soft)s; color: %(accent_default)s; border: 1px solid %(accent_default)s; }
         QToolButton#activitiesButton[activityBusy="true"]:hover { background: %(accent_soft_hover)s; }
         QToolButton#activitiesButton[activityAttention="true"] { background: %(status_warning_soft)s; color: %(status_warning)s; border: 1px solid %(status_warning)s; }
+        QToolButton#activitiesButton[activityCompleted="true"], QToolButton#activitiesButton[activityCompleted="true"]:hover, QToolButton#activitiesButton[activityCompleted="true"]:pressed { border: 1px solid %(status_success)s; }
         QProgressBar { background: %(surface_subtle)s; color: %(text_primary)s; border: 1px solid %(border_subtle)s; border-radius: 4px; text-align: center; min-height: 13px; }
         QProgressBar::chunk { background: %(accent_default)s; border-radius: 3px; }
         QWidget#outputJobCard { background: %(surface_subtle)s; border: 1px solid %(border_subtle)s; border-radius: %(radius_md)spx; }
