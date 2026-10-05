@@ -401,7 +401,9 @@ class ProjectWorkspace:
             "Return to Library and use Skip selected on nonmember "
             "exceptions to hide those candidates for this project until restart. Saved "
             "members remain visible. Add, remove and skip batches share Undo/Redo; "
-            "successful actions clear selection.\n\n"
+            "successful add/remove actions and Undo/Redo clear selection. "
+            "Skip selects the surviving preview: the next clip if skipped, "
+            "or the previous clip at the end of the list.\n\n"
             "4. Optionally edit or share a clip\n"
             "Set In and Set Out save a completed valid range immediately. Complete a pending "
             "range or use Clear range before leaving the clip. Share uses the saved range "
@@ -638,7 +640,7 @@ class ProjectWorkspace:
                else " Ready source sizes could not be read." if not known else "")
         )
 
-    def refresh(self, *, reset=False, restore=False, deselect=False):
+    def refresh(self, *, reset=False, restore=False, deselect=False, select_current=False):
         window = self.window
         if window.current_panel != "Export":
             self.refresh_readiness()
@@ -694,6 +696,8 @@ class ProjectWorkspace:
         state.selected.intersection_update(ids)
         if deselect:
             state.selected.clear()
+        if select_current:
+            state.selected = {state.current} if state.current else set()
         state.visible = ids
         self.clips = clips
         listing = window.library
@@ -928,7 +932,7 @@ class ProjectWorkspace:
         if changed:
             self.clear_selection()
             self.window.statusBar().showMessage(f"Skipped {len(changed)} candidates until restart.", 12000)
-            self.refresh(restore=True, deselect=True)
+            self.refresh(restore=True, select_current=True)
 
     def undo(self, redo=False):
         if not self.project_id:

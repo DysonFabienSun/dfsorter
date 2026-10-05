@@ -469,7 +469,7 @@ def test_skip_masks_member_visibility_isolation_and_restart(
     before = window.catalogue.clips()
     workspace.skip_selected()
     assert workspace.state.visible == ids[1:]
-    assert not selected_ids(window)
+    assert selected_ids(window) == {ids[1]}
     assert window.catalogue.clips() == before
     assert not window.catalogue.member_ids(project)
     assert workspace.matching_action.text() == "Add all matching (2)"
@@ -495,6 +495,34 @@ def test_skip_masks_member_visibility_isolation_and_restart(
         assert restarted.workspace.state.visible == ids
     finally:
         close_window(restarted, application)
+
+
+@pytest.mark.parametrize(
+    "current, skipped, expected",
+    [(0, (0, 1), 2), (2, (2, 3), 1), (0, (1, 3), 0), (0, (0, 1, 2, 3), None)],
+)
+def test_skip_selects_surviving_preview(window, tmp_path, current, skipped, expected):
+    ids, project = seed_workspace(window, tmp_path, 4)
+    workspace = window.workspace
+    window.library.setCurrentRow(current)
+    window.library.clearSelection()
+    for row in skipped:
+        window.library.item(row).setSelected(True)
+    workspace.skip_action.click()
+    expected_id = ids[expected] if expected is not None else None
+    assert selected_ids(window) == ({expected_id} if expected_id else set())
+    assert window.selected_id(window.library) == expected_id
+    assert workspace.state.selected == selected_ids(window)
+    assert workspace.state.visible == [clip_id for row, clip_id in enumerate(ids) if row not in skipped]
+    assert not window.catalogue.member_ids(project)
+    assert workspace.skip_action.isEnabled() == (expected is not None)
+    if expected_id:
+        assert workspace.player.loaded_clip["clip_id"] == expected_id
+    else:
+        assert workspace.player.loaded_clip is None
+    workspace.undo()
+    assert workspace.state.visible == ids
+    assert not selected_ids(window)
 
 
 def test_typed_skip_history_chronology_and_stale_replay(catalogue, clips):
