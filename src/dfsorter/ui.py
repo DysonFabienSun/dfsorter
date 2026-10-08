@@ -106,6 +106,7 @@ from .project_workspace import ProjectWorkspace
 from .release_update import installed_release
 from .scanning import ScanCoordinator
 from .settings_dialog import SettingsDialog
+from .share_profiles import share_quality
 from .theme import (
     COLORS,
     SIZES,
@@ -5399,6 +5400,7 @@ class Window(QMainWindow):
         folders = self.catalogue.folders()
         include_prefix = prefix.isChecked()
         selected_range = mode.currentData()
+        quality = share_quality(self.settings.get("share_quality", "native"))
         lowercase = self.settings.get("lowercase_generated_titles", True)
         stem = custom_name or title(clip, self.registry, fields, include_prefix, lowercase=lowercase)
         self.activities.submit(
@@ -5414,6 +5416,7 @@ class Window(QMainWindow):
                 cancelled,
                 selected_range=selected_range,
                 detailed_progress=progress,
+                quality=quality,
             ),
             clip_id=clip["clip_id"], subtitle=f"{safe_stem(stem)}.mp4",
             destination=folder,

@@ -14,7 +14,8 @@ from dfsorter.sharing import probe
 @pytest.mark.parametrize("transfer", ["smpte2084", "arib-std-b67"])
 @pytest.mark.parametrize("selected_range", [False, True])
 @pytest.mark.parametrize("codec", ["libx265", "libx264"])
-def test_hdr_share_is_sdr(tmp_path, registry, transfer, selected_range, codec):
+@pytest.mark.parametrize("quality", ["native", "web_1080p"])
+def test_hdr_share_is_sdr(tmp_path, registry, transfer, selected_range, codec, quality):
     if not shutil.which("ffmpeg"):
         pytest.skip("FFmpeg required")
     source = tmp_path / "hdr.mp4"
@@ -28,7 +29,8 @@ def test_hdr_share_is_sdr(tmp_path, registry, transfer, selected_range, codec):
     )
     clip = {"source_path": str(source), "in_ms": 250, "out_ms": 750}
     target = share_clip(
-        clip, registry, tmp_path / "shares", [], custom="sample", selected_range=selected_range
+        clip, registry, tmp_path / "shares", [], custom="sample", selected_range=selected_range,
+        quality=quality,
     )
     video = next(stream for stream in probe(target)["streams"] if stream["codec_type"] == "video")
     assert (video["color_primaries"], video["color_transfer"], video["color_space"]) == (

@@ -151,6 +151,8 @@ default when no preference exists. The selection is saved in `data/settings.yaml
 immediately to all application-owned windows, menus, dialogs, custom-painted controls, rich
 text and icons.
 
+General's Share group uses an **Output quality:** label and ordinary noneditable select box in the same horizontal label/buddy/control/stretch arrangement as Appearance's Theme row. Reuse its typography, padding, popup, focus and hover behavior without custom delegates, fixed selector widths or local stylesheets. Keep a wrapped shared-secondary description beneath the row and use the existing group spacing.
+
 General playback settings use the existing grouped controls. Separate start positions show an
 outlined group with aligned Browse, Editing and Export enable and seconds controls; the unified
 enable and seconds controls are hidden while that group is shown.

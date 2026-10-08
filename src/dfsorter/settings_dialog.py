@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .playback import playback_start_settings, start_offset_seconds
+from .share_profiles import SHARE_QUALITY_CHOICES, share_quality
 from .theme import font, role
 
 
@@ -128,6 +129,31 @@ class SettingsDialog(QDialog):
         self.lowercase_titles.toggled.connect(self.save_title_preferences)
         titles.addWidget(self.lowercase_titles)
         preferences.addWidget(titles_group)
+        share_group, share_layout = self.preference_group("Share")
+        share_row = QHBoxLayout()
+        share_label = QLabel("Output quality:")
+        self.share_quality = QComboBox()
+        for label, value in SHARE_QUALITY_CHOICES:
+            self.share_quality.addItem(label, value)
+        self.share_quality.setCurrentIndex(self.share_quality.findData(
+            share_quality(window.settings.get("share_quality", "native"))
+        ))
+        share_label.setBuddy(self.share_quality)
+        share_row.addWidget(share_label)
+        share_row.addWidget(self.share_quality)
+        share_row.addStretch()
+        share_layout.addLayout(share_row)
+        share_explanation = QLabel(
+            "Native resolution retains existing Share quality and frame timing. "
+            "Web creates H.264 MP4 up to 1080p and 60 fps, without upscaling, "
+            "at 8 Mbps through 30 fps or 12 Mbps above 30 fps. "
+            "Applies to subsequent Shares in Browse, Editing and Export."
+        )
+        share_explanation.setWordWrap(True)
+        role(share_explanation, "secondary")
+        share_layout.addWidget(share_explanation)
+        self.share_quality.currentIndexChanged.connect(self.save_share_preference)
+        preferences.addWidget(share_group)
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
@@ -194,6 +220,10 @@ class SettingsDialog(QDialog):
 
     def save_theme_preference(self):
         self.window.set_theme(self.theme.currentData())
+
+    def save_share_preference(self):
+        self.window.settings["share_quality"] = self.share_quality.currentData()
+        self.window.save_settings()
 
     def save_playback_preferences(self):
         if not any(

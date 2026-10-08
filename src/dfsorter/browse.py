@@ -23,6 +23,7 @@ from .config import title
 from .deletion import delete_reviewed, preview
 from .output import safe_stem, share_clip
 from .playback import Player
+from .share_profiles import share_quality
 from .theme import COLORS, role, title_styles
 from .widgets import set_icon, success_check_icon, tag_prefix, tool
 
@@ -422,6 +423,7 @@ class BrowsePage(QWidget):
         custom = self.custom_title.text().strip()
         destination = self.destination.text().strip()
         selected_range = self.mode.currentData()
+        quality = share_quality(self.window.settings.get("share_quality", "native"))
         folders = self.window.catalogue.folders()
         self.window.settings["share_folder"] = destination
         self.window.save_settings()
@@ -431,6 +433,7 @@ class BrowsePage(QWidget):
                 clip, self.window.registry, destination, folders, custom=custom,
                 selected_range=selected_range, cancelled=cancelled,
                 detailed_progress=progress,
+                quality=quality,
             ),
             clip_id=clip["clip_id"],
             subtitle=f"{safe_stem(custom)}.mp4",

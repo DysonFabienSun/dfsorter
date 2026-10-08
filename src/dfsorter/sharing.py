@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from .app_paths import tool
+from .share_profiles import frame_rate, share_quality, web_profile
 
 
 def run_process(arguments, cancelled=lambda: False, *, progress_file=None, progress=None):
@@ -73,18 +74,25 @@ def probe(path, cancelled=lambda: False):
     )
 
 
-def encode_share(clip, destination, stem, selected_range, cancelled, progress, *, detailed_progress=None):
+def encode_share(
+    clip, destination, stem, selected_range, cancelled, progress, *,
+    detailed_progress=None, quality="native",
+):
+    """Create a share; detailed progress uses -1 while output time is unknown."""
     executable = tool("ffmpeg")
     if not executable:
         raise ValueError("Share requires ffmpeg on PATH")
     source = Path(clip["source_path"])
     before = source.stat()
+    if detailed_progress:
+        detailed_progress(-1, "Inspecting source…")
     info = probe(source, cancelled)
     videos = [stream for stream in info["streams"] if stream["codec_type"] == "video"]
     audio = [stream for stream in info["streams"] if stream["codec_type"] == "audio"]
     if not videos:
         raise ValueError("Source has no video stream")
     hdr = videos[0].get("color_transfer") in {"smpte2084", "arib-std-b67"}
+    web = web_profile(videos[0]) if share_quality(quality) == "web_1080p" else None
     duration = float(info["format"]["duration"])
     start, end = 0.0, duration
     if selected_range:
@@ -93,6 +101,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
         start, end = clip["in_ms"] / 1000, clip["out_ms"] / 1000
         if not 0 <= start < end <= duration + 0.001:
             raise ValueError("Saved range is outside the source duration")
+    seeking = selected_range and start > 0
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".dfsorter-share-", dir=destination) as directory:
         temporary = Path(directory) / "share.mp4"
@@ -101,24 +110,34 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
         origin = float(info["format"].get("start_time", 0))
         for position, stream in enumerate(audio):
             offset = float(stream.get("start_time", origin)) - origin
+            # Seeking retains the common source timeline. Resetting each track's
+            # first surviving sample would lose its offset relative to the cut.
+            timestamps = f"PTS-{start}/TB" if seeking else f"PTS-STARTPTS+{offset}/TB"
             filters.append(
-                f"[0:{stream['index']}]asetpts=PTS-STARTPTS+{offset}/TB,aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo[a{position}]"
+                f"[0:{stream['index']}]asetpts={timestamps},aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo[a{position}]"
             )
         if audio:
             inputs = "".join(f"[a{position}]" for position in range(len(audio)))
+            audio_start, audio_end = (0, end - start) if seeking else (start, end)
             filters.append(
-                f"{inputs}amix=inputs={len(audio)}:duration=longest:dropout_transition=0:normalize=1,apad,atrim=start={start}:end={end},asetpts=PTS-STARTPTS[mixed]"
+                f"{inputs}amix=inputs={len(audio)}:duration=longest:dropout_transition=0:normalize=1,apad,atrim=start={audio_start}:end={audio_end},asetpts=PTS-STARTPTS[mixed]"
             )
-        reencode = selected_range or videos[0]["codec_name"] != "h264" or hdr
+        reencode = bool(web) or selected_range or videos[0]["codec_name"] != "h264" or hdr
         if reencode:
             treatment = (
                 "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
                 "tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,"
                 if hdr else ""
             )
+            timestamps = "" if seeking else "setpts=PTS-STARTPTS,"
+            web_filters = ""
+            if web:
+                web_filters = f"scale={web.width}:{web.height}:flags=lanczos,setsar=1,"
+                if web.fps:
+                    web_filters += f"fps={web.fps},"
             filters.append(
-                f"[0:{videos[0]['index']}]setpts=PTS-STARTPTS,trim=start={start}:end={end},"
-                f"setpts=PTS-STARTPTS,{treatment}format=yuv420p[video]"
+                f"[0:{videos[0]['index']}]{timestamps}trim=start={start}:end={end},"
+                f"setpts=PTS-STARTPTS,{treatment}{web_filters}format=yuv420p[video]"
             )
         arguments = [
             executable,
@@ -127,9 +146,12 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
             "error",
             "-nostdin",
             "-y",
-            "-i",
-            str(source),
         ]
+        if seeking:
+            # Input seeking decodes only the lead-in from the preceding seek
+            # point. Keep source-relative timestamps for exact filter cuts.
+            arguments += ["-copyts", "-start_at_zero", "-ss", str(start), "-accurate_seek"]
+        arguments += ["-i", str(source)]
         if filters:
             arguments += ["-filter_complex", ";".join(filters)]
         arguments += ["-map", "[video]" if reencode else f"0:{videos[0]['index']}"]
@@ -141,10 +163,21 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
                 ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"],
                 ["-c:v", "libx264", "-preset", "medium", "-crf", "18"],
             ]
+        if web:
+            rate_control = [
+                "-profile:v", "high", "-b:v", f"{web.bitrate}M",
+                "-maxrate", f"{web.peak}M", "-bufsize", f"{web.bitrate * 2}M",
+            ]
+            encoders = [
+                ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", *rate_control],
+                ["-c:v", "libx264", "-preset", "medium", *rate_control],
+            ]
         for attempt, encoder in enumerate(encoders):
             progress(f"Sharing {source.name}: {encoder[1]} · {end - start:.2f} seconds")
             if detailed_progress:
-                detailed_progress(0, f"Encoding {source.name}")
+                detailed_progress(
+                    -1, "Retrying with software encoding…" if attempt else "Starting encoding…"
+                )
             try:
                 command = arguments + encoder + (
                     ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"]
@@ -166,7 +199,7 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
                         progress=lambda seconds: detailed_progress(
                             min(88, int(seconds * 88 / max(0.001, end - start))),
                             f"Encoding {source.name}",
-                        ),
+                        ) if seconds > 0 else None,
                     )
                 else:
                     run_process(command, cancelled)
@@ -191,6 +224,13 @@ def encode_share(clip, destination, stem, selected_range, cancelled, progress, *
             or len(output_audio) != bool(audio)
         ):
             raise OSError("Share output failed codec/stream validation")
+        if web and (
+            (output_video[0]["width"], output_video[0]["height"]) != (web.width, web.height)
+            or output_video[0].get("pix_fmt") != "yuv420p"
+            or output_video[0].get("profile") != "High"
+            or frame_rate(output_video[0]) > 60
+        ):
+            raise OSError("Share output failed web profile validation")
         if hdr and any(
             output_video[0].get(field) != "bt709"
             for field in ("color_primaries", "color_transfer", "color_space")

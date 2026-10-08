@@ -364,6 +364,7 @@ def share_clip(
     selected_range=False,
     progress=lambda text: None,
     detailed_progress=None,
+    quality="native",
 ):
     from .sharing import encode_share
 
@@ -372,6 +373,8 @@ def share_clip(
         custom if custom is not None else title(clip, registry, fields, prefix, lowercase=lowercase)
     )
     options = {"detailed_progress": detailed_progress} if detailed_progress else {}
+    if quality != "native":
+        options["quality"] = quality
     return encode_share(
         clip, destination, safe_stem(stem), selected_range, cancelled, progress, **options
     )

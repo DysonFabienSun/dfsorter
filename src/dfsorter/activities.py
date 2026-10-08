@@ -320,7 +320,12 @@ class Activities(QObject):
             widget.setProperty("statusColor", color)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
-        job.status.setText(f"{job.state} · {job.percent}%")
+        unknown = job.kind == "Share" and job.percent == -1
+        percentage = (
+            "<1%" if job.kind == "Share" and job.percent == 0 and job.state == "Running"
+            else f"{job.percent}%"
+        )
+        job.status.setText(job.state if unknown else f"{job.state} · {percentage}")
         job.phase.setText(job.detail)
         job.phase.setVisible(bool(job.detail))
         job.phase.setToolTip(job.detail)
@@ -334,7 +339,8 @@ class Activities(QObject):
         job.open_button.setToolTip(open_label)
         job.open_button.setAccessibleName(open_label)
         job.open_button.setVisible(bool(job.destination))
-        job.bar.setValue(job.percent)
+        job.bar.setRange(0, 0 if unknown and self._active(job) else 100)
+        job.bar.setValue(max(0, job.percent))
         job.bar.setProperty("statusColor", color)
         job.bar.style().unpolish(job.bar)
         job.bar.style().polish(job.bar)
@@ -394,6 +400,8 @@ class Activities(QObject):
                 continue
             job.state = "Running"
             job.detail = "Preparing…"
+            if job.kind == "Share":
+                job.percent = -1
             worker = OutputWorker(job.function)
             job.worker = worker
             worker.progressed.connect(lambda value, detail, current=job: self._progress(current, value, detail))
@@ -408,7 +416,7 @@ class Activities(QObject):
     def _progress(self, job, value, detail):
         if job.state != "Running":
             return
-        job.percent = max(0, min(99, int(value)))
+        job.percent = -1 if job.kind == "Share" and value == -1 else max(0, min(99, int(value)))
         job.detail = detail
         self._refresh(job)
         self.changed.emit()

@@ -327,6 +327,21 @@ Browse consistency fix: shared Editing title typography, divider above Share for
 - [x] Home and Session cards center their rendered two-line text block, place the verdict dot close beside it, and show compact relative capture time at the right. The time updates without rebuilding the list; no overflow menu was added.
 - [x] Follow-up visual review at 100% found the Home and Session card content optically low. Text, verdict dot and time now share a 3 px upward offset. Future visual checks use 100% and only use 125% when display scaling is directly affected; 150% is excluded.
 
+# Share range startup and preparation feedback
+
+- [x] Selected ranges starting after zero use accurate input seeking with a shared source-relative timeline. Exact cuts retain audio-track offsets; whole-clip behavior, NVIDIA/software encoder selection, HDR conversion, validation and cleanup remain in place.
+- [x] Output Jobs shows indeterminate preparation, source inspection, encoder startup and software retry phases without a percentage. Positive output time restores encoding percentages, including `<1%`; terminal states stop the preparation animation.
+- [x] Sixteen focused test cases passed across late H.264/AV1 cuts, boundary frames and timestamps, delayed mixed audio compared against full-decode PCM, nonzero source timestamps, silent variable-frame-rate output, selected PQ/HLG HDR conversion, whole-clip stream copying, software fallback, cancellation/cleanup, publication progress and Output Jobs states. Changed Python files pass Ruff.
+- [x] Real-file benchmark on 2026-10-09: the 720p/~60 H.264 range at 112.783 seconds reached output progress in 0.733 seconds (previously 4.252 seconds), completing in 0.861 seconds. The 1440p/60 AV1 range at 162.1 seconds reached output progress in 1.164 seconds (previously still zero when stopped at 45 seconds), completing in 7.266 seconds. Both passed output validation. Temporary benchmark outputs were removed; timings depend on source and machine load.
+- [x] Dark-mode Output Jobs captures are under `cache/verification/share-startup/`; preparation, `<1%` encoding and failure captures were visually inspected. Shared styles and dimensions are reused.
+- [ ] Separate existing limitation: a silent VFR cut whose cadence drops from 24 to 12 fps near its end can report a 1.833333-second MP4 duration for a two-second selection, despite all 32 expected frames and a last presentation timestamp of 1.958333 seconds. Both the original full-decode path and the seeking path fail the existing 0.15-second duration tolerance. This change preserves the validator; VFR timing coverage uses a variable-cadence selection returning to its original cadence before the end.
+
+# Share output quality
+
+- [x] Settings → General → Share provides Native resolution (default) and Web · 1080p using the same ordinary select-box pattern as Appearance → Theme. Selection persists immediately and each Share captures its quality at submission across Browse, Editing and Export.
+- [x] Web always produces bitrate-controlled H.264 High profile MP4, fitting landscape/portrait 1080p bounds without upscaling, retaining aspect ratio and display orientation. Targets are 8 Mbps through 30 fps and 12 Mbps above 30 fps, with 12/18 Mbps peaks and 16/24 Mbps buffers. Rates through 60 are retained; 120 becomes 60 and 119.88 becomes 59.94. AAC mixing, HDR tone mapping, fast-start playback and accurate seeking remain available.
+- [x] Fifteen focused cases passed: real landscape/portrait downscaling, lower-resolution retention, 29.97/59.94 preservation, 120/119.88 reduction, bitrate parameters and software fallback, late-cut frame boundaries, PQ/HLG conversion, rotated anamorphic output without upscaling, native stream copying, keyboard selection/persistence/reopening, and frozen Share quality in all three panes. Ruff and diff checks pass. Dark-mode Settings and popup captures were visually reviewed under `cache/verification/share-quality/`.
+
 # Portable Windows distribution
 
 - [x] One-folder Windows ZIP bundles the app, Python and Qt runtime, libmpv, FFmpeg/ffprobe, icons, game defaults, and license files. Fresh extraction launched and created its own catalogue and four game definitions.

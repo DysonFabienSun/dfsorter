@@ -1668,16 +1668,19 @@ def test_browse_temporary_range_and_share(window, application, tmp_path, monkeyp
         window.activities, "submit",
         lambda kind, title, function, **kwargs: work.append(function),
     )
+    window.settings["share_quality"] = "web_1080p"
     browse.share()
     assert browse.share_button.property("shareAccepted") is True
     browse.custom_title.setText("Changed after snapshot")
     browse.in_ms = 1000
+    window.settings["share_quality"] = "native"
     work[0](lambda: False, lambda percent, text: None)
     args, kwargs = calls[0]
     assert args[0]["in_ms"] == 800
     assert args[0]["out_ms"] == 1500
     assert kwargs["custom"] == "My Custom 中文 Clip"
     assert kwargs["selected_range"] is True
+    assert kwargs["quality"] == "web_1080p"
     window.clear_range()
     browse.player.media.setPosition(1800)
     window.mark_in()
@@ -1723,6 +1726,62 @@ def test_search_updates_live_and_invalid_query_preserves_results(window, applica
         application.processEvents()
         assert window.library.count() == 1
         assert not window.library_error.isHidden()
+
+
+@pytest.mark.parametrize("pane", ["Editing", "Export"])
+def test_generated_share_quality_is_frozen(window, tmp_path, monkeypatch, pane):
+    ids = add_clips(window, tmp_path)
+    monkeypatch.setattr(window, "selected_clip", lambda: window.catalogue.clip(ids[0]))
+    window.current_panel = pane
+    window.settings.update(share_quality="web_1080p", share_folder=str(tmp_path / "shares"))
+    work, calls = [], []
+    monkeypatch.setattr(
+        window.activities, "submit", lambda kind, title, function, **kwargs: work.append(function)
+    )
+    monkeypatch.setattr("dfsorter.ui.share_clip", lambda *args, **kwargs: calls.append(kwargs))
+
+    def confirm(dialog):
+        dialog.findChild(QLineEdit, "shareCustomFilename").setText("web clip")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", confirm)
+    window.share()
+    assert len(work) == 1
+    window.settings["share_quality"] = "native"
+    work[0](lambda: False, lambda *args: None)
+    assert calls[0]["quality"] == "web_1080p"
+
+
+def test_share_quality_settings_use_theme_selector(window, application):
+    window.set_theme("dark")
+    settings = SettingsDialog(window)
+    settings.show()
+    application.processEvents()
+    combo = settings.share_quality
+    assert combo.currentData() == "native"
+    assert type(combo) is type(settings.theme) is QComboBox
+    assert not combo.isEditable() and not settings.theme.isEditable()
+    assert combo.font() == settings.theme.font()
+    combo.showPopup()
+    application.processEvents()
+    QTest.keyClick(combo, Qt.Key.Key_Down)
+    QTest.keyClick(combo, Qt.Key.Key_Enter)
+    assert combo.currentData() == "web_1080p"
+    assert window.settings["share_quality"] == "web_1080p"
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["share_quality"] == "web_1080p"
+    settings.close()
+    restarted = Window(window.root)
+    try:
+        reopened = SettingsDialog(restarted)
+        assert reopened.share_quality.currentData() == "web_1080p"
+        reopened.close()
+    finally:
+        restarted.close()
+        application.processEvents()
+    window.settings["share_quality"] = "invalid"
+    settings = SettingsDialog(window)
+    assert settings.share_quality.currentData() == "native"
+    settings.close()
 
 
 def test_generated_share_dialog_defaults_and_master_toggle(
@@ -2182,7 +2241,7 @@ def test_playback_preferences_persist(window, application):
         for label in group.findChildren(QLabel)
         if label.property("settingsGroupHeading")
     }
-    assert group_headings == {"Browse · Editing · Export", "Editing"}
+    assert group_headings == {"Browse · Editing · Export", "Editing", "Share"}
     assert settings.start_near_end.isChecked()
     assert not settings.separate_start.isChecked()
     assert settings.start_offset.value() == 40
@@ -4679,6 +4738,45 @@ def test_export_dialog_submits_frozen_manifest(window, application, tmp_path, mo
     assert item["stem"]
     window.catalogue.patch(ids[0], {"mainline": "Changed later"})
     assert window.catalogue.export_jobs()[0]["manifest"]["items"][0] == item
+
+
+def test_share_preparation_progress_states(window, application):
+    window.set_theme("dark")
+    activities = window.activities
+    job = activities.submit("Share", "Late range", lambda *args: None, paused=True)
+    job.state = "Queued"
+    activities._refresh(job)
+    assert job.status.text() == "Queued · 0%"
+    job.state = "Running"
+    for phase in ("Inspecting source…", "Starting encoding…", "Retrying with software encoding…"):
+        activities._progress(job, -1, phase)
+        assert job.bar.maximum() == 0
+        assert job.status.text() == "Running"
+        assert job.phase.text() == phase
+        activities._progress(job, 0, "Encoding recording.mp4")
+        assert job.status.text() == "Running · <1%"
+        assert job.bar.maximum() == 100
+        activities._progress(job, 25, "Encoding recording.mp4")
+        assert job.bar.value() == 25
+        assert job.status.text() == "Running · 25%"
+    activities._progress(job, 90, "Validating output")
+    assert job.bar.value() == 90
+    activities._progress(job, 98, "Saving shared clip")
+    assert job.bar.value() == 98
+    job.state, job.percent = "Completed", 100
+    activities._refresh(job)
+    assert job.status.text() == "Completed · 100%"
+    for state in ("Cancelling", "Cancelled", "Failed"):
+        job.state, job.percent = state, -1
+        activities._refresh(job)
+        assert job.status.text() == state
+        assert job.bar.maximum() == (0 if state == "Cancelling" else 100)
+    export = activities.submit("Export", "Export", lambda *args: None, paused=True)
+    export.state = "Running"
+    activities._progress(export, -1, "Preparing…")
+    assert export.status.text() == "Running · 0%"
+    assert export.bar.maximum() == 100
+    export.state = "Cancelled"
 
 
 def test_activities_bound_parallel_jobs_and_confirm_exit(window, application, monkeypatch):
