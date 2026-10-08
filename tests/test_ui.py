@@ -4774,9 +4774,76 @@ def test_share_preparation_progress_states(window, application):
     export = activities.submit("Export", "Export", lambda *args: None, paused=True)
     export.state = "Running"
     activities._progress(export, -1, "Preparing…")
-    assert export.status.text() == "Running · 0%"
-    assert export.bar.maximum() == 100
+    assert export.status.text() == "Running"
+    assert export.bar.maximum() == 0
     export.state = "Cancelled"
+
+
+def test_export_preparation_progress_states(window, application):
+    window.set_theme("dark")
+    activities = window.activities
+    job = activities.submit(
+        "Export", "Export · Project progress", lambda *args: None, paused=True,
+        record_id="progress-states", subtitle="2 clips", destination=str(window.root),
+    )
+    artifact = ROOT / "cache/verification/export-progress"
+    artifact.mkdir(parents=True, exist_ok=True)
+
+    def capture(name):
+        application.processEvents()
+        assert job.row.grab().save(str(artifact / f"{name}.png"))
+
+    assert job.status.text() == "Paused · 0%"
+    assert job.bar.maximum() == 100
+    assert job.action.text() == "Resume export"
+    capture("paused")
+    job.state = "Queued"
+    job.detail = "Waiting to resume"
+    activities._refresh(job)
+    assert job.status.text() == "Queued · 0%"
+    assert job.action.text() == "Cancel"
+    capture("queued")
+    job.state = "Running"
+    for name, phase in (
+        ("preparing", "Preparing export…"),
+        ("destination", "Checking destination…"),
+        ("recovery", "Recovering previous output…"),
+    ):
+        activities._progress(job, -1, phase)
+        assert job.status.text() == "Running"
+        assert job.bar.maximum() == 0
+        assert job.phase.text() == phase
+        capture(name)
+    activities._progress(job, 0, "Copying recording.mp4")
+    assert job.status.text() == "Running · <1%"
+    assert job.bar.maximum() == 100
+    capture("early-copy")
+    activities._progress(job, 25, "Verifying recording.mp4")
+    assert job.status.text() == "Running · 25%"
+    capture("verifying")
+    activities._progress(job, 50, "Copying recording-2.mp4")
+    assert job.bar.value() == 50
+    capture("copying")
+    activities._progress(job, 50, "Recovering previous output…")
+    assert job.bar.value() == 50 and job.bar.maximum() == 100
+    capture("measured-cleanup")
+    activities._progress(job, 100, "Copying recording-2.mp4")
+    assert job.bar.value() == 99
+    for state in ("Failed", "Cancelled"):
+        job.state, job.percent = state, -1
+        job.detail = "Export failed" if state == "Failed" else "Export cancelled"
+        activities._refresh(job)
+        assert job.status.text() == state and job.bar.maximum() == 100
+        assert job.action.text() == "Resume export"
+        capture(f"{state.lower()}-preparation")
+        job.percent = 50
+        activities._refresh(job)
+        assert job.status.text() == f"{state} · 50%"
+        capture(state.lower())
+    job.state, job.percent, job.detail = "Completed", 100, "Export complete"
+    activities._refresh(job)
+    assert job.status.text() == "Completed · 100%" and job.bar.value() == 100
+    capture("completed")
 
 
 def test_activities_bound_parallel_jobs_and_confirm_exit(window, application, monkeypatch):

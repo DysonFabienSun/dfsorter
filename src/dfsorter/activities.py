@@ -320,9 +320,9 @@ class Activities(QObject):
             widget.setProperty("statusColor", color)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
-        unknown = job.kind == "Share" and job.percent == -1
+        unknown = job.percent == -1
         percentage = (
-            "<1%" if job.kind == "Share" and job.percent == 0 and job.state == "Running"
+            "<1%" if job.percent == 0 and job.state == "Running"
             else f"{job.percent}%"
         )
         job.status.setText(job.state if unknown else f"{job.state} · {percentage}")
@@ -399,9 +399,8 @@ class Activities(QObject):
             if job.state != "Queued" or (job.kind == "Share" and share_running):
                 continue
             job.state = "Running"
-            job.detail = "Preparing…"
-            if job.kind == "Share":
-                job.percent = -1
+            job.detail = "Preparing export…" if job.kind == "Export" else "Preparing…"
+            job.percent = -1
             worker = OutputWorker(job.function)
             job.worker = worker
             worker.progressed.connect(lambda value, detail, current=job: self._progress(current, value, detail))
@@ -416,7 +415,7 @@ class Activities(QObject):
     def _progress(self, job, value, detail):
         if job.state != "Running":
             return
-        job.percent = -1 if job.kind == "Share" and value == -1 else max(0, min(99, int(value)))
+        job.percent = -1 if value == -1 else max(0, min(99, int(value)))
         job.detail = detail
         self._refresh(job)
         self.changed.emit()

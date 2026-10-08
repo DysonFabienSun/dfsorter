@@ -5,6 +5,7 @@ import tempfile
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from time import monotonic
 
 from .config import has_review_metadata, title
 
@@ -191,14 +192,44 @@ def prepare_export_manifest(clips, registry, destination, folders, formats=None,
     return manifest
 
 
-def _hash_file(path, cancelled):
+def _hash_file(path, cancelled, advanced=lambda amount: None):
     digest = hashlib.sha256()
     with Path(path).open("rb") as source:
-        while chunk := source.read(1024 * 1024):
+        while True:
             if cancelled():
                 raise InterruptedError("Export cancelled")
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
             digest.update(chunk)
+            advanced(len(chunk))
     return digest.hexdigest()
+
+
+class _ExportProgress:
+    """Runtime byte accounting; phase boundaries bypass the ten-Hz byte throttle."""
+
+    def __init__(self, total, callback):
+        self.total = total
+        self.callback = callback
+        self.done = 0
+        self.detail = ""
+        self.last_emission = None
+
+    def emit(self):
+        self.last_emission = monotonic()
+        percent = min(99, self.done * 100 // self.total) if self.done and self.total else -1
+        self.callback(percent, self.detail)
+
+    def phase(self, detail):
+        self.detail = detail
+        self.emit()
+
+    def advanced(self, amount):
+        first = self.done == 0 and amount > 0
+        self.done += amount
+        if first or self.last_emission is None or monotonic() - self.last_emission >= 0.1:
+            self.emit()
 
 
 def _copy_resumable(item, directory, job_id, cancelled, advanced,
@@ -261,50 +292,75 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
     catalogue.save_export_job(job_id, manifest, "Running")
     result = CopyResult()
     total = sum(item["source_size"] for item in manifest["items"])
-    done_bytes = 0
+    progress = _ExportProgress(total, detailed_progress)
+
+    def checkpoint():
+        if cancelled():
+            raise InterruptedError("Export cancelled")
+
+    def verify_output(target, size, checksum, *, hash_contents=True):
+        if hash_contents:
+            progress.phase(f"Verifying {target.name}")
+        if not target.is_file() or target.stat().st_size != size:
+            raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+        if hash_contents:
+            try:
+                actual = _hash_file(target, cancelled, progress.advanced)
+            finally:
+                progress.emit()
+            if actual != checksum:
+                raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+
     try:
+        progress.phase("Preparing export…")
+        checkpoint()
         if manifest.get("validation_errors"):
             raise ValueError("\n".join(manifest["validation_errors"]))
+        progress.phase("Checking destination…")
+        checkpoint()
         check_destination(manifest["destination"], catalogue.folders())
         recovered = set()
         for item in manifest["items"]:
+            checkpoint()
             pending = item.get("pending")
             if not pending:
                 continue
+            progress.phase("Recovering previous output…")
+            checkpoint()
             target = Path(pending["target"])
             temporary = Path(pending["temporary"])
             owned = target.is_file() and (
                 not temporary.exists() or os.path.samefile(target, temporary)
             )
             if owned:
-                if (target.stat().st_size != pending["size"]
-                        or _hash_file(target, cancelled) != pending["sha256"]):
-                    raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+                verify_output(target, pending["size"], pending["sha256"])
                 item["completed"] = {
                     "path": str(target), "size": pending["size"],
                     "sha256": pending["sha256"],
                 }
-                recovered.add(str(target))
+                recovered.add(item["clip_id"])
+            progress.phase("Recovering previous output…")
             temporary.unlink(missing_ok=True)
             item["pending"] = None
             catalogue.save_export_job(job_id, manifest, "Running")
         for directory in {Path(manifest["destination"]) / item["directory"] for item in manifest["items"]}:
+            checkpoint()
             if directory.is_dir():
                 for temporary in directory.glob(f".dfsorter-export-{job_id}-*.part"):
+                    progress.phase("Recovering previous output…")
+                    checkpoint()
                     temporary.unlink(missing_ok=True)
         for item in manifest["items"]:
+            checkpoint()
             completed = item["completed"]
             if not completed:
                 continue
-            detailed_progress(min(99, int(done_bytes * 100 / max(1, total))),
-                              f"Verifying {Path(completed['path']).name}")
             target = Path(completed["path"])
-            if (not target.is_file() or target.stat().st_size != completed["size"]
-                    or (str(target) not in recovered
-                        and _hash_file(target, cancelled) != completed["sha256"])):
-                raise ValueError(f"Completed export copy changed: {target}. Repair the file before resuming.")
+            verify_output(
+                target, completed["size"], completed["sha256"],
+                hash_contents=item["clip_id"] not in recovered,
+            )
             result.completed.append(str(target))
-            done_bytes += item["source_size"]
         for item in manifest["items"]:
             if item["completed"]:
                 continue
@@ -317,11 +373,7 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
             ):
                 raise ValueError(f"Source changed since export was queued: {source}")
             directory = Path(manifest["destination"]) / item["directory"]
-            def advanced(amount):
-                nonlocal done_bytes
-                done_bytes += amount
-                detailed_progress(min(99, int(done_bytes * 100 / max(1, total))),
-                                  f"Copying {source.name}")
+            progress.phase(f"Copying {source.name}")
             def before_publish(target, temporary, size, checksum):
                 item["pending"] = {
                     "target": str(target), "temporary": str(temporary),
@@ -329,11 +381,13 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
                 }
                 catalogue.save_export_job(job_id, manifest, "Running")
             def on_abort():
+                progress.phase("Cleaning unfinished output…")
                 item["pending"] = None
                 catalogue.save_export_job(job_id, manifest, "Running")
             target, checksum = _copy_resumable(
-                item, directory, job_id, cancelled, advanced, before_publish, on_abort,
+                item, directory, job_id, cancelled, progress.advanced, before_publish, on_abort,
             )
+            progress.emit()
             copied = Path(target)
             item["completed"] = {
                 "path": target, "size": copied.stat().st_size,
@@ -342,7 +396,9 @@ def run_export_manifest(catalogue, job_id, cancelled=lambda: False,
             item["pending"] = None
             result.completed.append(target)
             catalogue.save_export_job(job_id, manifest, "Running")
+        checkpoint()
         catalogue.save_export_job(job_id, manifest, "Completed")
+        detailed_progress(100, "Export complete")
     except (OSError, ValueError, InterruptedError) as error:
         result.error = str(error)
         result.cancelled = isinstance(error, InterruptedError)
