@@ -688,6 +688,32 @@ def test_remove_selected_above_threshold_does_not_confirm(window, tmp_path, monk
     assert not window.catalogue.member_ids(project)
 
 
+def test_skip_status_reports_action_and_current_project_total(window, tmp_path):
+    seed_workspace(window, tmp_path, 7)
+    workspace = window.workspace
+    for total in range(1, 4):
+        workspace.skip_selected()
+        noun = "clip" if total == 1 else "clips"
+        assert window.statusBar().currentMessage() == (
+            f"Skipped 1 clip · {total} {noun} temporarily skipped in this project until restart."
+        )
+    workspace.undo()
+    workspace.undo(redo=True)
+    workspace.undo()
+    window.library.selectAll()
+    workspace.skip_selected()
+    assert window.statusBar().currentMessage() == (
+        "Skipped 5 clips · 7 clips temporarily skipped in this project until restart."
+    )
+    other = window.catalogue.save_project("Other")
+    window.refresh_references()
+    workspace.select_project(other, new=True)
+    workspace.skip_selected()
+    assert window.statusBar().currentMessage() == (
+        "Skipped 1 clip · 1 clip temporarily skipped in this project until restart."
+    )
+
+
 def test_skip_masks_member_visibility_isolation_and_restart(
     window, application, tmp_path, close_window
 ):

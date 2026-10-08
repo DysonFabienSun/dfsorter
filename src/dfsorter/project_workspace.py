@@ -995,7 +995,14 @@ class ProjectWorkspace:
             return
         if changed:
             self.clear_selection()
-            self.window.statusBar().showMessage(f"Skipped {len(changed)} candidates until restart.", 12000)
+            count = len(changed)
+            total = len(self.skipped_ids[self.project_id])
+            self.window.statusBar().showMessage(
+                f"Skipped {count} {'clip' if count == 1 else 'clips'} · "
+                f"{total} {'clip' if total == 1 else 'clips'} temporarily skipped "
+                "in this project until restart.",
+                12000,
+            )
             self.refresh(restore=True, select_current=True)
 
     def undo(self, redo=False):
