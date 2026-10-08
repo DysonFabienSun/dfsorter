@@ -652,6 +652,7 @@ class ProjectWorkspace:
             readiness=category,
             newest=previous.newest,
         )
+        self.window.library.setFocus(Qt.FocusReason.OtherFocusReason)
         self.load_controls()
         self.refresh(reset=True, restore=True)
 
@@ -963,12 +964,18 @@ class ProjectWorkspace:
             )
         except (ValueError, sqlite3.Error) as error:
             self.window.error(error)
-        self.refresh(restore=True, deselect=bool(changed))
+        self.refresh(
+            restore=True,
+            deselect=bool(changed) and all_matching,
+            select_current=bool(changed) and not all_matching,
+        )
         if all_matching and changed:
             self.switch_view("Assigned" if include else "Available", deselect=True)
 
     def clear_selection(self):
         self.remember()
+        # Return focus before disabling the action, so Qt cannot focus another button.
+        self.window.library.setFocus(Qt.FocusReason.OtherFocusReason)
         self.state.selected.clear()
         self.window.library.clearSelection()
         self.window.library.selectionModel().member_type = None

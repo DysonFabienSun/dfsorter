@@ -513,6 +513,42 @@ def test_export_click_falls_back_only_when_default_assigned_is_empty(
     assert not workspace.state.visible
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("action", ["add", "remove", "skip", "add_all", "remove_all", "all_members"])
+def test_workspace_actions_return_focus_to_clips(window, application, tmp_path, action, theme):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    workspace = window.workspace
+    window.set_theme(theme, persist=False)
+    if action in {"remove", "remove_all", "all_members"}:
+        window.catalogue.batch_membership(project, ids, True)
+        select_view(window, "Assigned")
+    button = (
+        workspace.skip_action if action == "skip"
+        else workspace.matching_action if action.endswith("_all")
+        else workspace.category if action == "all_members"
+        else workspace.selected_action
+    )
+    window.library.setCurrentRow(0)
+    window.activateWindow()
+    assert test_ui.wait_for(application, window.isActiveWindow)
+    button.setFocus()
+    assert test_ui.wait_for(application, button.hasFocus)
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    assert test_ui.wait_for(application, lambda: workspace.pending_view is None)
+    assert window.library.hasFocus()
+    assert all(not control.hasFocus() for control in (
+        workspace.selected_action, workspace.skip_action, workspace.matching_action, workspace.category
+    ))
+    if action in {"add", "remove", "skip"}:
+        assert window.selected_id(window.library) == ids[1]
+        assert selected_ids(window) == {ids[1]}
+        assert workspace.state.selected == {ids[1]}
+    elif action.endswith("_all"):
+        assert not selected_ids(window)
+    else:
+        assert selected_ids(window) == {ids[0]}
+
+
 def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path, 100)
     workspace = window.workspace
@@ -695,21 +731,34 @@ def test_skip_masks_member_visibility_isolation_and_restart(
     "current, skipped, expected",
     [(0, (0, 1), 2), (2, (2, 3), 1), (0, (1, 3), 0), (0, (0, 1, 2, 3), None)],
 )
-def test_skip_selects_surviving_preview(window, tmp_path, current, skipped, expected):
+@pytest.mark.parametrize("action", ["skip", "add", "remove"])
+def test_selected_actions_select_surviving_preview(
+    window, tmp_path, current, skipped, expected, action
+):
     ids, project = seed_workspace(window, tmp_path, 4)
     workspace = window.workspace
+    if action == "remove":
+        window.catalogue.batch_membership(project, ids, True)
+        select_view(window, "Assigned")
     window.library.setCurrentRow(current)
     window.library.clearSelection()
     for row in skipped:
         window.library.item(row).setSelected(True)
-    workspace.skip_action.click()
+    button = workspace.skip_action if action == "skip" else workspace.selected_action
+    button.click()
     expected_id = ids[expected] if expected is not None else None
     assert selected_ids(window) == ({expected_id} if expected_id else set())
     assert window.selected_id(window.library) == expected_id
     assert workspace.state.selected == selected_ids(window)
     assert workspace.state.visible == [clip_id for row, clip_id in enumerate(ids) if row not in skipped]
-    assert not window.catalogue.member_ids(project)
-    assert workspace.skip_action.isEnabled() == (expected is not None)
+    changed_ids = {ids[row] for row in skipped}
+    expected_members = (
+        changed_ids if action == "add"
+        else set(ids) - changed_ids if action == "remove"
+        else set()
+    )
+    assert window.catalogue.member_ids(project) == expected_members
+    assert button.isEnabled() == (expected is not None)
     if expected_id:
         assert workspace.player.loaded_clip["clip_id"] == expected_id
     else:
