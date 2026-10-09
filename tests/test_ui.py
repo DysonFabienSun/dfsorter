@@ -2842,6 +2842,42 @@ def test_review_advance_is_separate_from_submission(window, application, tmp_pat
     assert "Session complete" in window.statusBar().currentMessage()
 
 
+@pytest.mark.parametrize("atomic", [False, True])
+@pytest.mark.parametrize("game_name", [None, "Empty"])
+def test_mainline_mode_and_review_visibility(window, application, tmp_path, atomic, game_name):
+    window.set_theme("dark")
+    ids = add_clips(window, tmp_path)
+    window.registry._load({"name": "Empty", "code": "EMP", "fields": {}, "display_order": ["mainline"],
+                           "field_order": ["mainline", "rating", "tag"], "review_fields": ["mainline"]})
+    window.catalogue.patch(ids[0], {"game": game_name})
+    if atomic:
+        window.start_atomic_edit(ids[0], "Home")
+    else:
+        window.panel("Editing")
+    assert window.command.property("mainlineOnly")
+    assert "MAINLINE ONLY" in window.command_mode.text()
+    assert window.command_mode.isVisible()
+    if game_name:
+        assert "mainline" in window.field_reminder.text()
+        assert "rating" not in window.field_reminder.text()
+    window.command.setText("R4 tag:literal")
+    window.submit()
+    assert window.effective_clip()["mainline"] == "R4 tag:literal"
+    assert window.effective_clip()["rating"] is None
+    window.command.setText("title -- invalid description")
+    window.submit()
+    assert window.effective_clip()["mainline"] == "R4 tag:literal"
+    assert window.command.text() == "title -- invalid description"
+    window.command.setText("-- title -- description")
+    window.submit()
+    assert window.effective_clip()["description"] == "description"
+    window.edit({"game": "VALORANT"})
+    assert not window.command.property("mainlineOnly")
+    assert window.command_mode.isHidden()
+    if atomic:
+        window.save_atomic_edit()
+
+
 def test_field_checklist_previews_commands_without_saving(window, application, tmp_path):
     ids = add_clips(window, tmp_path)
     window.panel("Editing")

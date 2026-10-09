@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 
 import yaml
@@ -24,6 +25,8 @@ class Game:
     prefixes: dict[str, str]
     links: dict[str, dict[str, dict[str, object]]]
     command_example: str = ""
+    field_order: list[str] = dataclass_field(default_factory=list)
+    review_fields: list[str] = dataclass_field(default_factory=list)
 
 
 class Registry:
@@ -61,7 +64,6 @@ class Registry:
         reserved = GLOBAL_FIELDS
         if not isinstance(fields, dict) or reserved.intersection(fields):
             raise ValueError("Fields must be a mapping without global clip field names")
-        fields = {"kill": {}, **fields}
         values, prefixes, links = {}, {}, {}
         for key, definition in fields.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", key):
@@ -106,7 +108,7 @@ class Registry:
             if not isinstance(field_links, dict):
                 raise ValueError(f"{key}: links must be a mapping")
             links[key] = field_links
-        reserved_names = {*fields, *prefixes, *GLOBAL_FIELDS}
+        reserved_names = {*fields, *prefixes, *GLOBAL_FIELDS, "kill", "clutch"}
         for token, (field, _value) in values.items():
             if token in reserved_names:
                 raise ValueError(
@@ -120,6 +122,21 @@ class Registry:
             raise ValueError("Invalid display_order")
         if any(key not in fields for key in suggested):
             raise ValueError("Unknown suggested_fields field")
+        presentation_keys = [*fields, "mainline", "rating", "tag"]
+        field_order = raw.get("field_order", list(dict.fromkeys([*order, *presentation_keys])))
+        review_fields = raw.get("review_fields", field_order)
+        for label, entries in (("field_order", field_order), ("review_fields", review_fields)):
+            if (not isinstance(entries, list) or any(not isinstance(key, str) for key in entries)
+                    or len(entries) != len(set(entries))
+                    or any(key not in presentation_keys for key in entries)):
+                raise ValueError(f"Invalid {label}")
+        if set(field_order) != set(presentation_keys):
+            raise ValueError("field_order must include every field and mainline, rating, tag")
+        if not set(suggested).issubset(review_fields):
+            raise ValueError("Suggested fields must be visible in review_fields")
+        if "field_order" in raw:
+            order = [key for key in field_order if key in order]
+        review_fields = [key for key in field_order if key in review_fields]
         normalized_links = {}
         for source_key, field_links in links.items():
             source_definition = fields[source_key]
@@ -177,7 +194,8 @@ class Registry:
         if not isinstance(command_example, str):
             raise ValueError("command_example must be text")
         self.games[name] = Game(
-            name, code, fields, order, suggested, values, prefixes, normalized_links, command_example
+            name, code, fields, order, suggested, values, prefixes, normalized_links, command_example,
+            field_order, review_fields,
         )
         for alias in aliases:
             self.aliases[alias.casefold()] = name

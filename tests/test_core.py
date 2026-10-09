@@ -475,12 +475,9 @@ def test_tag_commands_and_brim_alias(registry, catalogue, clips):
         "rating": 3,
         "mainline": "title",
     }
-    assert parse_command("TAG:LOW_FPS R2", None, registry) == {
-        "tag": "LOW_FPS",
-        "rating": 2,
-    }
-    assert parse_command('tag:""', None, registry) == {"tag": None}
-    assert parse_command("[3rd] R2", None, registry) == {"tag": "3rd", "rating": 2}
+    assert parse_command("TAG:LOW_FPS R2", None, registry) == {"mainline": "TAG:LOW_FPS R2"}
+    assert parse_command('tag:""', None, registry) == {"mainline": 'tag:""'}
+    assert parse_command("[3rd] R2", None, registry) == {"mainline": "[3rd] R2"}
     assert parse_command("wpn:M4 [LOW_FPS]", "Battlefield 6", registry) == {
         "metadata": {"weapon": ["M4"]}, "tag": "LOW_FPS",
     }

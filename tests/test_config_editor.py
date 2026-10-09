@@ -4,12 +4,13 @@ from pathlib import Path
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, QPoint, Qt
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMessageBox
 
 from dfsorter.config import Registry
 from dfsorter.config_editor import (
     GAME_SIZE_ROLE,
     GAME_SUMMARY_ROLE,
+    AddFieldDialog,
     NewGameDialog,
     Rows,
     yaml_size_text,
@@ -59,6 +60,7 @@ def editor_window(tmp_path, close_window):
     shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
     shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     window = Window(tmp_path)
+    window.set_theme("dark")
     window.show()
     application.processEvents()
     yield window
@@ -548,14 +550,14 @@ def test_config_page_edits_game_and_refreshes_registry(editor_window):
             editor.games.setCurrentRow(index)
             break
     editor.example.setText("jett vandal -- example")
-    for index in range(editor.order.count()):
-        if editor.order.item(index).text() == "weapon":
-            editor.order.setCurrentRow(index)
+    for index, (key, _, _) in enumerate(editor.presentation.entries()):
+        if key == "weapon":
+            editor.presentation.setCurrentRow(index)
             editor.move_order(-1)
             break
-    for index in range(editor.suggested.count()):
-        if editor.suggested.item(index).text() == "map":
-            editor.suggested.item(index).setCheckState(Qt.CheckState.Checked)
+    for index, (key, _, _) in enumerate(editor.presentation.entries()):
+        if key == "map":
+            editor.presentation.change_entry(editor.presentation.item(index), review="Suggested")
             break
     assert editor.dirty and editor.save_button.isEnabled()
     assert editor.save(), editor.status.text()
@@ -573,6 +575,64 @@ def select_game(editor, filename):
             editor.games.setCurrentRow(index)
             return
     raise AssertionError(filename)
+
+
+def test_presentation_reorder_visibility_history_and_dialog(editor_window):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "VALORANT.yaml")
+    original = editor.presentation.entries()
+    model = editor.presentation.model()
+    from PySide6.QtCore import QModelIndex
+
+    assert model.moveRows(QModelIndex(), 0, 1, QModelIndex(), 3)
+    assert editor.presentation.entries()[2] == original[0]
+    assert editor.presentation.itemWidget(editor.presentation.item(2)) is not None
+    editor.presentation.change_entry(editor.presentation.item(2), review="Hidden")
+    assert editor.save(), editor.status.text()
+    game = window.registry.game("VALORANT")
+    assert original[0][0] not in game.review_fields
+    window.undo()
+    assert editor.presentation.entries()[2][2] == original[0][2]
+    window.undo()
+    assert editor.presentation.entries() == original
+    dialog = AddFieldDialog(editor.draft["fields"], editor)
+    assert not dialog.kind.model().item(0).isEnabled()
+    assert not dialog.kind.model().item(1).isEnabled()
+    dialog.key.setText("rating")
+    assert not dialog.add_button.isEnabled()
+    dialog.key.setText("note")
+    assert dialog.add_button.isEnabled()
+    assert dialog.field_definition() == ("note", {"type": "freeform"})
+    dialog.field_type.setCurrentText("enum")
+    assert dialog.field_definition() == ("note", {"type": "enum", "values": []})
+    dialog.reject()
+    assert "note" not in editor.draft["fields"]
+
+
+def test_optional_kill_remove_and_readd(editor_window, monkeypatch):
+    window = editor_window
+    window.panel("Config")
+    editor = window.config_editor
+    select_game(editor, "Wardogs.yaml")
+    editor.fields.setCurrentRow(0)
+    editor.remove_field()
+    assert editor.save(), editor.status.text()
+    assert window.registry.game("Wardogs").fields == {}
+    assert not editor.field_type.isEnabled()
+
+    def add_kill(dialog):
+        assert dialog.kind.model().item(0).isEnabled()
+        dialog.kind.setCurrentIndex(0)
+        assert not dialog.field_type.isEnabled()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AddFieldDialog, "exec", add_kill)
+    editor.add_field()
+    assert ("kill", False, "Shown") in editor.presentation.entries()
+    assert editor.save(), editor.status.text()
+    assert parse_command("3k", "Wardogs", window.registry) == {"metadata": {"kill": 3}}
 
 
 def test_structured_values_aliases_and_new_game(editor_window, monkeypatch):
@@ -599,11 +659,11 @@ def test_structured_values_aliases_and_new_game(editor_window, monkeypatch):
     monkeypatch.setattr(NewGameDialog, "exec", create)
     editor.new_game()
     assert editor.games.currentItem().text() == "New Game"
-    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 1 field"
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 0 fields"
     assert editor.games.currentItem().data(GAME_SIZE_ROLE) == "Unsaved"
     assert not editor.source.path.exists()
     assert editor.save(), editor.status.text()
-    assert window.registry.game("New Game").fields["kill"] == {}
+    assert window.registry.game("New Game").fields == {}
 
 
 def test_freeform_named_values_and_aliases_round_trip(editor_window):
@@ -741,10 +801,10 @@ def test_new_weapon_field_starts_with_wpn_prefix(editor_window, monkeypatch):
 
     monkeypatch.setattr(NewGameDialog, "exec", create)
     editor.new_game()
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("weapon", True))
+    monkeypatch.setattr(AddFieldDialog, "exec", lambda dialog: (dialog.key.setText("weapon"), QDialog.DialogCode.Accepted)[1])
     editor.add_field()
     assert editor.prefixes.values() == [["wpn"]]
-    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 2 fields"
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 1 field"
     assert editor.games.currentItem().data(GAME_SIZE_ROLE) == "Unsaved"
 
 
@@ -1048,7 +1108,7 @@ def test_config_undo_restores_field_add_remove_and_selection_is_not_an_edit(edit
     assert not window.undo_button.isEnabled()
     editor.fields.setCurrentRow(0)
     assert not window.undo_button.isEnabled()
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("note", True))
+    monkeypatch.setattr(AddFieldDialog, "exec", lambda dialog: (dialog.key.setText("note"), QDialog.DialogCode.Accepted)[1])
     editor.add_field()
     assert "note" in editor.draft["fields"]
     window.undo()

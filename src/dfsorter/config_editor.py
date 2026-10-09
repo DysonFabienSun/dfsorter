@@ -2,6 +2,7 @@
 
 import re
 from copy import deepcopy
+from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
 from PySide6.QtGui import QBrush, QColor, QFontMetrics, QPalette
@@ -14,7 +15,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -34,10 +34,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .config import GAME_CODE_MAX_LENGTH, GAME_CODE_PATTERN, GLOBAL_FIELDS
+from .config import GAME_CODE_MAX_LENGTH, GAME_CODE_PATTERN, GLOBAL_FIELDS, title
 from .config_store import GameFile, new_game_path, validate_candidate, yaml_parser
+from .field_presentation import FieldPresentation
 from .history import EditHistory
-from .theme import COLORS, font, role
+from .theme import COLORS, font, role, symbol_text, title_styles
 from .widgets import heading, tool
 
 GAME_SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -51,9 +52,69 @@ def yaml_size_text(size):
 
 def initial_game_draft(name, code):
     return {
-        "name": name, "code": code, "aliases": [], "fields": {"kill": {}},
-        "display_order": ["kill", "mainline"], "suggested_fields": [], "command_example": "",
+        "name": name, "code": code, "aliases": [], "fields": {},
+        "display_order": ["mainline"], "suggested_fields": [], "command_example": "",
     }
+
+
+class AddFieldDialog(QDialog):
+    def __init__(self, fields, parent=None):
+        super().__init__(parent)
+        self.fields = fields
+        self.setWindowTitle("Add field")
+        self.setMinimumWidth(440)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        form = QFormLayout()
+        self.kind = QComboBox()
+        self.kind.addItem("Built-in: Kill — 3K", "kill")
+        self.kind.addItem("Built-in: Clutch — 1v4", "clutch")
+        self.kind.addItem("Custom field", "custom")
+        for index, key in enumerate(("kill", "clutch")):
+            self.kind.model().item(index).setEnabled(key not in fields)
+        self.kind.setCurrentIndex(2)
+        self.key = QLineEdit()
+        self.field_type = QComboBox()
+        self.field_type.addItems(["freeform", "enum"])
+        form.addRow("Field", self.kind)
+        form.addRow("Stable field key", self.key)
+        form.addRow("Type", self.field_type)
+        layout.addLayout(form)
+        self.error = QLabel()
+        self.error.setWordWrap(True)
+        role(self.error, "error")
+        layout.addWidget(self.error)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(action("Cancel", self.reject))
+        self.add_button = action("Add field", self.accept)
+        role(self.add_button, "primary")
+        actions.addWidget(self.add_button)
+        layout.addLayout(actions)
+        self.kind.currentIndexChanged.connect(self.validate)
+        self.key.textChanged.connect(self.validate)
+        self.validate()
+
+    def validate(self, *_):
+        custom = self.kind.currentData() == "custom"
+        self.key.setEnabled(custom)
+        self.field_type.setEnabled(custom)
+        key = self.key.text().strip() if custom else self.kind.currentData()
+        valid = bool(re.fullmatch(r"[a-z][a-z0-9_]*", key)) and key not in self.fields
+        if custom:
+            valid = valid and key not in GLOBAL_FIELDS | {"kill", "clutch"}
+        self.add_button.setEnabled(valid)
+        self.error.setText("Enter a unique lowercase field key; built-in and global names are reserved." if not valid else "")
+
+    def field_definition(self):
+        key = self.kind.currentData()
+        if key != "custom":
+            return key, {}
+        definition = {"type": self.field_type.currentText()}
+        if definition["type"] == "enum":
+            definition["values"] = []
+        return self.key.text().strip(), definition
 
 
 class NewGameDialog(QDialog):
@@ -674,33 +735,63 @@ class ConfigEditor(QWidget):
     def build_title(self):
         page = QWidget()
         outer = QVBoxLayout(page)
-        title = QLabel("Working title order")
-        role(title, "paneHeading")
-        outer.addWidget(title)
+        heading_label = QLabel("Title & review")
+        role(heading_label, "paneHeading")
+        outer.addWidget(heading_label)
         hint = QLabel(
-            "Checked entries appear in the working title. Mainline is ordinary text in filenames."
+            "Drag rows to set the shared order. Title inclusion and checklist visibility are independent.\n"
+            "Suggested fields show an amber ! when missing; they never block Keep or Export."
         )
+        hint.setWordWrap(True)
         role(hint, "secondary")
         outer.addWidget(hint)
-        self.order = QListWidget()
-        self.order.setFixedHeight(170)
-        self.order.itemChanged.connect(self.mark_dirty)
-        outer.addWidget(self.order, 1)
-        outer.addLayout(
-            row(
-                action("Move up", lambda: self.move_order(-1)),
-                action("Move down", lambda: self.move_order(1)),
-            )
-        )
-        suggestion = QLabel("Suggested review fields")
-        role(suggestion, "paneHeading")
-        outer.addWidget(suggestion)
-        self.suggested = QListWidget()
-        self.suggested.setFixedHeight(140)
-        self.suggested.itemChanged.connect(self.mark_dirty)
-        outer.addWidget(self.suggested, 1)
-        outer.addStretch()
+        self.presentation = FieldPresentation()
+        self.presentation.changed.connect(self.presentation_changed)
+        outer.addWidget(self.presentation, 1)
+        for text, name in (("Working title preview · sample values", "title_preview"),
+                           ("Editing checklist preview · empty fields", "review_preview")):
+            label = QLabel(text)
+            role(label, "secondary")
+            outer.addWidget(label)
+            preview = QLabel()
+            preview.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            preview.setWordWrap(True)
+            preview.setTextFormat(Qt.TextFormat.RichText)
+            setattr(self, name, preview)
+            outer.addWidget(preview)
+        legend = QLabel(f"{symbol_text('✓')} populated · {symbol_text('◇')} inferred · ! suggested · o optional · x invalid")
+        role(legend, "secondary")
+        outer.addWidget(legend)
         self.tabs.addTab(page, "Title && review")
+
+    def presentation_changed(self):
+        self.break_history_group()
+        self.refresh_presentation_previews()
+        self.mark_dirty()
+
+    def refresh_presentation_previews(self):
+        import html
+
+        entries = self.presentation.entries()
+        metadata = {}
+        for key, definition in self.draft.get("fields", {}).items():
+            value = 3 if key == "kill" else 2 if key == "clutch" else next(iter(definition.get("values", [])), key.replace("_", " "))
+            metadata[key] = [value] if definition.get("multiple") else value
+        game = SimpleNamespace(name=self.name.text(), code=self.code.text(), display_order=[key for key, included, _ in entries if included])
+        registry = SimpleNamespace(game=lambda name: game)
+        clip = {"game": self.name.text(), "metadata": metadata, "mainline": "Example mainline", "source_path": "example.mp4"}
+        self.title_preview.setText(title(
+            clip, registry, rich=True, mainline_separator=" | ", rich_styles=title_styles(),
+            lowercase=self.window.settings.get("lowercase_generated_titles", True),
+        ))
+        self.review_preview.setText(" &nbsp; ".join(
+            f'<span style="color:{COLORS["status_warning" if review == "Suggested" else "text_muted"]}">'
+            f'{"!" if review == "Suggested" else "o"}&nbsp;{html.escape(key)}</span>'
+            for key, _, review in entries if review != "Hidden"
+        ))
+        preview_font = self.review_preview.font()
+        preview_font.setPixelSize(self.window.editing_bottom_size())
+        self.review_preview.setFont(preview_font)
 
     def message(self, value, error=False):
         self.status.setText(value)
@@ -749,10 +840,7 @@ class ConfigEditor(QWidget):
             "draft": self.draft, "field_key": self.field_key, "field": field,
             "name": self.name.text(), "code": self.code.text(), "example": self.example.text(),
             "game_aliases": self.game_aliases.raw_values(),
-            "order": [(self.order.item(index).text(), self.order.item(index).checkState())
-                      for index in range(self.order.count())],
-            "suggested": [(self.suggested.item(index).text(), self.suggested.item(index).checkState())
-                          for index in range(self.suggested.count())],
+            "presentation": self.presentation.entries(),
             "repair": repair, "yaml": self.recovery.toPlainText(),
             "tab": self.tabs.currentIndex(),
         })
@@ -765,7 +853,7 @@ class ConfigEditor(QWidget):
         if state["field_key"] in fields and state["field_key"] not in {"kill", "clutch"}:
             fields[state["field_key"]] = state["field"]
         return {**{key: state[key] for key in
-                   ("name", "code", "example", "game_aliases", "order", "suggested")},
+                   ("name", "code", "example", "game_aliases", "presentation")},
                 "fields": fields}
 
     def update_dirty(self):
@@ -898,14 +986,8 @@ class ConfigEditor(QWidget):
         self.code.setText(state["code"])
         self.example.setText(state["example"])
         self.game_aliases.set_values(state["game_aliases"])
-        for key in ("order", "suggested"):
-            widget = getattr(self, key)
-            widget.clear()
-            for text, checked in state[key]:
-                item = QListWidgetItem(text)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                item.setCheckState(checked)
-                widget.addItem(item)
+        self.presentation.set_entries(state["presentation"])
+        self.refresh_presentation_previews()
         self.recovery.setPlainText(state["yaml"])
         for index in range(3):
             self.tabs.setTabEnabled(index, not state["repair"])
@@ -982,6 +1064,7 @@ class ConfigEditor(QWidget):
 
     def mark_dirty(self, *_):
         if not self.loading and self.source is not None:
+            self.refresh_presentation_previews()
             self.cancel_revert()
             state = self.history_state()
             if self.last_state and self.state_content(state) != self.state_content(self.last_state):
@@ -1202,13 +1285,9 @@ class ConfigEditor(QWidget):
         self.fields.clear()
         for key in self.draft.get("fields", {}):
             self.fields.addItem(key)
-        if "kill" not in self.draft.get("fields", {}):
-            self.draft.setdefault("fields", {})["kill"] = {}
-            self.fields.insertItem(0, "kill")
         self.fields.blockSignals(False)
         self.field_key = None
-        self.order.clear()
-        self.suggested.clear()
+        self.presentation.clear()
         if self.fields.count():
             self.fields.setCurrentRow(
                 next(
@@ -1220,50 +1299,25 @@ class ConfigEditor(QWidget):
                     0,
                 )
             )
+        else:
+            self.select_field(None, None)
         self.refresh_order()
 
     def refresh_order(self):
-        old_order = [self.order.item(i).text() for i in range(self.order.count())]
-        old_checked = {
-            self.order.item(i).text()
-            for i in range(self.order.count())
-            if self.order.item(i).checkState() == Qt.CheckState.Checked
-        }
-        old_suggested = {
-            self.suggested.item(i).text()
-            for i in range(self.suggested.count())
-            if self.suggested.item(i).checkState() == Qt.CheckState.Checked
-        }
-        keys = [*self.draft.get("fields", {}), "mainline"]
-        if not old_order:
-            old_order = self.draft.get("display_order", [])
-            old_checked = set(old_order)
-            old_suggested = set(
-                self.draft.get("suggested_fields", self.draft.get("required_for_export", []))
-            )
-        self.order.blockSignals(True)
-        self.suggested.blockSignals(True)
-        self.order.clear()
-        self.suggested.clear()
-        for key in [
-            *filter(lambda value: value in keys, old_order),
-            *filter(lambda value: value not in old_order, keys),
-        ]:
-            item = QListWidgetItem(key)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                Qt.CheckState.Checked if key in old_checked else Qt.CheckState.Unchecked
-            )
-            self.order.addItem(item)
-        for key in self.draft.get("fields", {}):
-            item = QListWidgetItem(key)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(
-                Qt.CheckState.Checked if key in old_suggested else Qt.CheckState.Unchecked
-            )
-            self.suggested.addItem(item)
-        self.order.blockSignals(False)
-        self.suggested.blockSignals(False)
+        keys = [*self.draft.get("fields", {}), "mainline", "rating", "tag"]
+        entries = [entry for entry in self.presentation.entries() if entry[0] in keys]
+        if not self.presentation.count():
+            order = self.draft.get("field_order", self.draft.get("display_order", []))
+            order = list(dict.fromkeys([*order, *keys]))
+            visible = self.draft.get("review_fields", keys)
+            suggested = self.draft.get("suggested_fields", self.draft.get("required_for_export", []))
+            entries = [(key, key in self.draft.get("display_order", []),
+                        "Suggested" if key in suggested else "Shown" if key in visible else "Hidden")
+                       for key in order if key in keys]
+        present = {entry[0] for entry in entries}
+        entries.extend((key, False, "Shown") for key in keys if key not in present)
+        self.presentation.set_entries(entries)
+        self.refresh_presentation_previews()
 
     def select_field(self, item, previous):
         was_loading = self.loading
@@ -1277,7 +1331,7 @@ class ConfigEditor(QWidget):
                 self.fields.blockSignals(False)
                 return
         self.field_key = item.text() if item else None
-        self.remove_field_button.setEnabled(self.field_key not in {None, "kill"})
+        self.remove_field_button.setEnabled(self.field_key is not None)
         self.loading = True
         definition = self.draft.get("fields", {}).get(self.field_key, {}) if self.draft else {}
         reserved = self.field_key in {"kill", "clutch"}
@@ -1411,10 +1465,13 @@ class ConfigEditor(QWidget):
 
     def add_field(self):
         before = self.history_state()
-        key, accepted = QInputDialog.getText(self, "New field", "Stable field key:")
-        if not accepted:
-            return
-        key = key.strip()
+        dialog = AddFieldDialog(self.draft["fields"], self)
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            key, definition = dialog.field_definition()
+        finally:
+            dialog.deleteLater()
         if (
             not re.fullmatch(r"[a-z][a-z0-9_]*", key)
             or key in self.draft["fields"]
@@ -1427,7 +1484,6 @@ class ConfigEditor(QWidget):
         except ValueError as error:
             self.message(str(error), True)
             return
-        definition = {} if key == "clutch" else {"type": "enum", "values": []}
         if key == "weapon":
             definition["prefixes"] = ["wpn"]
         self.draft["fields"][key] = definition
@@ -1440,8 +1496,7 @@ class ConfigEditor(QWidget):
     def remove_field(self):
         before = self.history_state()
         key = self.field_key
-        if not key or key == "kill":
-            self.message("The reserved kill field cannot be removed.", True)
+        if not key:
             return
         self.field_key = None
         del self.draft["fields"][key]
@@ -1459,14 +1514,7 @@ class ConfigEditor(QWidget):
         self.mark_dirty()
 
     def move_order(self, offset):
-        index = self.order.currentRow()
-        target = index + offset
-        if index < 0 or not 0 <= target < self.order.count():
-            return
-        item = self.order.takeItem(index)
-        self.order.insertItem(target, item)
-        self.order.setCurrentRow(target)
-        self.mark_dirty()
+        self.presentation.move_selected(offset)
 
     def collect(self):
         draft = deepcopy(self.draft)
@@ -1475,16 +1523,11 @@ class ConfigEditor(QWidget):
         draft["code"] = self.code.text().strip()
         draft["command_example"] = self.example.text()
         draft["aliases"] = [entry[0] for entry in self.game_aliases.values() if entry[0]]
-        draft["display_order"] = [
-            self.order.item(i).text()
-            for i in range(self.order.count())
-            if self.order.item(i).checkState() == Qt.CheckState.Checked
-        ]
-        draft["suggested_fields"] = [
-            self.suggested.item(i).text()
-            for i in range(self.suggested.count())
-            if self.suggested.item(i).checkState() == Qt.CheckState.Checked
-        ]
+        entries = self.presentation.entries()
+        draft["field_order"] = [key for key, _, _ in entries]
+        draft["display_order"] = [key for key, included, _ in entries if included]
+        draft["review_fields"] = [key for key, _, review in entries if review != "Hidden"]
+        draft["suggested_fields"] = [key for key, _, review in entries if review == "Suggested"]
         draft.pop("required_for_export", None)
         return draft
 
@@ -1622,9 +1665,9 @@ class ConfigEditor(QWidget):
         self.games.blockSignals(True)
         item = QListWidgetItem(name)
         item.setData(Qt.ItemDataRole.UserRole, path.name)
-        item.setData(GAME_SUMMARY_ROLE, f"{code} · 1 field")
+        item.setData(GAME_SUMMARY_ROLE, f"{code} · 0 fields")
         item.setData(GAME_SIZE_ROLE, "Unsaved")
-        item.setToolTip(f"{name}\n{code} · 1 field · Unsaved")
+        item.setToolTip(f"{name}\n{code} · 0 fields · Unsaved")
         self.games.addItem(item)
         self.games.setCurrentItem(item)
         self.games.blockSignals(False)

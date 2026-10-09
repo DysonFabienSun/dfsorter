@@ -19,6 +19,8 @@ TOP_KEYS = {
     "aliases",
     "fields",
     "display_order",
+    "field_order",
+    "review_fields",
     "suggested_fields",
     "required_for_export",
     "command_example",

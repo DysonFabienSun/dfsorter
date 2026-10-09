@@ -28,7 +28,7 @@ class ParsedCommand:
     freeform_values: list[FreeformValue] = field(default_factory=list)
 
 
-def segments(text: str) -> list[str]:
+def segments(text: str, *, literal_quotes=False) -> list[str]:
     result, start, quote = [], 0, None
     index = 0
     while index < len(text):
@@ -45,7 +45,7 @@ def segments(text: str) -> list[str]:
             start = index + 2
             index += 1
         index += 1
-    if quote:
+    if quote and not literal_quotes:
         raise ValueError("Unclosed quotation mark")
     result.append(text[start:])
     if len(result) > 3:
@@ -88,6 +88,20 @@ def parse_command_details(
     registry: Registry,
     existing_metadata: dict | None = None,
 ) -> ParsedCommand:
+    game = registry.game(game_name)
+    if game is None or not game.fields:
+        stripped = text.strip()
+        if not stripped:
+            return ParsedCommand({}, [])
+        parts = segments(stripped, literal_quotes=not stripped.startswith("--"))
+        if not stripped.startswith("--"):
+            if len(parts) > 1:
+                raise ValueError("Descriptions require -- mainline -- description, with nothing before the first --")
+            return ParsedCommand({"mainline": stripped}, [])
+        patch = {"mainline": parts[1].strip()}
+        if len(parts) > 2:
+            patch["description"] = parts[2].strip()
+        return ParsedCommand(patch, [])
     parts = segments(text)
     patch, metadata = {}, {}
     freeform_values = []
@@ -279,7 +293,7 @@ def preview_command_details(
         game and text.rstrip().endswith(":")
         and text.split()[-1][:-1].casefold() in game.prefixes
     )
-    for boundary in reversed(list(re.finditer(r"\s+", text))):
+    for boundary in reversed(list(re.finditer(r"\s+", text))) if game and game.fields else []:
         try:
             result = parse_command_details(
                 text[:boundary.start()], game_name, registry, existing_metadata
@@ -289,6 +303,8 @@ def preview_command_details(
             continue
     if submitted:
         state = "invalid"
+    elif message.startswith("Descriptions require"):
+        state = "incomplete"
     elif message == "Unclosed quotation mark" or "needs a value" in message or missing_enum_value:
         state = "incomplete"
         if missing_enum_value:

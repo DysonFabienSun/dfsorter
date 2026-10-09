@@ -142,7 +142,7 @@ Typical fields include:
 - `faction`: Illuminate (`squid`, `squids`), Terminids (`bugs`), or Automatons (`bots`).
 - `difficulty`: numeric enum values 1 through 10, accepting the `diff` prefix.
 - Global ratings remain available. Faction and difficulty are suggested review fields.
-- Working titles use faction, difficulty and mainline; the engine's universal kill field is omitted from the title order.
+- Working titles use faction, difficulty and mainline. Kill is not configured for this game.
 
 ### Wardogs
 
@@ -213,7 +213,7 @@ The following concepts have application-level parsing logic:
 
 `kill` and `clutch` are reserved metadata field names. `rating` is a global clip field rather than a game-specific field.
 
-A newly created game config should include `kill` by default in addition to the required game identity metadata.
+A newly created game config starts with no fields and `display_order: [mainline]`. Kill and clutch are opt-in built-in fields; neither the loader nor the editor inserts them implicitly. Both may be removed without deleting stored clip values.
 
 ### 7.3 Aliases and Normalization
 
@@ -295,6 +295,8 @@ suggested_fields:
 Keep + Next and Project Export require a configured game and at least one populated structured metadata field or `mainline`. Rating, tag and description do not meet this minimum. Older `required_for_export` keys are interpreted as suggestions for compatibility.
 
 ### 7.7 Configuration Changes and Existing Data
+
+Optional `field_order` stores the shared title/checklist sequence, including every game field and `mainline`, `rating`, and `tag` exactly once. `display_order` selects title components from that sequence; rating and tag retain their separate presentation and cannot be included here. Optional `review_fields` selects visible checklist entries. Suggested fields must be visible game fields. Mainline, rating and tag may be Shown or Hidden but cannot be Suggested. Missing presentation keys preserve legacy behavior: title order, remaining game fields, then remaining globals, with every field visible. Existing `required_for_export` suggestions remain supported. Config saves these explicit presentation lists without rewriting other game files.
 
 Removing a field from a YAML config stops that field from being shown or accepted for new input, but must not destroy values already stored for existing clips.
 
@@ -725,6 +727,8 @@ command separately. Registrations persist independently of single-clip Save/Reve
 
 General syntax:
 
+In session and single-clip Editing, an unassigned/unresolved game or a configured game with no fields switches the command bar to **MAINLINE ONLY**. Bare text sets mainline, including literal rating/tag/field-like tokens. A leading `--` is optional for mainline, but descriptions require `-- mainline -- description`, with nothing before the first separator. Bare text followed by an unquoted separator warns and blocks submission; extra separators also reject the entire command. Bare-title quotes are literal, while separator detection remains quote-aware. Explicit separator syntax retains existing quote validation and empty-segment clearing. Whitespace-only input is a no-op. Preview and submission use identical rules and rejected input applies nothing. Ratings and tags remain editable through existing controls. Keep + Next and Project Export still require a configured game and populated metadata or mainline. Mode changes retain draft text and refresh its interpretation, placeholder and feedback.
+
 ```text
 <structured metadata> [-- <mainline> [-- <description>]]
 ```
@@ -1028,7 +1032,11 @@ Recovery verifies an output published before its manifest update once and credit
 
 ## 17. Config Panel
 
-Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. Opening Config focuses Search games and selects any existing query so typing immediately starts a new search. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. Title & review controls display order, including `mainline`, and suggested fields. New games start with `kill`; existing canonical names and field keys are stable. Existing games cannot be deleted here.
+Config edits game definitions stored directly as YAML files under `configs/games/`; it does not create a second configuration model. The left pane lists games and invalid files. Opening Config focuses Search games and selects any existing query so typing immediately starts a new search. The center editor uses Identity, Fields, and Title & review tabs, with structured rows for values, aliases, prefixes and inference links. Identity includes canonical name, code, aliases and command example. Fields cover the ordinary enum/freeform model, multiplicity and optional links. New games start with no fields; existing canonical names and field keys are stable. Existing games cannot be deleted here.
+
+Add field opens a modal with built-in Kill/Clutch choices and a Custom field choice. Existing built-ins remain visible but disabled. Custom fields specify a stable key and Freeform/Enum type, defaulting to Freeform. Reserved names and duplicates block Add with inline feedback; cancellation changes nothing. Enum drafts require values before Save. Added fields start Shown with title inclusion off. Built-ins retain fixed syntax and cannot change type.
+
+Title & review uses one numbered, draggable field table. Each row controls title inclusion and Hidden/Shown/Suggested checklist state. The shared row order drives both outputs after filtering. Alt+Up/Down reorders the selected row. Mainline supports title inclusion; rating/tag do not. Live working-title and empty-checklist previews explain both outputs and checklist markers. All changes participate in existing Config history, Save, Revert, and conflict safeguards.
 
 A search field above the left game list filters by displayed name, code, or YAML filename,
 case-insensitively. Filtering does not switch or discard the open game draft, even when

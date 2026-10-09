@@ -848,6 +848,11 @@ class Window(QMainWindow):
         role(self.shortcut_hint, "helper")
         self.shortcut_hint.setWordWrap(True)
         command_layout.addWidget(self.shortcut_hint)
+        self.command_mode = QLabel()
+        role(self.command_mode, "secondary")
+        self.command_mode.setWordWrap(True)
+        self.command_mode.hide()
+        command_layout.addWidget(self.command_mode)
         self.command = CommandInput()
         self.command.setObjectName("command")
         self.command.textChanged.connect(self.remember_draft)
@@ -1453,6 +1458,8 @@ class Window(QMainWindow):
         self.update_theme_button()
         self.refresh_references()
         self.refresh_title_presentation()
+        if self.config_editor.source is not None:
+            self.config_editor.refresh_presentation_previews()
         self.refresh_shortcut_hint()
         self.update_command_state()
         self.command.update()
@@ -3323,9 +3330,7 @@ class Window(QMainWindow):
             state
             + " ✓ populated · ◇ inferred · ! suggested · o optional · x invalid for current configuration."
         )
-        fields = list(
-            dict.fromkeys([*game.display_order, *game.fields, "mainline", "rating", "tag"])
-        )
+        fields = game.review_fields
         entries = []
         self.field_reminder_tooltips = {
             key: self.field_options_tooltip(game, key, state) for key in fields
@@ -3614,6 +3619,22 @@ class Window(QMainWindow):
 
     def update_command_state(self):
         clip = self.effective_clip() if self.current_id else None
+        game = self.registry.game(clip["game"]) if clip else None
+        mainline_only = bool(clip and (game is None or not game.fields))
+        self.command_mode.setVisible(mainline_only and self.current_panel == "Editing")
+        self.command_mode.setText(
+            "MAINLINE ONLY · " + ("No configured game" if game is None else "No game fields")
+            + " · Description: -- mainline -- description"
+        )
+        self.command.setPlaceholderText(
+            "Enter mainline, or -- mainline -- description" if mainline_only else
+            game.command_example if game and game.command_example else "Enter clip metadata…"
+        )
+        if self.command.property("mainlineOnly") != mainline_only:
+            self.command.setProperty("mainlineOnly", mainline_only)
+            self.command.style().unpolish(self.command)
+            self.command.style().polish(self.command)
+            self.command.update()
         registration = self.named_value_registration
         if registration and (
             self.current_panel != "Editing" or not clip
@@ -3899,6 +3920,18 @@ class Window(QMainWindow):
                 self.refresh_library()
 
     def show_shortcuts(self):
+        if self.command.property("mainlineOnly"):
+            QMessageBox.information(
+                self, "MAINLINE ONLY",
+                "The violet command bar accepts literal mainline text.\n"
+                "Enter applies the text. A leading -- is optional.\n"
+                "Descriptions require -- mainline -- description, with nothing before the first --.\n"
+                "Rating and tag commands are literal text in this mode; use the rating stars or Edit tag.\n"
+                "Shift+Enter saves and returns in single-clip Editing, or applies the verdict and advances "
+                "in session Editing. The command bar must be empty.\n"
+                "Keep + Next and Project Export require a configured game and metadata or mainline.",
+            )
+            return
         if self.atomic_edit:
             QMessageBox.information(
                 self,

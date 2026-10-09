@@ -58,6 +58,7 @@ THEMES = {
         "rating_label_4": "#526C20",
         "rating_label_5": "#1F7044",
         "component_command_valid": "#EAF2FB",
+        "component_command_mainline": "#F0EAF8",
         "component_timeline_track": "#C7E0E3",
         "component_timeline_progress": "#087F8C",
         "component_volume_track": "#D5E7E9",
@@ -123,6 +124,7 @@ THEMES = {
         "rating_label_4": "#C1DA82",
         "rating_label_5": "#79D7A0",
         "component_command_valid": "#172B40",
+        "component_command_mainline": "#30263F",
         "component_timeline_track": "#23434A",
         "component_timeline_progress": "#43B6C3",
         "component_volume_track": "#29434A",
@@ -329,6 +331,7 @@ def stylesheet():
         QComboBox:focus { padding: 3px 27px 3px 7px; }
         QComboBox#browseShareMode:focus { padding-right: 19px; }
         QLineEdit#command[validationState="valid"] { background: %(component_command_valid)s; }
+        QLineEdit#command[mainlineOnly="true"] { background: %(component_command_mainline)s; }
         QLineEdit#command[validationState="incomplete"] { border-bottom: 2px solid %(status_warning)s; }
         QLineEdit#command[validationState="invalid"] { border-bottom: 2px solid %(status_danger)s; }
         QLineEdit#command[validationState="saved"] { border-bottom: 2px solid %(status_success)s; }
