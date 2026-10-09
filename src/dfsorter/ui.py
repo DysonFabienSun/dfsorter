@@ -113,6 +113,7 @@ from .theme import (
     SIZES,
     apply_theme,
     font,
+    game_color,
     resolved_scheme,
     role,
     symbol_text,
@@ -130,6 +131,7 @@ from .widgets import (
     ClipList,
     ClipScrollFade,
     Rating,
+    SessionGameBar,
     SessionProgressBar,
     VerdictBar,
     heading,
@@ -800,6 +802,7 @@ class Window(QMainWindow):
         scrollbar.rangeChanged.connect(self.schedule_thumbnails)
         self.library.currentItemChanged.connect(self.select_clip)
         self.library.itemSelectionChanged.connect(self.library.viewport().update)
+        self.library.itemSelectionChanged.connect(self.update_session_scope_outline)
         self.library.itemEntered.connect(self.update_library_hover_row)
         self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.library.customContextMenuRequested.connect(self.show_clip_context_menu)
@@ -1170,6 +1173,7 @@ class Window(QMainWindow):
         active_session = QVBoxLayout(active_session_page)
         active_session.setContentsMargins(0, 0, 0, 0)
         active_session.setSpacing(6)
+        active_session.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.session_progress = SessionProgressBar()
         active_session.addWidget(self.session_progress)
         self.session_verdicts = QLabel()
@@ -1186,6 +1190,14 @@ class Window(QMainWindow):
         create_session = QVBoxLayout(create_session_page)
         create_session.setContentsMargins(0, 0, 0, 0)
         create_session.setSpacing(8)
+        create_session.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.session_game_bar = SessionGameBar()
+        create_session.addWidget(self.session_game_bar)
+        self.session_game_legend = QLabel()
+        role(self.session_game_legend, "muted")
+        self.session_game_legend.setTextFormat(Qt.TextFormat.RichText)
+        self.session_game_legend.setWordWrap(True)
+        create_session.addWidget(self.session_game_legend)
         inactive_status = QLabel("Choose pending clips from the library to create a session.")
         role(inactive_status, "secondary")
         create_session.addWidget(inactive_status)
@@ -1197,6 +1209,7 @@ class Window(QMainWindow):
         self.session_count.setValue(50)
         session_choices = QHBoxLayout()
         self.session_mode = "first"
+        self.session_count.valueChanged.connect(self.update_session_scope_outline)
         self.session_choices = {}
         for text, mode in [
             ("Session from selected", "selected"),
@@ -2501,6 +2514,29 @@ class Window(QMainWindow):
             self.session_counts.clear()
             self.session_progress.set_states((), 0, 0)
             self.session_verdicts.clear()
+            self.update_session_game_bar()
+
+    def update_session_game_bar(self, clips=None):
+        if self.catalogue.state("session"):
+            return
+        if clips is None:
+            clips = self.filtered_clips(self.catalogue.clips(), "Session")
+        pending = [clip for clip in clips if clip["triage"] is None]
+        self.session_game_clip_ids = [clip["clip_id"] for clip in pending]
+        games = [clip["game"] or "" for clip in pending]
+        self.session_game_bar.set_games(games)
+        self.update_session_scope_outline()
+        counts = Counter(games)
+        legend = " · ".join(
+            f'<span style="color:{game_color(game).name()}">■</span> '
+            f'{html.escape(game or "Uncategorized")} ({count})'
+            for game, count in counts.items()
+        )
+        self.session_game_legend.setText(legend or "No pending clips in the library results.")
+        self.session_game_bar.setToolTip(
+            " · ".join(f"{game or 'Uncategorized'} ({count})" for game, count in counts.items())
+            or "No pending clips in the library results."
+        )
 
     def set_overview_period(self, period):
         self.overview_period = period
@@ -2938,6 +2974,9 @@ class Window(QMainWindow):
                     clips = [mapping[clip_id] for clip_id in session["ids"]] if session else []
             else:
                 clips = self.filtered_clips(clips, self.current_panel)
+            if self.current_panel == "Session":
+                self.update_session_scope_label(clips)
+                self.update_session_game_bar(clips)
             signature = tuple(
                 (
                     clip["clip_id"], clip["catalogue_modified_at"],
@@ -3027,6 +3066,8 @@ class Window(QMainWindow):
             self.library.verticalScrollBar().setValue(scroll)
             self.schedule_thumbnails()
             self.library.blockSignals(False)
+            if self.current_panel == "Session":
+                self.update_session_scope_outline()
             self.library_page_switch = False
             self.active_library_signature = signature
             if self.current_panel == "Browse":
@@ -3893,6 +3934,34 @@ class Window(QMainWindow):
         self.session_count.setEnabled(mode == "first")
         for name, control in self.session_choices.items():
             control.setChecked(name == mode)
+        self.update_session_scope_label()
+        self.update_session_scope_outline()
+
+    def update_session_scope_outline(self, *_args):
+        if not hasattr(self, "session_game_bar"):
+            return
+        selected = {item.data(Qt.ItemDataRole.UserRole) for item in self.library.selectedItems()}
+        indices = (
+            [index for index, clip_id in enumerate(getattr(self, "session_game_clip_ids", ()))
+             if clip_id in selected]
+            if self.session_mode == "selected" and self.current_panel == "Session" else ()
+        )
+        count = (
+            self.session_count.value() if self.session_mode == "first"
+            else len(self.session_game_bar.games) if self.session_mode == "all"
+            else max(indices, default=-1) + 1
+        )
+        label = {"all": "All", "first": "First N", "selected": "Selected"}[self.session_mode]
+        self.session_game_bar.set_scope(count, label, indices)
+
+    def update_session_scope_label(self, clips=None):
+        text = "All"
+        if self.session_mode == "all":
+            if clips is None:
+                clips = self.filtered_clips(self.catalogue.clips(), "Session")
+            count = sum(clip["triage"] is None for clip in clips)
+            text = f"All ({count})"
+        self.session_choices["all"].setText(text)
 
     @editing_action
     def edit_tag(self):

@@ -391,6 +391,22 @@ active Session shows its position and verdict progress with End session. With no
 show a clear inactive state followed by Scope, Selected / First N / All, the count field and
 Create Session. The setup panel fills the center workspace without changing the clip-library
 pane. Editing navigation opens the active Session at its saved position.
+In the inactive state, place a 20 px square-cornered game bar above the scope controls,
+with flush equal segments for pending library clips in library order. Use stable
+game colors from the shared theme, muted gray for Uncategorized,
+and a wrapping muted game-name/count legend with matching color swatches below.
+Empty results retain a neutral bar and a no-pending-clips message.
+Reserve the same 26 px label area and 48 px widget height as the active bar.
+For First N, use the active bar's semibold cyan chat-bubble cursor at the trailing
+edge of the included clips, labeled **First N (count)** with the available count
+capping N. All uses the same outline and cursor across the full bar, labeled
+**All (count)**. Selected fills selected pending segments with `session.scopeOutline`
+cyan and shows **Selected (count)** at the last selected segment, without an outline.
+Hide indicators for empty results or no eligible selection while retaining the label
+area. Align both setup-state layouts to the top.
+For First N, overlay a square-cornered 3 px `session.scopeOutline` bright cyan
+(`#00DFFF` in both themes) outline inside
+the bar bounds, spanning the first N segments (or all available segments if fewer).
 Give the setup heading more space above than below. In the active state, show a distinct,
 square-cornered, thicker bar divided into equal segments in frozen Session order, one per
 clip. Keep is green, Discard red, Pending muted gray, and an unavailable source overrides

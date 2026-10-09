@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 from .app_paths import ROOT
-from .theme import COLORS, FONT_SIZES, RADII, SIZES, font, role
+from .theme import COLORS, FONT_SIZES, RADII, SIZES, font, game_color, role
 
 ICONS = ROOT / "resources/icons"
 CLIP_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -334,28 +334,85 @@ class SessionProgressBar(QWidget):
         cursor = round(self.last_processed * bar_width / total) if total else 0
         cursor = max(0, min(bar_width - 2, cursor))
         label = f"{self.processed} processed ({self.processed / total:.0%})" if total else "0 processed (0%)"
-        tag_font = font("sm", "semibold", base=painter.font())
-        painter.setFont(tag_font)
-        metrics = painter.fontMetrics()
-        tag_width = metrics.horizontalAdvance(label) + 16
-        tag_left = max(0, min(bar_width - tag_width, cursor - tag_width // 2))
-        tag_right = tag_left + tag_width
-        tail_left = max(tag_left, min(tag_right - 12, cursor - 6))
-        tail_right = tail_left + 12
-        tag = QPainterPath()
-        tag.moveTo(tag_left, 0)
-        tag.lineTo(tag_right, 0)
-        tag.lineTo(tag_right, 19)
-        tag.lineTo(tail_right, 19)
-        tag.lineTo(cursor, 25)
-        tag.lineTo(tail_left, 19)
-        tag.lineTo(tag_left, 19)
-        tag.closeSubpath()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillPath(tag, QColor(COLORS["accent_default"]))
-        painter.setPen(QColor(COLORS["text_inverse"]))
-        painter.drawText(QRect(tag_left, 0, tag_width, 19), Qt.AlignmentFlag.AlignCenter, label)
-        painter.fillRect(QRect(cursor, bar_top, 2, bar_height), QColor(COLORS["accent_default"]))
+        draw_session_cursor(painter, bar_width, cursor, label)
+
+
+def draw_session_cursor(painter, bar_width, cursor, label):
+    bar_top = 26
+    bar_height = 20
+    tag_font = font("sm", "semibold", base=painter.font())
+    painter.setFont(tag_font)
+    metrics = painter.fontMetrics()
+    tag_width = metrics.horizontalAdvance(label) + 16
+    tag_left = max(0, min(bar_width - tag_width, cursor - tag_width // 2))
+    tag_right = tag_left + tag_width
+    tail_left = max(tag_left, min(tag_right - 12, cursor - 6))
+    tail_right = tail_left + 12
+    tag = QPainterPath()
+    tag.moveTo(tag_left, 0)
+    tag.lineTo(tag_right, 0)
+    tag.lineTo(tag_right, 19)
+    tag.lineTo(tail_right, 19)
+    tag.lineTo(cursor, 25)
+    tag.lineTo(tail_left, 19)
+    tag.lineTo(tag_left, 19)
+    tag.closeSubpath()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.fillPath(tag, QColor(COLORS["accent_default"]))
+    painter.setPen(QColor(COLORS["text_inverse"]))
+    painter.drawText(QRect(tag_left, 0, tag_width, 19), Qt.AlignmentFlag.AlignCenter, label)
+    painter.fillRect(QRect(cursor, bar_top, 2, bar_height), QColor(COLORS["accent_default"]))
+
+
+class SessionGameBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.games = ()
+        self.first_count = 0
+        self.scope_label = "First N"
+        self.selected_indices = set()
+        self.setFixedHeight(48)
+        self.setMinimumWidth(120)
+
+    def set_games(self, games):
+        self.games = tuple(games)
+        self.setAccessibleName(f"{len(self.games)} pending library clips by game")
+        self.update()
+
+    def set_scope(self, count, label, selected_indices=()):
+        self.first_count = count
+        self.scope_label = label
+        self.selected_indices = set(selected_indices)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        bar_top = 26
+        bar_height = 20
+        painter.fillRect(QRect(0, bar_top, self.width(), bar_height), QColor(COLORS["surface_pressed"]))
+        total = len(self.games)
+        for index, game in enumerate(self.games):
+            left = round(index * self.width() / total)
+            right = round((index + 1) * self.width() / total)
+            color = (
+                QColor(COLORS["session_scope_outline"])
+                if index in self.selected_indices else game_color(game)
+            )
+            painter.fillRect(QRect(left, bar_top, right - left, bar_height), color)
+        if total and self.first_count:
+            right = round(min(self.first_count, total) * self.width() / total)
+            if self.scope_label != "Selected":
+                painter.setPen(QPen(QColor(COLORS["session_scope_outline"]), 3))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(QRectF(1.5, bar_top + 1.5, max(0, right - 3), bar_height - 3))
+            cursor = max(0, min(self.width() - 2, right))
+            count = (
+                len(self.selected_indices) if self.scope_label == "Selected"
+                else min(self.first_count, total)
+            )
+            draw_session_cursor(
+                painter, self.width(), cursor, f"{self.scope_label} ({count})"
+            )
 
 
 class EdgeChevron(QWidget):

@@ -1,4 +1,5 @@
 import html
+from hashlib import sha256
 
 from PySide6.QtCore import QLocale, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
@@ -9,6 +10,8 @@ from .app_paths import ROOT
 THEMES = {
     "light": {
         "surface_canvas": "#F3F5F7",
+        "game_segment_base": "#538C99",
+        "session_scope_outline": "#00DFFF",
         "surface_workspace": "#FFFFFF",
         "surface_sidebar": "#F8F9FA",
         "bg_library_toolbar": "#F1F3F5",
@@ -75,6 +78,8 @@ THEMES = {
     },
     "dark": {
         "surface_canvas": "#181C21",
+        "game_segment_base": "#70ADB8",
+        "session_scope_outline": "#00DFFF",
         "surface_workspace": "#1F242B",
         "surface_sidebar": "#1B2026",
         "bg_library_toolbar": "#171B20",
@@ -184,6 +189,14 @@ SIZES = {
     "rating": 18,
     "rating_gap": 4,
 }
+
+
+def game_color(game):
+    if not game:
+        return QColor(COLORS["text_muted"])
+    hue = int.from_bytes(sha256(game.casefold().encode("utf-8")).digest()[:4]) / 2**32
+    base = QColor(COLORS["game_segment_base"])
+    return QColor.fromHsvF(hue, base.hsvSaturationF(), base.valueF())
 
 
 def font(size="md", weight="regular", base=None):

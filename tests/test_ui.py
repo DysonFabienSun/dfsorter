@@ -2759,6 +2759,163 @@ def test_completed_session_ends_without_confirmation_and_decided_clips_do_not_re
     assert window.catalogue.state("session")["ids"] == [pending_id]
 
 
+def test_inactive_session_game_bar_matches_pending_library_order(
+    window, application, tmp_path
+):
+    from dfsorter.theme import game_color
+
+    window.set_theme("dark", persist=False)
+    ids = add_clips(window, tmp_path)
+    folder_id = window.catalogue.folders()[0]["folder_id"]
+    for name, game in (("other", "Escape from Tarkov"), ("unassigned", None), ("kept", "VALORANT")):
+        source = tmp_path / "captures" / f"{name}.mp4"
+        source.write_bytes(b"test")
+        window.catalogue.ingest(folder_id, [{"path": str(source), "game": game}])
+    kept = next(clip for clip in window.catalogue.clips() if Path(clip["source_path"]).stem == "kept")
+    window.catalogue.patch(kept["clip_id"], {"triage": "keep"})
+    window.catalogue.set_state("session", None)
+    window.refresh_references()
+    window.panel("Session")
+    window.choose_session_mode("first")
+    window.session_count.setValue(1)
+    application.processEvents()
+
+    expected = tuple(
+        clip["game"] or "" for clip in window.filtered_clips(window.catalogue.clips(), "Session")
+        if clip["triage"] is None
+    )
+    assert window.session_game_bar.isVisible()
+    assert len(expected) == 3
+    assert window.session_game_bar.games == expected
+    legend = window.session_game_legend.text()
+    for game in expected:
+        assert f'{game or "Uncategorized"} (1)' in legend
+    assert len({game_color(game).name() for game in expected}) == 3
+    assert window.session_game_bar.first_count == 1
+    image = window.session_game_bar.grab().toImage()
+    cyan = QColor(COLORS["session_scope_outline"])
+    assert image.pixelColor(image.width() // 6, 27) == cyan
+    assert image.pixelColor(image.width() // 6, 28) == cyan
+    assert image.pixelColor(image.width() // 6, 29).name() == game_color(expected[0]).name()
+    assert image.pixelColor(image.width() // 2, 27) != cyan
+    cursor = round(image.width() / 3)
+    assert image.pixelColor(cursor, 36) == QColor(COLORS["accent_default"])
+    assert image.pixelColor(cursor - 12, 3) == QColor(COLORS["accent_default"])
+    for index, game in enumerate(expected):
+        midpoint = round((index + 0.5) * image.width() / len(expected))
+        assert image.pixelColor(midpoint, 36).name() == game_color(game).name()
+
+    window.session_count.setValue(2)
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() // 2, 27) == cyan
+    assert image.pixelColor(image.width() * 5 // 6, 27) != cyan
+    window.session_count.setValue(50)
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() * 5 // 6, 27) == cyan
+    assert image.pixelColor(image.width() - 2, 36) == QColor(COLORS["accent_default"])
+    assert image.pixelColor(image.width() - 12, 3) == QColor(COLORS["accent_default"])
+    window.choose_session_mode("all")
+    assert window.session_game_bar.first_count == 3
+    assert window.session_game_bar.scope_label == "All"
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() // 6, 27) == cyan
+    assert image.pixelColor(image.width() - 12, 3) == QColor(COLORS["accent_default"])
+    window.choose_session_mode("selected")
+    window.library.clearSelection()
+    assert window.session_game_bar.first_count == 0
+    assert window.session_game_bar.scope_label == "Selected"
+    selected_ids = {window.session_game_clip_ids[0], window.session_game_clip_ids[2], kept["clip_id"]}
+    for index in range(window.library.count()):
+        item = window.library.item(index)
+        item.setSelected(item.data(Qt.ItemDataRole.UserRole) in selected_ids)
+    assert window.session_game_bar.selected_indices == {0, 2}
+    assert window.session_game_bar.first_count == 3
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() // 6, 36) == cyan
+    assert image.pixelColor(image.width() // 2, 36).name() == game_color(expected[1]).name()
+    assert image.pixelColor(image.width() * 5 // 6, 36) == cyan
+    assert image.pixelColor(image.width() - 12, 3) == QColor(COLORS["accent_default"])
+    for item in window.library.selectedItems():
+        if item.data(Qt.ItemDataRole.UserRole) == window.session_game_clip_ids[2]:
+            item.setSelected(False)
+    assert window.session_game_bar.selected_indices == {0}
+    assert window.session_game_bar.first_count == 1
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(round(image.width() / 3), 36) == QColor(COLORS["accent_default"])
+    window.library.clearSelection()
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() - 12, 3) == QColor(COLORS["surface_workspace"])
+    window.choose_session_mode("first")
+
+    window.library_newest = not window.library_newest
+    window.refresh_library()
+    assert window.session_game_bar.games == expected[::-1]
+    assert game_color("VALORANT").name() in window.session_game_legend.text()
+    window.search.setText("other")
+    window.refresh_library()
+    assert window.session_game_bar.games == ("Escape from Tarkov",)
+    window.catalogue.enable_folder(folder_id, False)
+    window.refresh_library()
+    assert window.session_game_bar.games == ()
+    image = window.session_game_bar.grab().toImage()
+    assert image.pixelColor(image.width() // 2, 27) == QColor(COLORS["surface_pressed"])
+    assert "No pending clips" in window.session_game_legend.text()
+    window.catalogue.enable_folder(folder_id, True)
+    window.search.clear()
+    window.refresh_library()
+    window.catalogue.create_session(ids, replace=True)
+    inactive_bar_top = window.session_game_bar.mapTo(window.session_setup_states, QPoint()).y() + 26
+    window.refresh_session_status()
+    application.processEvents()
+    assert not window.session_game_bar.isVisible()
+    assert window.session_progress.isVisible()
+    assert window.session_progress.states == ("pending",)
+    active_bar_top = window.session_progress.mapTo(window.session_setup_states, QPoint()).y() + 26
+    assert inactive_bar_top == active_bar_top
+
+
+def test_session_all_scope_count_tracks_pending_filtered_eligible_clips(
+    window, application, tmp_path
+):
+    window.set_theme("dark", persist=False)
+    ids = add_clips(window, tmp_path)
+    folder_id = window.catalogue.folders()[0]["folder_id"]
+    for name in ("pending", "decided"):
+        source = tmp_path / "captures" / f"{name}.mp4"
+        source.write_bytes(b"test")
+        window.catalogue.ingest(folder_id, [{"path": str(source), "game": "VALORANT"}])
+    decided = next(
+        clip for clip in window.catalogue.clips()
+        if Path(clip["source_path"]).stem == "decided"
+    )
+    window.catalogue.patch(decided["clip_id"], {"triage": "keep"})
+    window.catalogue.set_state("session", None)
+    window.panel("Session")
+    window.clip_filter.set_selected_values({None, "keep", "discard"})
+    window.choose_session_mode("all")
+    assert window.session_choices["all"].text() == "All (2)"
+
+    window.search.setText("pending")
+    window.refresh_library()
+    assert window.session_choices["all"].text() == "All (1)"
+    window.search.clear()
+    window.catalogue.patch(ids[0], {"triage": "discard"})
+    window.refresh_library()
+    assert window.session_choices["all"].text() == "All (1)"
+
+    window.catalogue.enable_folder(folder_id, False)
+    window.refresh_library()
+    assert window.session_choices["all"].text() == "All (0)"
+    window.catalogue.enable_folder(folder_id, True)
+    window.refresh_library()
+    assert window.session_choices["all"].text() == "All (1)"
+    window.choose_session_mode("first")
+    assert window.session_choices["all"].text() == "All"
+    window.choose_session_mode("all")
+    window.create_session("all")
+    assert len(window.catalogue.state("session")["ids"]) == 1
+
+
 def test_session_scopes_filter_decided_clips_before_selection_and_first_n(
     window, application, tmp_path
 ):

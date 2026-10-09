@@ -583,6 +583,12 @@ The resulting ordered clip-ID list is frozen when the Session is created.
 
 Selected ignores selected decided clips; First N counts pending clips before applying N; All includes all pending clips in the current filtered/sorted result. If the requested scope contains no pending clips, do not replace the active Session and report that no pending clips are available. Existing frozen Sessions retain clips after verdicts are assigned.
 
+When All is selected, its scope button shows **All (N)**, where N is the number of pending clips that would enter the new Session. Refresh the count when the eligible library or its filters change, including **All (0)** for no pending results.
+
+With no active Session, show a game bar for pending clips in the current eligible filtered library, in library sort order, independent of scope selection and First N. Each clip occupies one equal segment colored by game, with stable game colors and a muted Uncategorized color. Show a matching game-name/count legend in first-appearance order below the bar. Refresh with library changes; empty results show a neutral bar and an explicit no-pending-clips message. The existing active-Session verdict bar remains unchanged.
+
+When First N is selected, overlay a cyan rectangular outline from the bar's start through the trailing edge of the Nth pending clip, capped at the available clip count, with an active-Session-style chat-bubble cursor labeled **First N (count)** at that endpoint. All outlines the entire pending library bar with **All (count)** at its end. Selected fills only selected pending clip segments in bright cyan, retaining game colors elsewhere, with no rectangular outline; show **Selected (count)** at the trailing edge of the last selected pending clip in library order. Decided selections are excluded. Update with scope, N, selection, filtering and library changes. Use the active bar's label-area spacing; hide indicators for empty results or no eligible selection.
+
 By default, order follows the library's current sort. A common triage workflow is untriaged clips sorted oldest first.
 
 Once locked, Session membership and ordering do not change because metadata or search results change.
