@@ -1256,7 +1256,11 @@ class Window(QMainWindow):
             control = button(text, lambda checked=False, state=state: self.edit({"triage": state}))
             control.setCheckable(True)
             role(control, state or "undefined")
-            if state is None:
+            if state == "keep":
+                control.setToolTip("Mark clip as Keep")
+            elif state == "discard":
+                control.setToolTip("Mark clip as Discard · Backspace in review mode")
+            elif state is None:
                 control.setToolTip("Clear verdict and mark as pending")
             self.triage_buttons[state] = control
             triage.addWidget(control)
@@ -1270,10 +1274,6 @@ class Window(QMainWindow):
         stars.addWidget(self.rating)
         self.rating_clear = tool("x", "Clear rating", lambda: self.edit({"rating": None}))
         stars.addWidget(self.rating_clear)
-        self.rating_hint = QLabel("r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic")
-        role(self.rating_hint, "muted")
-        self.rating_hint.setToolTip("r1 infamous · r2 diff edit · r3 filler · r4 great · r5 iconic")
-        stars.addWidget(self.rating_hint)
         stars.addStretch()
         stars.addWidget(tool("circle-help", "Review shortcuts · ?", self.show_shortcuts))
         editing.addLayout(stars)

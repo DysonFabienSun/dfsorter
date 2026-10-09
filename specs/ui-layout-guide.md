@@ -277,7 +277,7 @@ input, theme switching or navigation.
 - Triage controls are neutral unless active: Keep uses success-muted/success; Discard uses danger-muted/danger; Pending uses pressed-surface/strong-border/secondary-text.
 - Project management uses the Export selector and More menu (New project, Rename and Delete). Editing uses compact current-clip membership and review controls. Keep destructive actions in the management menu; project deletion behavior follows main specs §14. Every icon action has a tooltip and accessible name.
 - Use vendored Lucide SVGs: 16 px utility icons, 20 px transport icons. Default/hover/active/disabled icons use secondary/primary/accent/disabled text tokens. Render Lucide icons at three times each target device-pixel resolution and smoothly downsample to their specified display size by default, including at high DPI; keep device-pixel-ratio handling in the shared `icon()` helper and follow [Small icon rendering](#small-icon-rendering) for final bitmap selection and placement. Tooltips include actual shortcuts when applicable.
-- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows static dull-yellow stars and a disabled clock in its place. Muted rating hints share this row; rating interactions follow main specs §13.7.
+- Rating uses 18 px SVG stars with 4 px spacing, gray unfilled stars for a populated rating, gold filled stars and lighter gold hover preview. Keep small `x` clear action visually adjacent; a valid drafted rating shows static dull-yellow stars and a disabled clock in its place. Keep interaction guidance in the stars' tooltip; rating interactions follow main specs §13.7.
 - Metadata-style clip lists show game, an optional bold `R1`–`R5` label, capture-folder name, an optional yellow HDR label and verdict in that order. Rating uses the theme's five-step low-to-high scale; unrated clips omit that segment. Reserve space for HDR before eliding long folder names in the middle. Browse retains capture time and folder on its second line, followed by the same HDR label. The full tooltip includes HDR when present. HDR thumbnails use SDR tone mapping and refreshed cache keys.
 - Video is black. Use a **7 px timeline groove** with a larger hit area, pale teal remainder and strong teal elapsed section/playhead. Use focus-cyan saved I/O markers with bold I/O labels and accent range tint at 18% opacity. Pending In and Out have distinct bold labels (·I and ·O). Timeline and volume slider widget backgrounds are transparent so only their grooves, handles and markers are painted. The volume slider uses an 18 px widget height, 3 px groove, 10 px handle, quiet teal remainder and medium-teal level; center it optically with the volume icon and time text. Transport/audio/time controls remain directly below.
 - Scrollbars are 8 px, transparent-track, neutral-thumb with lighter hover and no arrow buttons. Splitters have a 1 px visual divider and a wider interaction region, with stronger hover color.
@@ -484,7 +484,7 @@ Working title, wrapping
 Source filename
 Triage / game / project status
 [Keep] [Discard] [Pending] [Change game] [Projects]
-Rating stars [Clear] [Muted rating hints]                             [Help]
+Rating stars [Clear]                                                 [Help]
 Structured metadata
 [Description when populated]
 
