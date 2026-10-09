@@ -1967,6 +1967,26 @@ def test_export_label_setting_and_shared_pane_width(window, application, tmp_pat
     assert window.left.width() == width
 
 
+def test_export_sidebar_preserves_editing_minimum_width(window, application, tmp_path):
+    ids, _project = seed_workspace(window, tmp_path, 2)
+    window.catalogue.enable_folder(window.catalogue.folders()[0]["folder_id"], True)
+    window.catalogue.patch(ids[0], {"triage": None})
+    window.catalogue.create_session([ids[0]])
+    window.refresh_references()
+    window.panel("Editing")
+    application.processEvents()
+    window.splitter.setSizes([320, window.width() - 320])
+    application.processEvents()
+    width = window.left.width()
+    for pane in ("Export", "Editing", "Export"):
+        window.panel(pane)
+        application.processEvents()
+        if pane == "Export":
+            window.workspace.dates_toggle.setChecked(True)
+            application.processEvents()
+        assert window.left.width() == width
+
+
 def test_dates_drawer_focus_geometry_and_no_automatic_retraction(window, application, tmp_path):
     ids, project = seed_workspace(window, tmp_path, 2)
     workspace = window.workspace

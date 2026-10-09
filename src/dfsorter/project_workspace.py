@@ -232,7 +232,7 @@ class ProjectWorkspace:
             control.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
-            control.setMinimumContentsLength(5)
+            control.setMinimumContentsLength(1)
             row.addWidget(control, 1)
         body.addLayout(row)
         utilities = QHBoxLayout()
