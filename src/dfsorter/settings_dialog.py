@@ -188,6 +188,22 @@ class SettingsDialog(QDialog):
         theme_explanation.setWordWrap(True)
         role(theme_explanation, "secondary")
         appearance_layout.addWidget(theme_explanation)
+        export_group, export = self.preference_group("Export")
+        self.nier_hotkey_labels = QCheckBox("Nier: Automata Hotkey Labels")
+        self.nier_hotkey_labels.setChecked(window.settings.get("nier_automata_hotkey_labels", False))
+        self.nier_hotkey_labels.setToolTip(
+            "Show [A]dd selected, [S]kip selected and [R]emove selected in Export only"
+        )
+        self.nier_hotkey_labels.toggled.connect(self.save_export_label_preference)
+        export.addWidget(self.nier_hotkey_labels)
+        explanation = QLabel(
+            "Show bracketed hotkey letters on Export selection actions. "
+            "A, S and R shortcuts remain available in either label style."
+        )
+        explanation.setWordWrap(True)
+        role(explanation, "secondary")
+        export.addWidget(explanation)
+        appearance_layout.addWidget(export_group)
         appearance_layout.addStretch()
         self.theme.currentIndexChanged.connect(self.save_theme_preference)
         tabs.addTab(appearance, "Appearance")
@@ -224,6 +240,11 @@ class SettingsDialog(QDialog):
         self.window.settings["lowercase_generated_titles"] = self.lowercase_titles.isChecked()
         self.window.save_settings()
         self.window.refresh_title_presentation()
+
+    def save_export_label_preference(self):
+        self.window.settings["nier_automata_hotkey_labels"] = self.nier_hotkey_labels.isChecked()
+        self.window.save_settings()
+        self.window.workspace.update_actions()
 
     def save_theme_preference(self):
         self.window.set_theme(self.theme.currentData())

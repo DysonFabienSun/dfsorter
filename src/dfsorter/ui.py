@@ -2221,6 +2221,7 @@ class Window(QMainWindow):
         self.browse_filters.setVisible(name == "Browse")
         self.library_toolbar.setVisible(name not in {"Editing", "Export", "Config"})
         self.workspace.controls.setVisible(name == "Export")
+        self.workspace.list_footer.setVisible(name == "Export")
         self.update_collection_controls()
         self.left_layout.setContentsMargins(
             0, 0 if name in {"Home", "Browse", "Session", "Config"} else 4,
@@ -4212,6 +4213,22 @@ class Window(QMainWindow):
                 editor.redo()
                 return True
             return super().eventFilter(watched, event)
+        if (
+            self.current_panel == "Export"
+            and modifiers == Qt.KeyboardModifier.NoModifier
+            and key in {Qt.Key.Key_A, Qt.Key.Key_S, Qt.Key.Key_R}
+        ):
+            action = (
+                self.workspace.skip_action
+                if key == Qt.Key.Key_S and self.workspace.view == "Available"
+                else self.workspace.selected_action
+                if (key == Qt.Key.Key_A and self.workspace.view == "Available")
+                or (key == Qt.Key.Key_R and self.workspace.view == "Assigned")
+                else None
+            )
+            if action is not None and action.isEnabled() and not event.isAutoRepeat():
+                action.click()
+            return True
         if (
             self.current_panel == "Editing"
             and key == Qt.Key.Key_F

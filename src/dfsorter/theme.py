@@ -268,6 +268,26 @@ def stylesheet():
         QLabel[role="heading"] { font-size: %(font_section_heading)spx; font-weight: 600; }
         QLabel[role="sectionHeading"] { font-size: %(font_section_heading)spx; font-weight: 600; color: %(text_primary)s; }
         QLabel[role="paneHeading"] { font-size: %(font_pane_heading)spx; font-weight: 600; color: %(text_primary)s; }
+        QLabel[role="formHeading"] { font-size: %(font_md)spx; font-weight: 600; color: %(text_primary)s; }
+        QWidget[role="filenamePreview"] { background: %(surface_control)s; border: 1px solid %(border_subtle)s; border-radius: 4px; }
+        QFrame[role="warningNotice"] { background: %(status_warning_soft)s; border-left: 3px solid %(status_warning)s; border-radius: 4px; }
+        QComboBox[role="projectIdentity"], QComboBox[role="projectIdentity"] QAbstractItemView { font-size: %(font_md)spx; font-weight: 600; }
+        QPushButton[role="compactDisclosure"] { padding: 4px 7px; min-height: 18px; }
+        QPushButton[role="compactDisclosure"]:focus { border: 1px solid %(focus)s; }
+        QPushButton[role="statusCounter"] { background: transparent; border: 1px solid transparent; padding: 1px 4px; min-height: 18px; color: %(text_secondary)s; }
+        QPushButton[role="statusCounter"][statusEmphasis="ready"] { color: %(text_primary)s; font-weight: 600; }
+        QPushButton[role="statusCounter"][statusEmphasis="warning"] { color: %(status_warning)s; background: %(status_warning_soft)s; border-color: %(status_warning)s; font-weight: 600; }
+        QPushButton[role="statusCounter"][statusEmphasis="error"] { color: %(status_danger)s; background: %(status_danger_soft)s; border-color: %(status_danger)s; font-weight: 600; }
+        QPushButton[role="statusCounter"][statusEmphasis="muted"] { color: %(text_muted)s; }
+        QPushButton[role="statusCounter"]:hover { background: %(surface_hover)s; }
+        QPushButton[role="statusCounter"]:checked { background: %(accent_soft)s; border-color: %(accent_default)s; }
+        QPushButton[role="statusCounter"]:focus { border-color: %(focus)s; }
+        QPushButton[role="statusCounter"][statusEmphasis="warning"]:hover,
+        QPushButton[role="statusCounter"][statusEmphasis="error"]:hover { background: %(surface_hover)s; }
+        QPushButton[role="statusCounter"][statusEmphasis="warning"]:checked,
+        QPushButton[role="statusCounter"][statusEmphasis="error"]:checked { border: 2px solid %(focus)s; padding: 0px 3px; }
+        QPushButton[role="statusCounter"][statusEmphasis="warning"]:focus,
+        QPushButton[role="statusCounter"][statusEmphasis="error"]:focus { border-color: %(focus)s; }
         QWidget#sessionHeader { background: %(bg_library_toolbar)s; }
         QWidget#configSidebarHeader { background: %(bg_library_toolbar)s; border-bottom: 1px solid %(border_subtle)s; }
         QWidget#overviewSummary { border-bottom: 1px solid %(border_subtle)s; }
@@ -329,6 +349,7 @@ def stylesheet():
         QPushButton[role="discard"]:checked { background: %(status_danger_soft)s; color: %(status_danger)s; border-color: %(status_danger)s; }
         QPushButton[role="undefined"]:checked { background: %(surface_pressed)s; color: %(text_secondary)s; border-color: %(border_strong)s; }
         QPushButton:focus, QToolButton:focus { border: 2px solid %(focus)s; }
+        QPushButton[periodSegment="true"]:focus { border: 1px solid %(focus)s; }
         QPushButton[editingSizeChoice="true"]:focus,
         QPushButton[editingSizeChoice="true"]:pressed {
             background: %(surface_subtle)s; border: 1px solid %(border_subtle)s;

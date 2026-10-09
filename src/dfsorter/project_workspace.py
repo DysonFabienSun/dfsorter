@@ -1,12 +1,11 @@
 """Project assembly, independent filters, readiness and temporary candidate history."""
 
 import sqlite3
-import stat
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QItemSelectionModel, Qt
+from PySide6.QtCore import QItemSelectionModel, QSize, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -23,11 +22,11 @@ from PySide6.QtWidgets import (
 
 from .date_input import DateInput, parse_capture_date
 from .history import EditHistory
-from .output import validate
 from .parsing import query_clips
 from .playback import Player, playback_start_settings
+from .project_summary import SIZE_EXPLANATION, project_readiness, ready_source_bytes
 from .theme import role
-from .widgets import CLIP_ROLE, MiddleElideComboBox, set_icon, storage_gb, tool
+from .widgets import CLIP_ROLE, MiddleElideComboBox, TrailingIconButton, set_icon, storage_gb, tool
 
 
 @dataclass
@@ -44,23 +43,6 @@ class WorkspaceView:
     current: str | None = None
     visible: list = field(default_factory=list)
     scroll: int = 0
-
-
-def project_readiness(clips, registry):
-    errors = dict(validate(clips, registry))
-    categories = {name: set() for name in ("Ready", "Pending", "Blocked", "Skipped")}
-    for clip in clips:
-        category = (
-            "Pending"
-            if clip["triage"] is None
-            else "Skipped"
-            if clip["triage"] == "discard"
-            else "Blocked"
-            if clip["clip_id"] in errors
-            else "Ready"
-        )
-        categories[category].add(clip["clip_id"])
-    return categories, errors
 
 
 def filter_candidates(
@@ -222,7 +204,15 @@ class ProjectWorkspace:
         self.search.setProperty("librarySearch", True)
         self.search.setPlaceholderText("Search · game:VAL rating:>=4")
         self.search.setAccessibleName("Project workspace search")
-        body.addWidget(self.search)
+        search_row = QHBoxLayout()
+        search_row.addWidget(self.search, 1)
+        self.scope = QLabel()
+        role(self.scope, "secondary")
+        search_row.addWidget(self.scope)
+        self.category = QPushButton("All members")
+        self.category.clicked.connect(lambda: self.open_category(None))
+        search_row.addWidget(self.category)
+        body.addLayout(search_row)
         row = QHBoxLayout()
         self.game = QComboBox()
         self.game.setAccessibleName("Workspace game filter")
@@ -242,10 +232,23 @@ class ProjectWorkspace:
             control.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
-            control.setMinimumContentsLength(6)
+            control.setMinimumContentsLength(5)
             row.addWidget(control, 1)
         body.addLayout(row)
-        filters = QGridLayout()
+        utilities = QHBoxLayout()
+        self.dates_toggle = TrailingIconButton("Dates")
+        role(self.dates_toggle, "compactDisclosure")
+        self.dates_toggle.setIconSize(QSize(14, 14))
+        self.dates_toggle.setCheckable(True)
+        self.dates_toggle.setAccessibleName("Show capture date filters")
+        utilities.addWidget(self.dates_toggle)
+        body.addLayout(utilities)
+        self.date_filters = QWidget()
+        role(self.date_filters, "transparent")
+        filters = QGridLayout(self.date_filters)
+        filters.setContentsMargins(0, 0, 0, 0)
+        self.date_filters.hide()
+        self.dates_toggle.toggled.connect(self.date_filters.setVisible)
         filters.setHorizontalSpacing(body.spacing())
         filters.setVerticalSpacing(body.spacing())
         filters.setColumnStretch(1, 1)
@@ -264,42 +267,57 @@ class ProjectWorkspace:
             control.setAccessibleName(f"Capture date {label.text().lower()} (inclusive, local time)")
             control.setClearButtonEnabled(True)
             filters.addWidget(control, 0, column + 1)
-        body.addLayout(filters)
-        self.category = QPushButton("All members")
-        self.category.clicked.connect(lambda: self.open_category(None))
-        row = QHBoxLayout()
+        self.dates_toggle.toggled.connect(self.update_date_disclosure)
+        utilities.addStrut(self.from_date.sizeHint().height())
+        utilities.addWidget(self.date_filters, 1)
+        utilities.addStretch()
+        self.list_footer = QWidget()
+        footer = QVBoxLayout(self.list_footer)
+        footer.setContentsMargins(8, 8, 8, 8)
+        footer.setSpacing(4)
+        self.selection_actions = QWidget()
+        row = QHBoxLayout(self.selection_actions)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
         self.selected_action = QPushButton()
         self.skip_action = QPushButton()
-        self.matching_action = QPushButton()
         self.selected_action.clicked.connect(lambda: self.change_membership(False))
-        self.matching_action.clicked.connect(lambda: self.change_membership(True))
         self.skip_action.clicked.connect(self.skip_selected)
-        row.addWidget(self.selected_action, 1)
-        row.addWidget(self.skip_action, 1)
-        row.addWidget(self.category, 1)
-        row.addWidget(self.matching_action, 1)
-        body.addLayout(row)
+        row.addWidget(self.selected_action)
+        row.addWidget(self.skip_action)
+        row.addStretch()
+        footer.addWidget(self.selection_actions)
+        row = QHBoxLayout()
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         role(self.summary, "secondary")
-        body.addWidget(self.summary)
+        row.addWidget(self.summary, 1)
+        self.bulk_actions = QPushButton("Bulk actions")
+        bulk_menu = QMenu(self.bulk_actions)
+        self.matching_action = bulk_menu.addAction("")
+        self.matching_action.triggered.connect(lambda: self.change_membership(True))
+        self.bulk_actions.setMenu(bulk_menu)
+        row.addWidget(self.bulk_actions)
+        footer.addLayout(row)
+        window.left.layout().addWidget(self.list_footer)
+        self.list_footer.hide()
         window.left.layout().insertWidget(1, self.controls)
         self.controls.hide()
         row = QHBoxLayout()
-        self.selector = QComboBox()
+        self.selector = MiddleElideComboBox()
+        role(self.selector, "projectIdentity")
         self.selector.setAccessibleName("Workspace project")
         self.selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.selector.setMinimumContentsLength(12)
         row.addWidget(self.selector, 1)
-        self.new_button = QPushButton("New project…")
-        self.new_button.clicked.connect(window.new_project)
-        row.addWidget(self.new_button)
         self.more = QPushButton("More")
         menu = QMenu(self.more)
-        menu.addAction("Rename…", window.rename_project)
-        menu.addAction("Delete…", window.delete_project)
+        self.new_action = menu.addAction("New project…", window.new_project)
+        menu.addSeparator()
+        self.rename_action = menu.addAction("Rename…", window.rename_project)
+        self.delete_action = menu.addAction("Delete…", window.delete_project)
         self.more.setMenu(menu)
         row.addWidget(self.more)
         self.help_button = tool("circle-help", "Project assembly and export guide", self.show_guide)
@@ -313,11 +331,17 @@ class ProjectWorkspace:
         self.readiness_buttons = {}
         for name in ("Ready", "Pending", "Blocked", "Skipped"):
             control = QPushButton(name)
+            role(control, "statusCounter")
+            control.setCheckable(True)
             control.clicked.connect(lambda checked=False, name=name: self.open_category(name))
             row.addWidget(control)
             self.readiness_buttons[name] = control
+        row.addStretch()
         layout.addLayout(row)
         self.player = Player(window.settings, pane="Export")
+        player_layout = self.player.layout()
+        margins = player_layout.contentsMargins()
+        player_layout.setContentsMargins(margins.left(), 0, margins.right(), margins.bottom())
         self.player.loading_finished.connect(self.finish_view_switch)
         self.player.volume_changed.connect(window.set_playback_volume)
         self.player.previous.connect(lambda: self.navigate(-1))
@@ -388,13 +412,13 @@ class ProjectWorkspace:
             self.window,
             "Project assembly and export",
             "1. Choose a project and collect clips\n"
-            "Select an existing project or use New project… to create one. "
+            "Select an existing project or use More → New project… to create one. "
             "Collect through Editing’s Projects auto-add or bulk actions in Available. "
-            "More contains Rename and Delete.\n\n"
+            "More also contains Rename and Delete.\n\n"
             "2. Refine candidates in Available\n"
-            "Search, game, verdict and capture-date filters narrow the results. "
+            "Search, game and verdict filters narrow the results; Dates reveals capture-date filters. "
             "Available hides saved members. Add selected collects nonmembers; "
-            "Assigned offers Remove selected. All matching acts on every filtered "
+            "Assigned offers Remove selected below the list. Bulk actions → All matching acts on every filtered "
             "result, including offscreen rows. Plain-click starts a new selection; "
             "Ctrl-click adds separate rows; Shift-click selects a range; Ctrl+A selects "
             "all visible rows. The eye toggle shows or hides unavailable sources. "
@@ -402,7 +426,7 @@ class ProjectWorkspace:
             "3. Remove exceptions in Assigned\n"
             "To include a broad set except a few recordings, add all matching first. "
             "Switch to Assigned, click the first exception, Ctrl-click the others, "
-            "then use Remove selected, or filter and Remove all matching. Removal changes "
+            "then use Remove selected, or filter and use Bulk actions → Remove all matching. Removal changes "
             "membership only; removing more than 20 matching members asks for confirmation. "
             "Return to Available and use Skip selected on nonmember "
             "exceptions to hide those candidates for this project until restart. Saved "
@@ -422,7 +446,7 @@ class ProjectWorkspace:
             "All members returns to the complete project. Resolve or remove Pending and "
             "Blocked clips before export. Temporary candidate skips do not affect readiness.\n\n"
             "6. Export the project\n"
-            "Export… opens destination and filename settings. Submission exports the "
+            "Export… opens destination, filename format, folder organization and a size summary. Resolve Pending and Blocked members before submission. Submission exports the "
             "project’s eligible saved members, regardless of row selection, list filters "
             "or temporary candidate skips. "
             "Settings are remembered separately for each project after submission.\n\n"
@@ -468,6 +492,7 @@ class ProjectWorkspace:
         self.selector.addItem("Choose project", None)
         for project in projects:
             self.selector.addItem(project["name"], project["project_id"])
+            self.selector.setItemData(self.selector.count() - 1, project["name"], Qt.ItemDataRole.ToolTipRole)
         self.selector.setCurrentIndex(max(0, self.selector.findData(self.project_id)))
         self.game.clear()
         self.game.addItem("All games", None)
@@ -575,6 +600,13 @@ class ProjectWorkspace:
             f"{state.readiness} · Return to all members" if state.readiness else "All members"
         )
         self.category.setAccessibleName(self.category.toolTip())
+        self.scope.setText(f"{state.readiness} only" if self.view == "Assigned" and state.readiness else "")
+        self.scope.setVisible(bool(self.scope.text()))
+        # Reloading or clearing filters must not retract an opened drawer.
+        if state.from_date or state.through_date:
+            self.dates_toggle.setChecked(True)
+        self.update_date_disclosure()
+        self.update_readiness_selection()
         self.loading = False
 
     def filters_changed(self, *_):
@@ -588,10 +620,27 @@ class ProjectWorkspace:
         state.game = self.game.currentData()
         state.verdict = self.verdict.currentData()
         self.set_date_bounds(self.from_date.text().strip(), self.through_date.text().strip())
+        self.update_date_disclosure()
         state.unavailable = self.unavailable.isChecked()
         self.update_unavailable_toggle()
         state.newest = bool(self.sort.currentIndex())
         self.refresh(reset=True)
+
+    def update_date_disclosure(self):
+        active = bool(self.from_date.text() or self.through_date.text())
+        self.dates_toggle.setText("Dates · Active" if active else "Dates")
+        expanded = self.dates_toggle.isChecked()
+        set_icon(self.dates_toggle, "chevron-left" if expanded else "chevron-right", "text_secondary", size=14)
+        self.dates_toggle.setAccessibleName(
+            "Collapse capture date filters" if expanded else "Expand capture date filters"
+        )
+        self.dates_toggle.setToolTip(
+            f"From: {self.from_date.text() or 'Any'} · Through: {self.through_date.text() or 'Any'}"
+        )
+
+    def update_readiness_selection(self):
+        for name, control in self.readiness_buttons.items():
+            control.setChecked(self.view == "Assigned" and self.state.readiness == name)
 
     def set_date_bounds(self, lower, upper):
         for view in ("Assigned", "Available"):
@@ -641,6 +690,7 @@ class ProjectWorkspace:
 
     def open_category(self, category):
         if not self.window.ensure_range_complete():
+            self.update_readiness_selection()
             return
         self.remember()
         self.set_date_bounds("", "")
@@ -665,35 +715,40 @@ class ProjectWorkspace:
         )
         for name, control in self.readiness_buttons.items():
             control.setText(f"{name} {len(self.categories[name])}")
+            count = len(self.categories[name])
+            control.setToolTip(
+                f"{name} clips prevent export. Click to inspect."
+                if count and name in {"Pending", "Blocked"}
+                else f"Show {name.lower()} project members"
+            )
+            emphasis = (
+                "muted" if not count else "ready" if name == "Ready"
+                else "warning" if name == "Pending" else "error" if name == "Blocked"
+                else "secondary"
+            )
+            if control.property("statusEmphasis") != emphasis:
+                control.setProperty("statusEmphasis", emphasis)
+                control.style().unpolish(control)
+                control.style().polish(control)
             control.setEnabled(bool(self.project_id))
+        self.update_readiness_selection()
         self.export_button.setEnabled(bool(self.project_id))
         self.update_export_size(clips)
-        self.more.setEnabled(bool(self.project_id))
+        self.rename_action.setEnabled(bool(self.project_id))
+        self.delete_action.setEnabled(bool(self.project_id))
         self.empty.setVisible(not self.project_id)
         self.update_view_counts(clips)
 
     def update_export_size(self, clips):
-        total = 0
-        known = bool(self.project_id)
-        for clip in clips:
-            if clip["clip_id"] not in self.categories["Ready"]:
-                continue
-            try:
-                source = Path(clip["source_path"]).stat()
-                if not stat.S_ISREG(source.st_mode):
-                    raise OSError("Source is no longer a file")
-                total += source.st_size
-            except OSError:
-                known = False
-                break
-        self.export_size.setText(f"Estimated export: {storage_gb(total) if known else '— GB'}")
+        total = ready_source_bytes(clips, self.categories["Ready"]) if self.project_id else None
+        count = len(self.categories["Ready"])
+        self.export_size.setText(
+            f"{count} ready · Estimated export: {storage_gb(total) if total is not None else '— GB'}"
+        )
         self.export_size.setToolTip(
-            "Total original-file size of Ready project members. "
-            "Pending, Blocked and Discard clips are excluded. "
-            "Selection, filters, temporary skips and In/Out ranges do not affect this estimate. "
-            "1 GB = 2³⁰ bytes (1,073,741,824 bytes)."
+            SIZE_EXPLANATION
             + (" Choose a project to estimate export size." if not self.project_id
-               else " Ready source sizes could not be read." if not known else "")
+               else " Ready source sizes could not be read." if total is None else "")
         )
 
     def refresh(self, *, reset=False, restore=False, deselect=False, select_current=False):
@@ -720,6 +775,8 @@ class ProjectWorkspace:
             )
         except ValueError as error:
             self.valid = False
+            if self.state.from_date or self.state.through_date:
+                self.dates_toggle.setChecked(True)
             window.library_error.setText(str(error))
             window.library_error.show()
             if not restore:
@@ -913,14 +970,25 @@ class ProjectWorkspace:
         count = len(selected - self.members if include else selected & self.members)
         matching = len(set(self.state.visible) - self.members if include
                        else set(self.state.visible) & self.members)
-        self.selected_action.setText(f"{'Add' if include else 'Remove'} selected ({count})")
-        self.skip_action.setText(f"Skip selected ({count})")
-        self.skip_action.setVisible(include)
+        suffix = f" ({count})" if count != 1 else ""
+        bracketed = self.window.settings.get("nier_automata_hotkey_labels", False)
+        verb = ("[A]dd" if include else "[R]emove") if bracketed else ("Add" if include else "Remove")
+        self.selected_action.setText(f"{verb} selected{suffix}")
+        self.skip_action.setText(f"{'[S]kip' if bracketed else 'Skip'} selected{suffix}")
+        self.selected_action.setToolTip(
+            f"{'Add selected clips to' if include else 'Remove selected clips from'} this project · "
+            f"{'A' if include else 'R'}"
+        )
+        self.skip_action.setToolTip("Temporarily hide selected candidates in this project · S")
+        self.selection_actions.setVisible(bool(count))
+        self.selected_action.setVisible(bool(count))
+        self.skip_action.setVisible(include and bool(count))
         self.matching_action.setText(f"{'Add' if include else 'Remove'} all matching ({matching})")
         self.matching_action.setVisible(True)
         enabled = bool(self.project_id and self.valid)
         self.selected_action.setEnabled(enabled and bool(count))
         self.matching_action.setEnabled(enabled and bool(matching))
+        self.bulk_actions.setEnabled(enabled and bool(matching))
         self.skip_action.setEnabled(enabled and include and bool(count))
 
     def invalidate_clip_histories(self, ids):

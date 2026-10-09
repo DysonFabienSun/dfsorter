@@ -1,6 +1,18 @@
+# Export layout refinement
+
+- [x] Filename option/preview subtitles match the dialog headings with larger surrounding gaps. Folder organization places By rating first and defaults it on for unsaved choices; existing Flat choices are preserved. Segmented controls retain consistent focus borders.
+
+- [x] Export preserves the shared sidebar width. Selection actions default to plain labels and A/S/R tooltips; Settings → Appearance → Export adds the optional, persisted Nier: Automata Hotkey Labels style, default off.
+
+- [x] Selected actions expose A/S/R hotkeys and omit the count for one clip. The project selector/popup uses shared 13 px typography, date fields expand inline, and readiness spacing is tighter and symmetric.
+
+- [x] Export setup separates destination, filename formatting with a standalone underlined live preview, and independent Flat / By rating folder organization. The footer repeats Ready count and original-file size, Discard exclusions and validation feedback.
+- [x] Pending or Blocked members prevent submission, with emphasized readiness counters and an Export unavailable notice explaining the disabled action. Strict eligibility rechecks precede enqueueing; failed setup saves neither preferences nor jobs. Existing queued jobs retain their execution/Resume behavior.
+- [x] The workspace uses compact readiness counters, project management in More, collapsible date filters, All members beside filter utilities, and contextual selected-clip actions below the list. Both all-matching operations live in Bulk actions. This supersedes older layout and deferred-validation notes below.
+
 # Export filename ratings
 
-- [x] Project Export includes rating tokens after the game prefix by default, with a per-project checkbox and matching live examples. Tokens follow the existing casing preference; unrated clips omit them. Prefix-free and original-filename fallback outputs retain ratings. Group by Rating remains independent, and Share and working titles retain their existing naming.
+- [x] Project Export includes rating tokens after the game prefix by default, with a per-project checkbox and matching live examples. The Rating checkbox shares the first filename-options row with Game code; folder organization is configured separately. Tokens follow the existing casing preference; unrated clips omit them. Prefix-free and original-filename fallback outputs retain ratings. Group by Rating remains independent, and Share and working titles retain their existing naming.
 - [x] Focused checks cover R1–R5/unrated whole-file output, casing, prefix and opt-out choices, preview underlining, cancel/save behavior and frozen jobs. Light and Dark setup captures were inspected.
 
 # Export collection and player refinements

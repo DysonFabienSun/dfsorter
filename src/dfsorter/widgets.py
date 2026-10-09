@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QLinearGradient,
     QPainter,
     QPainterPath,
+    QPalette,
     QPen,
     QPixmap,
     QTextCharFormat,
@@ -35,8 +36,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLayout,
     QListWidget,
+    QPushButton,
+    QSizePolicy,
     QStyle,
     QStyledItemDelegate,
+    QStyleOption,
+    QStyleOptionButton,
     QStyleOptionComboBox,
     QStyleOptionViewItem,
     QStylePainter,
@@ -174,6 +179,46 @@ def heading(text, icon_name, heading_role="sectionHeading", row_height=None):
     row.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()
     return row, label
+
+
+class TrailingIconButton(QPushButton):
+    """Center the text/icon group together, with the icon after the label."""
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setHeight(max(hint.height(), SIZES["toolbar"]))
+        if not self.icon().isNull():
+            hint.setWidth(hint.width() - 2)
+        return hint
+
+    def paintEvent(self, event):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        glyph = QIcon(self.icon())
+        label = option.text
+        option.icon = QIcon()
+        option.text = ""
+        painter = QStylePainter(self)
+        painter.drawControl(QStyle.ControlElement.CE_PushButton, option)
+        contents = self.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, option, self,
+        )
+        icon_size = self.iconSize()
+        text_width = self.fontMetrics().horizontalAdvance(label)
+        gap = 2
+        left = contents.x() + (contents.width() - text_width - gap - icon_size.width()) // 2
+        text_rect = QRect(left, contents.y(), text_width, contents.height())
+        self.style().drawItemText(
+            painter, text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            option.palette, self.isEnabled(), label, QPalette.ColorRole.ButtonText,
+        )
+        glyph.paint(
+            painter, QRect(left + text_width + gap,
+                           contents.y() + (contents.height() - icon_size.height()) // 2,
+                           icon_size.width(), icon_size.height()),
+            Qt.AlignmentFlag.AlignCenter,
+            QIcon.Mode.Normal if self.isEnabled() else QIcon.Mode.Disabled,
+        )
 
 
 class VerdictBar(QWidget):
@@ -641,6 +686,45 @@ def draw_underlined_text(painter, rect, text, spans, text_font, color):
     painter.setPen(color)
     layout.draw(painter, QPointF(rect.x(), rect.y() + (rect.height() - line.height()) / 2))
     painter.restore()
+
+
+class FilenamePreview(QWidget):
+    """Read-only filename surface with semantic underlining and middle elision."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        role(self, "filenamePreview")
+        self.setFont(font("sm"))
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setAccessibleName("Live filename preview")
+        self._text = ""
+        self.spans = []
+
+    def sizeHint(self):
+        return QSize(160, max(SIZES["normal"], self.fontMetrics().height() + 16))
+
+    def minimumSizeHint(self):
+        return QSize(80, self.sizeHint().height())
+
+    def text(self):
+        return self._text
+
+    def set_filename(self, text, spans=()):
+        self._text = text
+        self.spans = list(spans)
+        self.setToolTip(text)
+        self.setAccessibleDescription(text)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        option = QStyleOption()
+        option.initFrom(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, option, painter, self)
+        draw_underlined_text(
+            painter, self.rect().adjusted(8, 0, -8, 0), self._text,
+            self.spans, self.font(), COLORS["text_primary"],
+        )
 
 
 class UnderlinedTextDelegate(QStyledItemDelegate):

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 import test_ui
 from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,7 +30,7 @@ from dfsorter.project_workspace import MembershipHistory, WorkspaceView, filter_
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS
 from dfsorter.ui import ROOT, Window
-from dfsorter.widgets import CLIP_ROLE, UNDERLINE_ROLE
+from dfsorter.widgets import CLIP_ROLE
 
 application = test_ui.application
 window = test_ui.window
@@ -157,7 +157,7 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     assert created != original
     assert window.workspace.view == "Available"
     assert window.catalogue.state("review_destination") == original
-    window.workspace.matching_action.click()
+    window.workspace.matching_action.trigger()
     window.catalogue.save_export_job("frozen", {"items": [{"frozen": True}]}, "Cancelled")
     monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("Renamed", True))
     window.rename_project()
@@ -250,6 +250,7 @@ def test_enqueue_preferences_transaction_and_delete(catalogue, clips, registry, 
 
 
 def seed_workspace(window, tmp_path, count=30):
+    window.set_theme("dark", persist=False)
     root = tmp_path / "captures"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
@@ -300,13 +301,18 @@ def test_export_size_counts_ready_originals_independently_of_workspace_view(
     workspace = window.workspace
     workspace.refresh()
     assert workspace.categories["Ready"] == set(ids[:2])
-    assert workspace.export_size.text() == "Estimated export: 1.75 GB"
+    assert workspace.export_size.text() == "2 ready · Estimated export: 1.75 GB"
     assert "1,073,741,824 bytes" in workspace.export_size.toolTip()
+    dialog = ProjectExportDialog(window, project)
+    assert dialog.summary.text() == "2 clips ready · Estimated size: 1.75 GB"
+    assert "1 Discard clip excluded" == dialog.exclusions.text()
+    assert not dialog.submit_button.isEnabled()
+    dialog.reject()
     window.library.clearSelection()
     workspace.skipped_ids[project].update(ids[:2])
     workspace.search.setText("no matching recordings")
     assert not workspace.state.visible
-    assert workspace.export_size.text() == "Estimated export: 1.75 GB"
+    assert workspace.export_size.text() == "2 ready · Estimated export: 1.75 GB"
     application.processEvents()
     label_rect = workspace.export_size.geometry()
     button_rect = workspace.export_button.geometry()
@@ -315,16 +321,16 @@ def test_export_size_counts_ready_originals_independently_of_workspace_view(
     # A fresh readiness update must see current sizes rather than stale stat cache entries.
     sizes[window.catalogue.clip(ids[0])["source_path"]] = 2 * 2**30
     workspace.refresh_readiness()
-    assert workspace.export_size.text() == "Estimated export: 2.25 GB"
+    assert workspace.export_size.text() == "2 ready · Estimated export: 2.25 GB"
     window.catalogue.batch_membership(project, ids[:1], False)
     workspace.refresh_readiness()
-    assert workspace.export_size.text() == "Estimated export: 0.25 GB"
+    assert workspace.export_size.text() == "1 ready · Estimated export: 0.25 GB"
     other = window.catalogue.save_project("Empty project")
     window.refresh_references()
     workspace.select_project(other, new=True)
-    assert workspace.export_size.text() == "Estimated export: 0.00 GB"
+    assert workspace.export_size.text() == "0 ready · Estimated export: 0.00 GB"
     workspace.select_project(None)
-    assert workspace.export_size.text() == "Estimated export: — GB"
+    assert workspace.export_size.text() == "0 ready · Estimated export: — GB"
 
 
 @pytest.mark.parametrize("view", ["Assigned", "Available"])
@@ -367,7 +373,7 @@ def test_project_member_actions_and_accent_selection(window, tmp_path, theme):
     listing.clearSelection()
     listing.item(0).setSelected(True)
     workspace = window.workspace
-    assert workspace.selected_action.text() == "Remove selected (1)"
+    assert workspace.selected_action.text() == "Remove selected"
     assert workspace.matching_action.text() == "Remove all matching (1)"
     assert workspace.skip_action.isHidden()
     assert not listing.item(0).data(CLIP_ROLE)["danger_selection"]
@@ -524,7 +530,7 @@ def test_workspace_actions_return_focus_to_clips(window, application, tmp_path, 
         select_view(window, "Assigned")
     button = (
         workspace.skip_action if action == "skip"
-        else workspace.matching_action if action.endswith("_all")
+        else workspace.bulk_actions if action.endswith("_all")
         else workspace.category if action == "all_members"
         else workspace.selected_action
     )
@@ -533,11 +539,18 @@ def test_workspace_actions_return_focus_to_clips(window, application, tmp_path, 
     assert test_ui.wait_for(application, window.isActiveWindow)
     button.setFocus()
     assert test_ui.wait_for(application, button.hasFocus)
-    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    if action.endswith("_all"):
+        menu = workspace.bulk_actions.menu()
+        menu.popup(button.mapToGlobal(QPoint(0, button.height())))
+        application.processEvents()
+        QTest.mouseClick(menu, Qt.MouseButton.LeftButton,
+                         pos=menu.actionGeometry(workspace.matching_action).center())
+    else:
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     assert test_ui.wait_for(application, lambda: workspace.pending_view is None)
     assert window.library.hasFocus()
     assert all(not control.hasFocus() for control in (
-        workspace.selected_action, workspace.skip_action, workspace.matching_action, workspace.category
+        workspace.selected_action, workspace.skip_action, workspace.bulk_actions, workspace.category
     ))
     if action in {"add", "remove", "skip"}:
         assert window.selected_id(window.library) == ids[1]
@@ -554,7 +567,7 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     workspace = window.workspace
     confirmations = []
     monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or True)
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert not confirmations
     assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
     assert workspace.view == "Assigned"
@@ -564,7 +577,7 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     select_view(window, "Assigned")
     window.library.item(0).setSelected(True)
     assert workspace.matching_action.text() == "Remove all matching (100)"
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert len(confirmations) == 1
     assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
     assert workspace.view == "Available"
@@ -575,7 +588,7 @@ def test_offscreen_removal_and_successful_actions_clear_selection(window, tmp_pa
     assert not selected_ids(window)
     select_view(window, "Assigned")
     assert workspace.matching_action.text() == "Remove all matching (100)"
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert len(confirmations) == 2
     assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
     assert workspace.view == "Available"
@@ -607,7 +620,7 @@ def test_remove_all_matching_confirmation_threshold_and_cancellation(
     confirmations = []
     monkeypatch.setattr(window, "confirm",
                         lambda message: confirmations.append(message) or accepted)
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert test_ui.wait_for(QApplication.instance(), lambda: workspace.pending_view is None)
     assert len(confirmations) == (1 if count > 20 else 0)
     if confirmations:
@@ -646,7 +659,7 @@ def test_all_matching_switches_views_preserving_filters_and_dates(
     workspace.load_controls()
     workspace.refresh()
     select_view(window, "Available" if include else "Assigned")
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert test_ui.wait_for(application, lambda: workspace.pending_view is None)
     assert workspace.view == ("Assigned" if include else "Available")
     assert workspace.search.text() == ("Highlight" if include else "game:VAL")
@@ -678,7 +691,7 @@ def test_all_matching_no_change_or_failure_keeps_view(window, tmp_path, monkeypa
 def test_remove_selected_above_threshold_does_not_confirm(window, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path, 21)
     workspace = window.workspace
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     select_view(window, "Assigned")
     window.library.selectAll()
     confirmations = []
@@ -1081,7 +1094,7 @@ def test_assemble_300_paused_clips_and_undo(window, application, tmp_path, monke
     workspace.search.setText("game:VAL Highlight")
     assert window.library.count() == 300
     assert window.catalogue.state("session") is None
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     assert window.catalogue.member_ids(project) == set(ids)
     assert window.undo_button.isEnabled()
     select_view(window, "Assigned")
@@ -1181,11 +1194,18 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
     dialog.game.setCurrentIndex(dialog.game.findData("VALORANT"))
     assert previous_prefix.isHidden()
     application.processEvents()
-    prefix = dialog.field_layout.itemAt(0).widget()
+    prefix_row = dialog.field_layout.itemAt(0).widget()
+    prefix = dialog.prefix
     fields = dialog.field_layout.itemAt(1).widget()
     controls = {control.text(): control for control in fields.findChildren(QCheckBox)}
-    assert prefix.text() == "Game code prefix [VAL]"
-    assert fields.y() > prefix.geometry().bottom()
+    assert prefix.text() == "Game code [VAL]"
+    assert fields.y() > prefix_row.geometry().bottom()
+    assert prefix.parentWidget() is dialog.include_rating.parentWidget() is prefix_row
+    assert prefix.geometry().center().y() == dialog.include_rating.geometry().center().y()
+    assert prefix.geometry().right() < dialog.include_rating.x()
+    assert dialog.fields.geometry().bottom() < dialog.preview.y()
+    assert dialog.preview.geometry().bottom() < dialog.group_rating.y()
+    assert dialog.game.currentText() == "VALORANT · VAL"
     assert len({control.y() for control in controls.values()}) == 1
     assert not dialog.findChildren(QScrollArea)
     wide_height = dialog.fields.height()
@@ -1197,19 +1217,19 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
             [clip], window.registry, tmp_path / "output", window.catalogue.folders(),
             dialog.options["formats"], lowercase=window.settings["lowercase_generated_titles"],
         )
-        assert dialog.game.currentText() == f"VAL · {manifest['items'][0]['stem']}.mp4"
+        assert dialog.preview.text() == f"{manifest['items'][0]['stem']}.mp4"
 
     assert_matches_manifest()
-    spans = dialog.game.currentData(UNDERLINE_ROLE)
-    assert [dialog.game.currentText()[start:start + length] for start, length in spans] == [
+    spans = dialog.preview.spans
+    assert [dialog.preview.text()[start:start + length] for start, length in spans] == [
         "clutch win" if theme == "light" else "Clutch Win"
     ]
-    before = dialog.game.currentText()
+    before = dialog.preview.text()
     controls["agent"].setChecked(False)
-    assert dialog.game.currentText() != before
+    assert dialog.preview.text() != before
     assert_matches_manifest()
     prefix.setChecked(False)
-    assert dialog.game.currentText().startswith("VAL · 3")
+    assert dialog.preview.text().startswith("3")
     assert_matches_manifest()
     artifact = ROOT / "cache/verification/project-export-dialog"
     artifact.mkdir(parents=True, exist_ok=True)
@@ -1221,8 +1241,8 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
     dialog.game.hidePopup()
     for control in controls.values():
         control.setChecked(False)
-    assert dialog.game.currentText() == "VAL · clip-000.mp4"
-    assert not dialog.game.currentData(UNDERLINE_ROLE)
+    assert dialog.preview.text() == "clip-000.mp4"
+    assert not dialog.preview.spans
     assert_matches_manifest()
     artifact = ROOT / "cache/verification/project-export-dialog"
     artifact.mkdir(parents=True, exist_ok=True)
@@ -1236,10 +1256,10 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
     assert all(control.geometry().bottom() < fields.height() for control in controls.values())
     dialog.grab().save(str(artifact / f"{theme}-narrow.png"))
     dialog.game.setCurrentIndex(dialog.game.findData("Apex Legends"))
-    assert dialog.field_layout.itemAt(0).widget().text() == "Game code prefix [APX]"
+    assert dialog.prefix.text() == "Game code [APX]"
     dialog.game.setCurrentIndex(dialog.game.findData("VALORANT"))
-    assert not dialog.field_layout.itemAt(0).widget().isChecked()
-    assert dialog.game.currentText() == "VAL · clip-000.mp4"
+    assert not dialog.prefix.isChecked()
+    assert dialog.preview.text() == "clip-000.mp4"
     dialog.reject()
     assert window.catalogue.projects()[0]["output_preferences"] == {}
 
@@ -1253,7 +1273,7 @@ def test_export_rating_preview(window, application, tmp_path, prefix, theme):
     window.catalogue.patch(ids[0], {"rating": 4, "mainline": "Clutch: Win?"})
     window.catalogue.batch_membership(project, ids, True)
     dialog = ProjectExportDialog(window, project)
-    dialog.field_layout.itemAt(0).widget().setChecked(prefix)
+    dialog.prefix.setChecked(prefix)
     clip = window.catalogue.clip(ids[0])
     for included in (True, False):
         dialog.include_rating.setChecked(included)
@@ -1262,17 +1282,17 @@ def test_export_rating_preview(window, application, tmp_path, prefix, theme):
             dialog.options["formats"], include_rating=included,
             lowercase=theme == "light",
         )
-        assert dialog.game.currentText() == f"VAL · {manifest['items'][0]['stem']}.mp4"
-        spans = dialog.game.currentData(UNDERLINE_ROLE)
-        assert [dialog.game.currentText()[start:start + length] for start, length in spans] == [
+        assert dialog.preview.text() == f"{manifest['items'][0]['stem']}.mp4"
+        spans = dialog.preview.spans
+        assert [dialog.preview.text()[start:start + length] for start, length in spans] == [
             "clutch_ win_" if theme == "light" else "Clutch_ Win_"
         ]
     dialog.include_rating.setChecked(True)
     for control in dialog.field_layout.itemAt(1).widget().findChildren(QCheckBox):
         control.setChecked(False)
     token = "r4" if theme == "light" else "R4"
-    assert dialog.game.currentText() == f"VAL · {'VAL_' if prefix else ''}{token} clip-000.mp4"
-    assert not dialog.game.currentData(UNDERLINE_ROLE)
+    assert dialog.preview.text() == f"{'VAL_' if prefix else ''}{token} clip-000.mp4"
+    assert not dialog.preview.spans
     dialog.show()
     application.processEvents()
     artifact = ROOT / "cache/verification/export-rating"
@@ -1292,9 +1312,9 @@ def test_export_preview_tracks_mainline_through_sanitizing_and_custom_order(
     })
     window.catalogue.batch_membership(project, ids, True)
     dialog = ProjectExportDialog(window, project)
-    dialog.field_layout.itemAt(0).widget().setChecked(prefix)
-    spans = dialog.game.currentData(UNDERLINE_ROLE)
-    rendered = dialog.game.currentText()
+    dialog.prefix.setChecked(prefix)
+    spans = dialog.preview.spans
+    rendered = dialog.preview.text()
     mainline = rendered[spans[0][0]:sum(spans[0])]
     assert mainline == ("  con_ highlight_  " if prefix else "con_ highlight_  ")
     assert "3k jett.mp4" in rendered
@@ -1314,8 +1334,8 @@ def test_export_dialog_isolation_blockers_cancel_and_enqueue(
     assert window.export_button.isEnabled()
     dialog = ProjectExportDialog(window, project)
     dialog.destination.setText(str(tmp_path / "out"))
-    assert dialog.submit_button.isEnabled()
-    assert not hasattr(dialog, "details") and not hasattr(dialog, "readiness")
+    assert not dialog.submit_button.isEnabled()
+    assert "Pending 1" in dialog.blockers.text()
     dialog.group_rating.setChecked(True)
     assert dialog.include_rating.isChecked()
     dialog.include_rating.setChecked(False)
@@ -1324,7 +1344,7 @@ def test_export_dialog_isolation_blockers_cancel_and_enqueue(
     assert not window.catalogue.export_jobs()
     window.catalogue.patch(ids[1], {"triage": "discard"})
     dialog = ProjectExportDialog(window, project)
-    assert not dialog.group_rating.isChecked()
+    assert dialog.group_rating.isChecked()
     assert dialog.include_rating.isChecked()
     dialog.destination.setText(str(tmp_path / "out"))
     dialog.group_rating.setChecked(True)
@@ -1339,7 +1359,7 @@ def test_export_dialog_isolation_blockers_cancel_and_enqueue(
     assert ProjectExportDialog(window, project).include_rating.isChecked() == include_rating
     assert ProjectExportDialog(window, project).group_rating.isChecked()
     other = window.catalogue.save_project("Other")
-    assert not ProjectExportDialog(window, other).group_rating.isChecked()
+    assert ProjectExportDialog(window, other).group_rating.isChecked()
     assert ProjectExportDialog(window, other).include_rating.isChecked()
     window.catalogue.patch(ids[0], {"mainline": "Later", "rating": 1})
     assert window.catalogue.export_jobs()[0]["manifest"] == record["manifest"]
@@ -1512,7 +1532,7 @@ def test_workspace_project_view_state_and_readiness(window, application, tmp_pat
 def test_remove_preview_fallback_and_history_invalidation(window, tmp_path):
     ids, project = seed_workspace(window, tmp_path, 4)
     workspace = window.workspace
-    workspace.matching_action.click()
+    workspace.matching_action.trigger()
     select_view(window, "Assigned")
     window.library.setCurrentRow(1)
     workspace.selected_action.click()
@@ -1581,16 +1601,11 @@ def test_no_empty_jobs_and_submission_failure(window, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("blocking", ["pending", "metadata", "source", "game", "pending_only"])
-def test_export_setup_queues_blockers_and_job_fails_before_copying(
+def test_export_setup_prevents_blocked_submission(
     window, tmp_path, monkeypatch, blocking
 ):
     ids, project = seed_workspace(window, tmp_path, 2)
     window.catalogue.batch_membership(project, ids, True)
-    reason = {
-        "pending": "verdict is pending", "pending_only": "verdict is pending",
-        "metadata": "add at least one metadata", "source": "source unavailable",
-        "game": "assign a configured game",
-    }[blocking]
     if blocking.startswith("pending"):
         window.catalogue.patch(ids[0], {"triage": None})
         if blocking == "pending_only":
@@ -1606,14 +1621,15 @@ def test_export_setup_queues_blockers_and_job_fails_before_copying(
     dialog.destination.setText(str(destination))
     dialog.group_rating.setChecked(True)
     monkeypatch.setattr(window, "add_export_job", lambda *_: None)
-    assert dialog.submit_button.isEnabled()
+    assert not dialog.submit_button.isEnabled()
+    assert "Resolve Pending and Blocked" in dialog.blockers.text()
+    assert not dialog.blocker_notice.isHidden()
+    assert dialog.submit_button.toolTip() == dialog.blockers.text()
     dialog.submit()
-    assert dialog.job_id and not dialog.error.text()
-    assert window.catalogue.projects()[0]["output_preferences"]["group_rating"]
-    result = run_export_manifest(window.catalogue, dialog.job_id)
-    assert reason in result.error
-    assert not result.completed and not destination.exists()
-    assert window.catalogue.export_jobs()[0]["status"] == "Failed"
+    assert not dialog.job_id and not destination.exists()
+    assert not window.catalogue.projects()[0]["output_preferences"]
+    assert not window.catalogue.export_jobs()
+
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -1643,15 +1659,20 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
             assert workspace.category.isHidden() == (view != "Assigned")
             if view == "Assigned":
                 assert workspace.category.text() == "All members"
-                assert workspace.selected_action.geometry().right() < workspace.category.x()
-                assert workspace.category.geometry().right() < workspace.matching_action.x()
-                assert workspace.category.y() == workspace.selected_action.y()
-                assert workspace.category.y() == workspace.matching_action.y()
+                assert workspace.category.parentWidget() is workspace.search.parentWidget()
+                assert abs(workspace.category.geometry().center().y()
+                           - workspace.search.geometry().center().y()) <= 1
+            assert workspace.list_footer.y() > window.library.y()
+            assert workspace.matching_action in workspace.bulk_actions.menu().actions()
+            assert workspace.new_action in workspace.more.menu().actions()
             assert workspace.views.geometry().right() < workspace.unavailable.x()
             assert abs(workspace.views.geometry().center().y()
                        - workspace.unavailable.geometry().center().y()) <= 1
             assert workspace.unavailable.width() == 28
             assert not workspace.unavailable.text()
+        assert window.workspace.readiness_buttons["Pending"].property("statusEmphasis") == "warning"
+        assert window.workspace.readiness_buttons["Blocked"].property("statusEmphasis") == "error"
+        assert "prevent export" in window.workspace.readiness_buttons["Blocked"].toolTip()
         assert window.splitter.count() == 2
         assert window.workspace.controls.width() <= window.left.width()
         assert window.library.horizontalScrollBar().maximum() == 0
@@ -1669,3 +1690,291 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
     assert not window.membership_menu.collection_changes_enabled
     window.grab().save(str(artifact / f"{theme}-editing.png"))
     window.discard_atomic_edit()
+
+
+def test_export_refined_filters_and_contextual_actions(window, application, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 3)
+    workspace = window.workspace
+    assert workspace.date_filters.isHidden()
+    window.library.clearSelection()
+    assert workspace.selection_actions.isHidden()
+    assert workspace.matching_action.isEnabled()
+    workspace.dates_toggle.click()
+    assert not workspace.date_filters.isHidden()
+    workspace.from_date.setText("2000-1-1")
+    workspace.dates_toggle.click()
+    assert workspace.date_filters.isHidden()
+    assert "Active" in workspace.dates_toggle.text()
+    assert workspace.state.from_date == "2000-1-1"
+    select_view(window, "Assigned")
+    assert not workspace.date_filters.isHidden()
+    workspace.from_date.setText("not a date")
+    workspace.dates_toggle.click()
+    select_view(window, "Available")
+    assert not workspace.date_filters.isHidden()
+    assert not workspace.valid and not workspace.matching_action.isEnabled()
+    select_view(window, "Assigned")
+    workspace.category.click()
+    assert not workspace.state.from_date and not workspace.state.through_date
+    assert not workspace.date_filters.isHidden()
+    workspace.history().apply(ids, True)
+    workspace.refresh()
+    workspace.readiness_buttons["Ready"].click()
+    assert workspace.readiness_buttons["Ready"].isChecked()
+    assert workspace.scope.text() == "Ready only"
+    dialog = ProjectExportDialog(window, project)
+    assert dialog.blocker_notice.isHidden()
+    dialog.reject()
+    workspace.category.click()
+    assert not any(control.isChecked() for control in workspace.readiness_buttons.values())
+    window.library.clearSelection()
+    assert workspace.selection_actions.isHidden()
+    window.library.setCurrentRow(0)
+    assert not workspace.selected_action.isHidden()
+    assert workspace.skip_action.isHidden()
+    window.panel("Browse")
+    assert workspace.list_footer.isHidden()
+    window.panel("Export")
+    workspace.select_project(None)
+    assert workspace.more.isEnabled() and workspace.new_action.isEnabled()
+    assert not workspace.rename_action.isEnabled() and not workspace.delete_action.isEnabled()
+
+
+def test_export_submission_rechecks_changed_sources(window, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.catalogue.batch_membership(project, ids, True)
+    dialog = ProjectExportDialog(window, project)
+    dialog.destination.setText(str(tmp_path / "out"))
+    assert dialog.submit_button.isEnabled()
+    Path(window.catalogue.clip(ids[0])["source_path"]).unlink()
+    dialog.submit()
+    assert not dialog.submit_button.isEnabled()
+    assert "Blocked 1" in dialog.blockers.text()
+    assert not window.catalogue.export_jobs()
+    assert not window.catalogue.projects()[0]["output_preferences"]
+
+
+def test_ready_size_unavailable_after_validation(window, tmp_path, monkeypatch):
+    from dfsorter.project_summary import ready_source_bytes
+
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.catalogue.batch_membership(project, ids, True)
+    window.workspace.refresh()
+    clip = window.catalogue.clip(ids[0])
+    Path(clip["source_path"]).unlink()
+    assert ready_source_bytes([clip], set(ids)) is None
+    window.workspace.update_export_size([clip])
+    assert window.workspace.export_size.text() == "1 ready · Estimated export: — GB"
+    assert "could not be read" in window.workspace.export_size.toolTip()
+    # Exercise the same race between readiness validation and size estimation in setup.
+    monkeypatch.setattr("dfsorter.project_export_dialog.ready_source_bytes", lambda *_: None)
+    dialog = ProjectExportDialog(window, project)
+    assert dialog.summary.text().endswith("Estimated size: — GB")
+    assert "could not be read" in dialog.summary.toolTip()
+
+
+def test_export_selected_hotkeys_and_inline_dates(window, application, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 4)
+    workspace = window.workspace
+    window.library.setCurrentRow(0)
+    window.library.setFocus()
+    assert workspace.selected_action.text() == "Add selected"
+    assert workspace.skip_action.text() == "Skip selected"
+    QTest.keyClick(window.library, Qt.Key.Key_A)
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    assert workspace.view == "Available"
+    window.library.setCurrentRow(0)
+    QTest.keyClick(window.library, Qt.Key.Key_R)
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    skipped = window.selected_id(window.library)
+    QTest.keyClick(window.library, Qt.Key.Key_S)
+    assert workspace.skipped_ids[project] == {skipped}
+    window.library.clearSelection()
+    QTest.keyClick(window.library, Qt.Key.Key_A)
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    workspace.search.setFocus()
+    QTest.keyClicks(workspace.search, "asr")
+    assert workspace.search.text() == "asr"
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    workspace.search.clear()
+    select_view(window, "Assigned")
+    window.library.setCurrentRow(0)
+    window.library.setFocus()
+    assert workspace.selected_action.text() == "Remove selected"
+    QTest.keyClick(window.library, Qt.Key.Key_A)
+    QTest.keyClick(window.library, Qt.Key.Key_S)
+    assert window.catalogue.member_ids(project) == {ids[0]}
+    QTest.keyClick(window.library, Qt.Key.Key_R)
+    assert not window.catalogue.member_ids(project)
+    select_view(window, "Available")
+    window.library.clearSelection()
+    for row in range(2):
+        window.library.item(row).setSelected(True)
+    assert workspace.selected_action.text() == "Add selected (2)"
+    assert workspace.skip_action.text() == "Skip selected (2)"
+    QApplication.sendEvent(window.library, QKeyEvent(
+        QKeyEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.NoModifier, "a", True,
+    ))
+    assert not window.catalogue.member_ids(project)
+    modal = QDialog(window)
+    modal.setModal(True)
+    modal.show()
+    application.processEvents()
+    QTest.keyClick(modal, Qt.Key.Key_A)
+    assert not window.catalogue.member_ids(project)
+    modal.reject()
+    application.processEvents()
+    height = workspace.controls.height()
+    toggle_width = workspace.dates_toggle.width()
+    assert workspace.dates_toggle.property("iconName") == "chevron-right"
+    workspace.dates_toggle.click()
+    application.processEvents()
+    assert workspace.controls.height() == height
+    assert workspace.dates_toggle.width() == toggle_width
+    assert workspace.dates_toggle.property("iconName") == "chevron-left"
+    assert workspace.date_filters.x() > workspace.dates_toggle.geometry().right()
+    assert abs(workspace.date_filters.geometry().center().y()
+               - workspace.dates_toggle.geometry().center().y()) <= 1
+    assert workspace.from_date.width() >= workspace.from_date.fontMetrics().horizontalAdvance("2026-10-09")
+    counter = workspace.readiness_buttons["Ready"]
+    top_gap = counter.y() - workspace.selector.geometry().bottom() - 1
+    video_top = workspace.player.video_container.mapTo(counter.parentWidget(), QPoint()).y()
+    bottom_gap = video_top - counter.geometry().bottom() - 1
+    assert abs(top_gap - bottom_gap) <= 2
+    assert workspace.selector.font().pixelSize() == 13
+    assert workspace.selector.view().font().pixelSize() == 13
+    workspace.from_date.setFocus()
+    QTest.keyClicks(workspace.from_date, "asr")
+    assert workspace.from_date.text() == "asr"
+    assert not window.catalogue.member_ids(project)
+    workspace.from_date.clear()
+    application.processEvents()
+    artifact = ROOT / "cache/verification/export-refinement"
+    artifact.mkdir(parents=True, exist_ok=True)
+    window.grab().save(str(artifact / "dark-inline-dates.png"))
+
+
+def test_export_label_setting_and_shared_pane_width(window, application, tmp_path):
+    import yaml
+
+    ids, project = seed_workspace(window, tmp_path, 4)
+    workspace = window.workspace
+    window.library.setCurrentRow(0)
+    assert workspace.selected_action.text() == "Add selected"
+    assert workspace.selected_action.toolTip().endswith(" · A")
+    assert workspace.skip_action.toolTip().endswith(" · S")
+    dialog = SettingsDialog(window)
+    assert not dialog.nier_hotkey_labels.isChecked()
+    tabs = dialog.findChild(QTabWidget)
+    tabs.setCurrentIndex(1)
+    dialog.show()
+    application.processEvents()
+    assert dialog.nier_hotkey_labels.isVisible()
+    dialog.nier_hotkey_labels.setChecked(True)
+    assert workspace.selected_action.text() == "[A]dd selected"
+    assert workspace.skip_action.text() == "[S]kip selected"
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["nier_automata_hotkey_labels"]
+    artifact = ROOT / "cache/verification/export-refinement"
+    artifact.mkdir(parents=True, exist_ok=True)
+    dialog.grab().save(str(artifact / "dark-hotkey-label-setting.png"))
+    dialog.reject()
+    reopened = SettingsDialog(window)
+    assert reopened.nier_hotkey_labels.isChecked()
+    reopened.reject()
+    workspace.history().apply(ids[:1], True)
+    select_view(window, "Assigned")
+    window.library.setCurrentRow(0)
+    assert workspace.selected_action.text() == "[R]emove selected"
+    assert workspace.selected_action.toolTip().endswith(" · R")
+    dialog = SettingsDialog(window)
+    dialog.nier_hotkey_labels.setChecked(False)
+    assert workspace.selected_action.text() == "Remove selected"
+    dialog.reject()
+    assert not yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["nier_automata_hotkey_labels"]
+    # Export must preserve both the shared minimum width and a manually widened pane.
+    window.catalogue.enable_folder(window.catalogue.folders()[0]["folder_id"], True)
+    window.catalogue.patch(ids[0], {"triage": None})
+    window.catalogue.create_session([ids[0]])
+    window.refresh_references()
+    window.panel("Home")
+    application.processEvents()
+    window.splitter.setSizes([320, 1080])
+    application.processEvents()
+    width = window.left.width()
+    for pane in ("Browse", "Editing", "Export", "Home"):
+        window.panel(pane)
+        application.processEvents()
+        assert window.current_panel == pane
+        assert window.left.width() == width
+    window.splitter.setSizes([500, 870])
+    application.processEvents()
+    width = window.left.width()
+    for pane in ("Export", "Editing", "Browse", "Home"):
+        window.panel(pane)
+        application.processEvents()
+        assert window.current_panel == pane
+        assert window.left.width() == width
+    window.panel("Export")
+    workspace.dates_toggle.setChecked(True)
+    application.processEvents()
+    assert window.left.width() == width
+
+
+def test_dates_drawer_focus_geometry_and_no_automatic_retraction(window, application, tmp_path):
+    ids, project = seed_workspace(window, tmp_path, 2)
+    workspace = window.workspace
+    window.activateWindow()
+    assert test_ui.wait_for(application, window.isActiveWindow)
+    window.library.setFocus()
+    application.processEvents()
+    initial_size = workspace.dates_toggle.size()
+    initial_toolbar_height = workspace.controls.height()
+    for expanded in (True, False, True):
+        QTest.mouseClick(workspace.dates_toggle, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert workspace.dates_toggle.hasFocus()
+        assert workspace.dates_toggle.size() == initial_size
+        assert workspace.controls.height() == initial_toolbar_height
+        assert workspace.date_filters.isHidden() == (not expanded)
+    workspace.load_controls()
+    assert not workspace.date_filters.isHidden()
+    select_view(window, "Assigned")
+    assert not workspace.date_filters.isHidden()
+    workspace.from_date.setText("2000-1-1")
+    workspace.from_date.clear()
+    assert not workspace.date_filters.isHidden()
+    workspace.category.click()
+    assert not workspace.date_filters.isHidden()
+    workspace.readiness_buttons["Ready"].click()
+    assert not workspace.date_filters.isHidden()
+    workspace.dates_toggle.click()
+    assert workspace.date_filters.isHidden()
+
+
+def test_export_folder_structure_defaults_and_pointer_states(window, application, tmp_path, monkeypatch):
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.catalogue.batch_membership(project, ids, True)
+    dialog = ProjectExportDialog(window, project)
+    dialog.destination.setText(str(tmp_path / "out"))
+    dialog.show()
+    application.processEvents()
+    assert dialog.group_rating.isChecked() and not dialog.flat.isChecked()
+    assert dialog.group_rating.x() < dialog.flat.x()
+    artifact = ROOT / "cache/verification/project-export-dialog"
+    artifact.mkdir(parents=True, exist_ok=True)
+    for name, control in (("by-rating", dialog.group_rating), ("flat", dialog.flat)):
+        QTest.mousePress(control, Qt.MouseButton.LeftButton)
+        application.processEvents()
+        assert control.hasFocus() and control.isDown()
+        dialog.grab().save(str(artifact / f"dark-{name}-pressed.png"))
+        QTest.mouseRelease(control, Qt.MouseButton.LeftButton)
+        application.processEvents()
+    assert dialog.flat.isChecked() and not dialog.group_rating.isChecked()
+    monkeypatch.setattr(window, "add_export_job", lambda *_: None)
+    dialog.submit()
+    assert dialog.job_id
+    assert window.catalogue.export_jobs()[0]["manifest"]["items"][0]["directory"] == ""
+    assert not ProjectExportDialog(window, project).group_rating.isChecked()
+    assert normalized_preferences(
+        {"group_rating": False}, {"VALORANT"}, window.registry, ""
+    )["group_rating"] is False
