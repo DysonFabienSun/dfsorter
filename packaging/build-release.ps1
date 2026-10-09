@@ -27,9 +27,9 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'runtime/mpv/libmpv-2.dll'))) {
         & (Join-Path $root 'setup-playback.ps1') -NoProxy
     }
-    $ffmpegName = 'ffmpeg-n9.0.2-3-ga5923073bf-win64-gpl-9.0.zip'
-    $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-21-13-55/$ffmpegName"
-    $ffmpegHash = 'fe372180f20e7f9bfa3d9a481b2b1b98c8296178d8265552608736637ea6b3c8'
+    $ffmpegName = 'ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0.zip'
+    $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/$ffmpegName"
+    $ffmpegHash = 'a0e45723c72141975f51d8666302e614711745f3102b704ca3f82c897a58d278'
     $archive = Join-Path $root "cache/$ffmpegName"
     New-Item -ItemType Directory -Force (Split-Path $archive) | Out-Null
     if (-not (Test-Path -LiteralPath $archive)) { Invoke-WebRequest $ffmpegUrl -OutFile $archive }

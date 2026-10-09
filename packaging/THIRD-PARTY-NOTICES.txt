@@ -11,6 +11,6 @@ https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260903
 FFmpeg: this release uses the pinned BtbN Windows build identified in
 packaging/build-release.ps1. Archive license files are under licenses/ffmpeg/.
 Source and build details:
-https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-21-13-55
+https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08
 https://github.com/BtbN/FFmpeg-Builds
 https://github.com/FFmpeg/FFmpeg
