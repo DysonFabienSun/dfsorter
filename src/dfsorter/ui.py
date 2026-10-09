@@ -755,7 +755,7 @@ class Window(QMainWindow):
         self.session_header = QWidget()
         session_header_layout = QHBoxLayout(self.session_header)
         self.session_header.setObjectName("sessionHeader")
-        session_header_layout.setContentsMargins(12, 9, 8, 9)
+        session_header_layout.setContentsMargins(14, 5, 8, 9)
         self.session_heading = QLabel("Session clips")
         role(self.session_heading, "paneHeading")
         session_header_layout.addWidget(self.session_heading, 0, Qt.AlignmentFlag.AlignVCenter)

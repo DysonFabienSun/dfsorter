@@ -459,7 +459,7 @@ class ConfigEditor(QWidget):
         self.sidebar_header = QWidget(window.left)
         self.sidebar_header.setObjectName("configSidebarHeader")
         header_layout = QVBoxLayout(self.sidebar_header)
-        header_layout.setContentsMargins(8, 8, 8, 12)
+        header_layout.setContentsMargins(8, 6, 8, 12)
         header_layout.setSpacing(8)
         heading_row = QHBoxLayout()
         heading_row.setContentsMargins(6, 0, 0, 0)
