@@ -4069,22 +4069,29 @@ def test_pending_range_blocks_clip_and_session_changes(window, application, tmp_
     assert window.current_panel == "Home"
 
 
-def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch):
+@pytest.mark.parametrize("release_position", [1234, 1267])
+def test_scrub_coalesces_and_finishes_exactly(window, monkeypatch, release_position):
     player = window.player
     calls = []
     monkeypatch.setattr(player.media, "setPosition", calls.append)
     monkeypatch.setattr(player.media, "duration", lambda: 10000)
     player.seek.setMaximum(10000)
     player.begin_scrub()
+    assert player.seek_timer.isActive()
+    assert player.seek_timer.interval() == 50
     for position in range(1000, 1235):
         player.queue_seek(position)
     assert calls == []
     player.preview_seek()
-    assert calls == [1200]
-    player.seek.setSliderPosition(1234)
+    assert calls == [1234]
+    player.preview_seek()
+    assert calls == [1234]
+    player.queue_seek(release_position)
+    player.seek.setSliderPosition(release_position)
     player.end_scrub()
-    assert calls == [1200, 1234]
+    assert calls == [1234, release_position]
     assert not player.seek_timer.isActive()
+    assert player.pending_seek is None
 
 
 def test_page_reveal_waits_and_delays_indicator(window, application):

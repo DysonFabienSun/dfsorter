@@ -112,7 +112,7 @@ Completion requires implementation plus verification. `specs/dfsorter-specs-clea
 - [x] Review/input separation, Space tap/hold, seek shortcuts, per-run drafts, and shortcut help.
 - [x] Restrained navigation, elided clip rows, compact Lucide controls, star rating, title emphasis, and conditional tags.
 - [x] Collapsible Projects with normal/maximized defaults and per-run overrides; compact project and session actions.
-- [x] Native Qt video presentation, 20 Hz coalesced scrubbing, release seek, and colored range timeline.
+- [x] Native Qt video presentation, 20 Hz coalesced scrubbing, release seek, and colored range timeline. Drag previews retain the latest pointer timestamp without 100 ms rounding, removing the rounding-induced correction on release across all shared players. Two focused checks cover unchanged and newly moved release positions, seek coalescing and pending-seek cleanup.
 - [x] D3D11 hardware decoder selection verified for H.264 and AV1 on this machine; software fallback allowed.
 - [x] Real whole/range sharing, mixed stereo AAC, silent sources, NVIDIA encoding and x264 fallback, cancellation cleanup, source preservation, and collision handling.
 - [ ] Subjective native-video presentation, responsiveness, and mixed-audio balance acceptance with the user's capture library.

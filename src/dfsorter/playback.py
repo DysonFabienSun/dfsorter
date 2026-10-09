@@ -667,7 +667,7 @@ class Player(QWidget):
 
     def preview_seek(self):
         if self.pending_seek is not None:
-            self.seek_to((self.pending_seek // 100) * 100, preview=True)
+            self.seek_to(self.pending_seek, preview=True)
             self.pending_seek = None
 
     def end_scrub(self):
