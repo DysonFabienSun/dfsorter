@@ -7,7 +7,8 @@ Functionalities:
 - Live tracking of common recording folders (NVIDIA Shadowplay, Medal, OBS, etc.).
 - Interactive gallery of all tracked clips with hardware-accelerated video engine support.
 - Robust, editor-friendly clip triage system with ground-up-customizable tags and remarks.
-- Clip export options that automatically merge mic tracks and support custom trim settings.
+- Share whole clips or selected ranges as MP4 files with mixed audio tracks.
+- Assemble projects and export complete original files with configurable filenames and folder organization.
 - Portable software where all databases stay local on the machine, in the folder.
 
 ## Install
@@ -22,7 +23,7 @@ No Git, Python, `uv`, FFmpeg, or 7-Zip installation is required. An unsigned rel
 
 The portable app checks for updates once on each launch and prompts only when a newer release is available. To check manually, choose **Settings → Check for updates…**. After confirmation, DFSorter closes, updates its files, and reopens. Update backups are kept in `backups\updates\` inside the extracted folder.
 
-The catalogue, settings, and editable game definitions remain in that folder under `data\` and `configs\games\`. Updates preserve edited definitions; revised defaults appear in `configs\default-updates\`. Capture recordings stay in their original locations. To move or back up DFSorter, close it first and copy the whole extracted folder.
+The catalogue, settings, and editable game definitions remain in that folder under `data\` and `configs\games\`. Updates merge revised game defaults with local edits when the changes affect different settings. When both change the same setting, the local value is kept and the conflict is reported; incoming copies and conflict details appear in `configs\default-updates\`. Older installs without previous default files preserve edited definitions and offer incoming copies there for review. Capture recordings stay in their original locations. To move or back up DFSorter, close it first and copy the whole extracted folder.
 
 ## Quick Start
 
@@ -53,7 +54,13 @@ Editing is where clips in a Session are reviewed. Play the selected clip, enter 
 
 ### Projects
 
-Projects group clips for export. **Export** owns project creation, rename, deletion, assembly and output. Choose or create a project, collect through Editing auto-add or Available bulk actions, then refine the collection with independent search, verdict/game filters and inclusive capture-date bounds. Selections contain only members or only nonmembers. Add/Remove all matching includes offscreen results; removing more than 20 matching members asks for confirmation. All members sits beside the filter utilities; Dates reveals capture-date bounds. Selected-clip actions appear below the list, and both all-matching operations live in Bulk actions. Remove exceptions in Assigned, then return to Available and **Skip selected** nonmembers to hide those candidates for that project until restart. Add, remove and skip batches share one-step Undo/Redo. Add/remove and Undo/Redo clear selection; Skip selects the surviving preview. Optionally save In/Out ranges, Share a clip or open atomic **Edit clip…** and return. Inspect Assigned: Ready can export, Pending needs a verdict, Blocked needs repair, and Skipped means Discard members. **Export…** opens Destination, Filename format (with a live preview), and independent By rating / Flat folder organization, defaulting to By rating for new choices. The footer repeats Ready count and original-file size; resolve Pending and Blocked members before submission. Settings are remembered per project only after successful submission. Saved membership determines export scope regardless of selection, filters or temporary skips. Assembly preserves verdicts and never creates a Session. Project Export copies whole original video files; In/Out points affect preview and Share only and stay outside Export Undo/Redo.
+Projects group clips for export. **Export** owns project creation, rename, deletion, assembly and output. Choose or create a project, collect through Editing auto-add or **Available** bulk actions, then refine the collection in **Assigned**. Each view keeps its own search, game/verdict filters and sorting; inclusive capture-date bounds are shared between both views for the same project. **Dates** reveals those bounds. **Clear filters**, beside Assigned's search, clears search, game, verdict, date and readiness filters to show the complete project while preserving sort order.
+
+Selected-clip actions appear below the list; all-matching operations live in **Bulk actions** and include offscreen results. Removing more than 20 matching members asks for confirmation. Remove exceptions in Assigned, or use **Skip selected** in Available to hide nonmember candidates for that project until restart. Add, remove and skip batches share Undo/Redo. Add/remove and Undo/Redo clear selection; Skip selects the surviving preview. Right-click opens the pointed clip's menu without changing selection or preview. **Edit clip…** opens single-clip Editing, with Save or Revert returning to the originating view. In/Out ranges can be saved for preview and Share; range changes stay outside Export Undo/Redo.
+
+Readiness counters describe the whole project: **Ready** can export, **Pending** needs a verdict, **Blocked** needs repair, and **Skipped** means Discard members. Click a counter to inspect that category in Assigned. Resolve or remove Pending and Blocked members before export; temporary candidate skips do not affect readiness.
+
+**Export…** opens Destination, Filename format with a live preview, and independent **By rating / Flat** folder organization. Filename Rating and By rating folders default on for new choices; filename ratings and folder grouping can be changed independently. The footer shows Ready count and original-file size. Settings are remembered per project only after successful submission. Saved membership determines export scope regardless of selection, filters or temporary skips. Assembly preserves verdicts and never creates a Session. Project Export copies whole original video files; In/Out points affect preview and Share only.
 
 ### Configs
 
