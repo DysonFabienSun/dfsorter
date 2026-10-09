@@ -1,0 +1,15 @@
+name: Helldivers 2
+code: HD2
+command_example: 'squids diff:10 R4 -- last stand'
+aliases: [hd2, helldivers2]
+fields:
+  faction:
+    type: enum
+    values: [Illuminate, Terminids, Automatons]
+    aliases: {squid: Illuminate, squids: Illuminate, bugs: Terminids, bots: Automatons}
+  difficulty:
+    type: enum
+    prefixes: [diff]
+    values: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+display_order: [faction, difficulty, mainline]
+suggested_fields: [faction, difficulty]

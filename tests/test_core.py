@@ -45,6 +45,38 @@ def test_shipped_game_configs_have_no_collisions(registry):
     assert len(registry.games) == len(list(registry.directory.glob("*.yaml")))
 
 
+@pytest.mark.parametrize("alias,faction", [
+    ("squid", "Illuminate"), ("squids", "Illuminate"),
+    ("bugs", "Terminids"), ("bots", "Automatons"),
+])
+def test_helldivers_factions_and_difficulty(registry, alias, faction):
+    game = registry.game("Helldivers 2")
+    assert registry.resolve("hd2") == game.name
+    assert game.suggested_fields == ["faction", "difficulty"]
+    for difficulty in range(1, 11):
+        patch = parse_command(f"{alias} diff:{difficulty} R4", game.name, registry)
+        assert patch == {
+            "metadata": {"faction": faction, "difficulty": str(difficulty)}, "rating": 4,
+        }
+        assert title({"game": game.name, "source_path": "clip.mp4", **patch}, registry) == (
+            f"HD2_{faction.lower()} {difficulty}"
+        )
+    for difficulty in ("0", "11", "hard", "1.5"):
+        with pytest.raises(ValueError):
+            parse_command(f"diff:{difficulty}", game.name, registry)
+
+
+def test_wardogs_kill_config(registry):
+    game = registry.game("Wardogs")
+    assert registry.resolve("wd") == game.name
+    assert set(game.fields) == {"kill"}
+    patch = parse_command("3k R5 -- last stand", game.name, registry)
+    assert patch == {"metadata": {"kill": 3}, "rating": 5, "mainline": "last stand"}
+    assert title({"game": game.name, "source_path": "clip.mp4", **patch}, registry) == (
+        "WD_3k last stand"
+    )
+
+
 def test_delta_force_operations_config(registry):
     game = registry.game("Delta Force")
     assert registry.resolve("df") == game.name

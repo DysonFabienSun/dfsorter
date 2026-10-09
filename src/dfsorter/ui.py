@@ -19,7 +19,6 @@ import yaml
 from PySide6.QtCore import (
     QCoreApplication,
     QEvent,
-    QItemSelectionModel,
     QObject,
     QPoint,
     QRect,
@@ -1835,18 +1834,6 @@ class Window(QMainWindow):
         if item is None or self.current_panel == "Editing":
             return
         self.context_clip_id = item.data(Qt.ItemDataRole.UserRole)
-        if self.current_panel == "Home":
-            self.highlight_home_clip(item)
-        elif not item.isSelected():
-            if self.current_panel == "Export":
-                if not self.ensure_range_complete():
-                    return
-                self.library.clearSelection()
-                self.library.setCurrentItem(item, QItemSelectionModel.SelectionFlag.NoUpdate)
-            else:
-                self.library.setCurrentItem(item)
-                self.library.clearSelection()
-            item.setSelected(True)
         self.clip_context_menu.popup(self.library.viewport().mapToGlobal(position))
 
     def highlight_home_clip(self, item):

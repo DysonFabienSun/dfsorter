@@ -135,6 +135,18 @@ Typical fields include:
 - `weapon`, normally configured as a multi-value free-form field.
 - `map`
 
+### Helldivers 2
+
+- `faction`: Illuminate (`squid`, `squids`), Terminids (`bugs`), or Automatons (`bots`).
+- `difficulty`: numeric enum values 1 through 10, accepting the `diff` prefix.
+- Global ratings remain available. Faction and difficulty are suggested review fields.
+- Working titles use faction, difficulty and mainline; the engine's universal kill field is omitted from the title order.
+
+### Wardogs
+
+- `kill` is the only structured metadata field; global ratings remain available.
+- Working titles use kill and mainline, with no suggested review fields.
+
 These examples are defaults rather than a hard-coded universal schema. Game-specific fields are driven by YAML configuration.
 
 ---
@@ -828,7 +840,7 @@ Auto-add applies only when Editing explicitly changes a non-Keep verdict to Keep
 
 ### 13.9 Atomic single-clip Editing
 
-Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip, and right-click highlights the targeted card while opening its context menu. Double-clicking a Home or Session clip opens that clip in Browse. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
+Clip cards on Home, Browse, Session and Export expose **Edit clip…** in the shared pointer-targeted context menu. Right-click opens the clicked clip's menu without changing selection, current row, preview or Session position, including when the clicked clip is unselected. Empty list space, Config and Editing have no clip context menu. Home clip selection is visual only: left-click retains the targeted card's selected highlight without loading or otherwise acting on the clip. Double-clicking a Home or Session clip opens that clip in Browse. Atomic Editing retains the originating panel and displays exactly one clip. Its left header reads **Single clip**; Previous, Next and Next pending are disabled; **Add to project + Next** is hidden. Any active Session and its queue/index remain unchanged.
 
 Atomic Editing takes an immutable baseline snapshot of all editable clip fields and project memberships, then stages metadata commands, game, verdict, rating, tag, reset, In/Out range and membership Add/Remove operations in memory. Rendering, validation, title generation, markers, status, project membership and Share use that staged snapshot. Project creation, rename and deletion and permanent source deletion are unavailable. Undo/Redo reverses staged Editing actions in memory, including commands, individual I/O presses and membership changes. Native text-field undo remains available. Saving retains the staged action history for that clip; discarding drops the staged history.
 

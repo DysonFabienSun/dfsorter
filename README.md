@@ -67,7 +67,7 @@ For a backup or move, close DFSorter and copy the entire extracted folder. Back 
 
 ## Feedback
 
-Bug reports, feature suggestions, and recommendations are welcome through [GitHub Issues](https://github.com/DysonFabienSun/dfsorter/issues). A short description of what happened or what would be useful is enough to start a conversation. Thank you for helping improve DFSorter.
+Bug reports, feature suggestions, and recommendations are welcome through [GitHub Issues](https://github.com/DysonFabienSun/dfsorter/issues). A short description of what happened or what would be useful is enough to start a conversation. Thank you for helping improve DFSorter :O
 
 ## License
 

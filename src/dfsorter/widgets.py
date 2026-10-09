@@ -128,6 +128,9 @@ class ClipList(QListWidget):
         return super().selectionCommand(index, event)
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            event.accept()
+            return
         target = self.indexAt(event.position().toPoint())
         if (self.membership_selection and target.isValid() and target != self.currentIndex()
                 and self.preview_guard
@@ -135,6 +138,12 @@ class ClipList(QListWidget):
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
         if (self.membership_selection and self.preview_guard

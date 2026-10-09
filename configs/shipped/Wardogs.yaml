@@ -1,0 +1,8 @@
+name: Wardogs
+code: WD
+command_example: '3k R4 -- last stand'
+aliases: [wd]
+fields:
+  kill: {}
+display_order: [kill, mainline]
+suggested_fields: []

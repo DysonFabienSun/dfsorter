@@ -1129,6 +1129,53 @@ def test_assemble_300_paused_clips_and_undo(window, application, tmp_path, monke
     assert window.catalogue.state("session") is None
 
 
+@pytest.mark.parametrize("panel", ["Home", "Browse", "Session", "Export"])
+@pytest.mark.parametrize("selection", ["empty", "single", "multiple"])
+def test_clip_right_click_preserves_selection_and_preview(
+    window, application, tmp_path, monkeypatch, panel, selection
+):
+    ids, _project = seed_workspace(window, tmp_path, count=3)
+    window.catalogue.enable_folder(window.catalogue.folders()[0]["folder_id"], True)
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {"triage": None})
+    window.catalogue.create_session(ids)
+    if panel == "Export":
+        for clip_id in ids:
+            window.catalogue.patch(clip_id, {"triage": "keep"})
+    window.panel(panel)
+    window.refresh_library()
+    application.processEvents()
+    window.library.setCurrentRow(0)
+    window.library.clearSelection()
+    if selection != "empty":
+        window.library.item(0).setSelected(True)
+    if selection == "multiple":
+        window.library.item(1).setSelected(True)
+    selected = selected_ids(window)
+    current = window.library.currentItem()
+    preview = window.current_id
+    session = window.catalogue.state("session")
+    target = window.library.item(2)
+    assert target is not None
+    window.library.scrollToItem(target)
+    application.processEvents()
+    position = window.library.visualItemRect(target).center()
+    popups = []
+    monkeypatch.setattr(window.clip_context_menu, "popup", popups.append)
+    monkeypatch.setattr(
+        window.library, "preview_guard",
+        lambda *_: pytest.fail("Right-click attempted to change the preview"),
+    )
+    QTest.mouseClick(window.library.viewport(), Qt.MouseButton.RightButton, pos=position)
+    window.show_clip_context_menu(position)
+    assert popups
+    assert window.context_clip_id == target.data(Qt.ItemDataRole.UserRole)
+    assert window.library.currentItem() is current
+    assert selected_ids(window) == selected
+    assert window.current_id == preview
+    assert window.catalogue.state("session") == session
+
+
 def test_selection_preview_filters_and_atomic_return(window, application, tmp_path, monkeypatch):
     ids, project = seed_workspace(window, tmp_path)
     workspace = window.workspace
