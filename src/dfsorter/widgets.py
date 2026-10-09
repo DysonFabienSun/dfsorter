@@ -640,6 +640,12 @@ class MiddleElideComboBox(QComboBox):
     def paintEvent(self, event):
         option = QStyleOptionComboBox()
         self.initStyleOption(option)
+        if self.currentIndex() < 0 and self.placeholderText():
+            option.currentText = self.placeholderText()
+            option.palette.setBrush(
+                QPalette.ColorRole.ButtonText,
+                option.palette.brush(QPalette.ColorRole.PlaceholderText),
+            )
         rect = self.style().subControlRect(
             QStyle.ComplexControl.CC_ComboBox, option,
             QStyle.SubControl.SC_ComboBoxEditField, self,

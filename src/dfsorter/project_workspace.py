@@ -28,6 +28,8 @@ from .project_summary import SIZE_EXPLANATION, project_readiness, ready_source_b
 from .theme import role
 from .widgets import CLIP_ROLE, MiddleElideComboBox, TrailingIconButton, set_icon, storage_gb, tool
 
+NEW_PROJECT = "__new_project__"
+
 
 @dataclass
 class WorkspaceView:
@@ -164,8 +166,8 @@ class MembershipHistory:
 class ProjectWorkspace:
     def __init__(self, window, layout):
         self.window = window
-        self.project_id = window.catalogue.state("workspace_project")
-        self.view = "Assigned" if self.project_id else "Available"
+        self.project_id = None
+        self.view = "Available"
         self.states = {}
         self.project_views = {}
         self.histories = {}
@@ -307,6 +309,7 @@ class ProjectWorkspace:
         self.selector = MiddleElideComboBox()
         role(self.selector, "projectIdentity")
         self.selector.setAccessibleName("Workspace project")
+        self.selector.setPlaceholderText("Choose project…")
         self.selector.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
@@ -314,8 +317,6 @@ class ProjectWorkspace:
         row.addWidget(self.selector, 1)
         self.more = QPushButton("More")
         menu = QMenu(self.more)
-        self.new_action = menu.addAction("New project…", window.new_project)
-        menu.addSeparator()
         self.rename_action = menu.addAction("Rename…", window.rename_project)
         self.delete_action = menu.addAction("Delete…", window.delete_project)
         self.more.setMenu(menu)
@@ -323,10 +324,6 @@ class ProjectWorkspace:
         self.help_button = tool("circle-help", "Project assembly and export guide", self.show_guide)
         row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(row)
-        self.empty = QLabel("Choose a project or create a new project to assemble clips.")
-        self.empty.setWordWrap(True)
-        role(self.empty, "secondary")
-        layout.addWidget(self.empty)
         row = QHBoxLayout()
         self.readiness_buttons = {}
         for name in ("Ready", "Pending", "Blocked", "Skipped"):
@@ -401,6 +398,7 @@ class ProjectWorkspace:
             lambda _: self.switch_view(self.views.currentData())
         )
         self.selector.currentIndexChanged.connect(self.switch_project)
+        self.selector.activated.connect(self.activate_project)
         for control in (self.search, self.from_date, self.through_date):
             control.textChanged.connect(self.filters_changed)
         for control in (self.game, self.verdict, self.sort):
@@ -412,9 +410,9 @@ class ProjectWorkspace:
             self.window,
             "Project assembly and export",
             "1. Choose a project and collect clips\n"
-            "Select an existing project or use More → New project… to create one. "
+            "Select an existing project or use New project… at the end of the project list to create one. "
             "Collect through Editing’s Projects auto-add or bulk actions in Available. "
-            "More also contains Rename and Delete.\n\n"
+            "More contains Rename and Delete.\n\n"
             "2. Refine candidates in Available\n"
             "Search, game and verdict filters narrow the results; Dates reveals capture-date filters. "
             "Available hides saved members. Add selected collects nonmembers; "
@@ -489,11 +487,11 @@ class ProjectWorkspace:
         if self.project_id not in {project["project_id"] for project in projects}:
             self.project_id = None
         self.selector.clear()
-        self.selector.addItem("Choose project", None)
         for project in projects:
             self.selector.addItem(project["name"], project["project_id"])
             self.selector.setItemData(self.selector.count() - 1, project["name"], Qt.ItemDataRole.ToolTipRole)
-        self.selector.setCurrentIndex(max(0, self.selector.findData(self.project_id)))
+        self.selector.addItem("New project…", NEW_PROJECT)
+        self.selector.setCurrentIndex(self.selector.findData(self.project_id))
         self.game.clear()
         self.game.addItem("All games", None)
         self.game.addItem("Uncategorized", "")
@@ -516,9 +514,11 @@ class ProjectWorkspace:
     def switch_project(self, *_):
         if self.loading:
             return
+        if self.selector.currentData() == NEW_PROJECT:
+            return
         if not self.window.ensure_range_complete():
             self.loading = True
-            self.selector.setCurrentIndex(max(0, self.selector.findData(self.project_id)))
+            self.selector.setCurrentIndex(self.selector.findData(self.project_id))
             self.loading = False
             return
         self.remember()
@@ -527,14 +527,20 @@ class ProjectWorkspace:
         self.view = self.project_views.get(
             self.project_id, "Assigned" if self.project_id else "Available"
         )
-        self.window.catalogue.set_state("workspace_project", self.project_id)
         self.load_controls()
         self.refresh(restore=True)
+
+    def activate_project(self, index):
+        if self.selector.itemData(index) == NEW_PROJECT:
+            self.loading = True
+            self.selector.setCurrentIndex(self.selector.findData(self.project_id))
+            self.loading = False
+            self.window.new_project()
 
     def select_project(self, project_id, *, new=False):
         if new:
             self.project_views[project_id] = "Available"
-        self.selector.setCurrentIndex(max(0, self.selector.findData(project_id)))
+        self.selector.setCurrentIndex(self.selector.findData(project_id))
 
     def switch_view(self, view, *, deselect=False):
         if self.loading:
@@ -692,6 +698,8 @@ class ProjectWorkspace:
         if not self.window.ensure_range_complete():
             self.update_readiness_selection()
             return
+        if self.view == "Assigned" and self.state.readiness == category:
+            category = None
         self.remember()
         self.set_date_bounds("", "")
         self.view = "Assigned"
@@ -736,7 +744,6 @@ class ProjectWorkspace:
         self.update_export_size(clips)
         self.rename_action.setEnabled(bool(self.project_id))
         self.delete_action.setEnabled(bool(self.project_id))
-        self.empty.setVisible(not self.project_id)
         self.update_view_counts(clips)
 
     def update_export_size(self, clips):

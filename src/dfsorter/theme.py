@@ -468,6 +468,8 @@ def stylesheet():
         QWidget[role="success"] { color: %(status_success)s; }
         QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled { background: %(surface_subtle)s; border-color: %(border_subtle)s; color: %(text_disabled)s; }
         QToolButton:disabled { background: transparent; border-color: transparent; }
+        QPushButton[role="statusCounter"]:disabled,
+        QPushButton[role="statusCounter"][statusEmphasis]:disabled { background: transparent; border: 1px solid transparent; padding: 1px 4px; color: %(text_disabled)s; }
         QPushButton[shareCompleted="true"], QToolButton[shareCompleted="true"] { background: %(status_success_soft)s; color: %(status_success)s; border: 1px solid %(status_success)s; }
         QLabel:disabled, QMenu::item:disabled, QMenuBar::item:disabled { color: %(text_disabled)s; }
         """

@@ -19,6 +19,7 @@ import yaml
 from PySide6.QtCore import (
     QCoreApplication,
     QEvent,
+    QLockFile,
     QObject,
     QPoint,
     QRect,
@@ -5520,6 +5521,10 @@ def main():
     import PySide6
 
     (ROOT / "data").mkdir(exist_ok=True)
+    instance_lock = QLockFile(str(ROOT / "data/dfsorter.lock"))
+    instance_lock.setStaleLockTime(0)
+    if not instance_lock.tryLock(0):
+        return 0
     config_notices = prepare_game_configs()
     prepare_tip_configs()
     logging.basicConfig(
@@ -5551,7 +5556,10 @@ def main():
                 + "\n\nDetails: configs/default-updates/merge-conflicts.txt",
             ),
         )
-    return application.exec()
+    try:
+        return application.exec()
+    finally:
+        instance_lock.unlock()
 
 
 if __name__ == "__main__":

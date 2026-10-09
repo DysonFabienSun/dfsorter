@@ -36,6 +36,88 @@ application = test_ui.application
 window = test_ui.window
 
 
+def test_project_placeholder_and_disabled_counters_render(window, application):
+    window.set_theme("dark")
+    window.panel("Export")
+    application.processEvents()
+    workspace = window.workspace
+    selector = workspace.selector
+    assert selector.currentIndex() == -1
+    placeholder = selector.grab().toImage()
+    selector.setPlaceholderText("")
+    empty = selector.grab().toImage()
+    selector.setPlaceholderText("Choose project…")
+    assert placeholder != empty
+    for button in workspace.readiness_buttons.values():
+        assert not button.isEnabled()
+        for emphasis in ("muted", "ready", "warning", "error"):
+            button.setProperty("statusEmphasis", emphasis)
+            button.setChecked(True)
+            button.style().unpolish(button)
+            button.style().polish(button)
+            image = button.grab().toImage()
+            background = image.pixelColor(0, 0)
+            assert image.pixelColor(image.width() // 2, 0) == background
+            assert image.pixelColor(0, image.height() // 2) == background
+            assert button.palette().color(button.foregroundRole()) == QColor(COLORS["text_disabled"])
+
+
+def test_project_chooser_startup_and_creation_cancellation(window, tmp_path, monkeypatch):
+    window.set_theme("dark")
+    workspace = window.workspace
+    assert workspace.selector.currentIndex() == -1
+    assert workspace.selector.placeholderText() == "Choose project…"
+    assert workspace.selector.count() == 1
+    _, project = seed_workspace(window, tmp_path, 1)
+    window.catalogue.set_state("workspace_project", project)
+    from dfsorter.project_workspace import ProjectWorkspace
+
+    original_init = ProjectWorkspace.__init__
+    observed = []
+
+    def observe_startup(self, *args):
+        original_init(self, *args)
+        observed.append(self.project_id)
+
+    monkeypatch.setattr(ProjectWorkspace, "__init__", observe_startup)
+    restarted = Window(tmp_path)
+    try:
+        assert observed == [None]
+        assert restarted.workspace.selector.currentIndex() == -1
+    finally:
+        restarted.close()
+        restarted.deleteLater()
+    selector = workspace.selector
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("", False))
+    index = selector.count() - 1
+    selector.setCurrentIndex(index)
+    selector.activated.emit(index)
+    assert workspace.project_id == project
+    assert selector.currentData() == project
+    workspace.select_project(None)
+    selector.setCurrentIndex(index)
+    selector.activated.emit(index)
+    assert workspace.project_id is None
+    assert selector.currentIndex() == -1
+
+
+@pytest.mark.parametrize("category", ["Ready", "Pending", "Blocked", "Skipped"])
+def test_readiness_second_click_clears_category(window, tmp_path, category):
+    window.set_theme("dark")
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.catalogue.batch_membership(project, ids, True)
+    workspace = window.workspace
+    workspace.refresh()
+    button = workspace.readiness_buttons[category]
+    button.click()
+    assert workspace.state.readiness == category
+    assert button.isChecked()
+    button.click()
+    assert workspace.state.readiness is None
+    assert not any(control.isChecked() for control in workspace.readiness_buttons.values())
+    assert [clip["clip_id"] for clip in workspace.clips] == ids
+
+
 def test_v8_migration_preserves_catalogue_and_jobs(catalogue, clips):
     project = catalogue.save_project("Existing")
     catalogue.batch_membership(project, [clips[0]["clip_id"]], True)
@@ -152,7 +234,13 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     window.auto_collect_enabled = True
     window.update_collection_controls()
     monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("New", True))
-    window.new_project()
+    selector = window.workspace.selector
+    new_index = selector.count() - 1
+    assert selector.itemText(new_index) == "New project…"
+    selector.setFocus()
+    selector.showPopup()
+    QTest.keyClick(selector.view(), Qt.Key.Key_End)
+    QTest.keyClick(selector.view(), Qt.Key.Key_Return)
     created = window.workspace.project_id
     assert created != original
     assert window.workspace.view == "Available"
@@ -1711,7 +1799,10 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
                            - workspace.search.geometry().center().y()) <= 1
             assert workspace.list_footer.y() > window.library.y()
             assert workspace.matching_action in workspace.bulk_actions.menu().actions()
-            assert workspace.new_action in workspace.more.menu().actions()
+            assert workspace.selector.itemText(workspace.selector.count() - 1) == "New project…"
+            assert [action.text() for action in workspace.more.menu().actions()] == [
+                "Rename…", "Delete…"
+            ]
             assert workspace.views.geometry().right() < workspace.unavailable.x()
             assert abs(workspace.views.geometry().center().y()
                        - workspace.unavailable.geometry().center().y()) <= 1
@@ -1783,7 +1874,7 @@ def test_export_refined_filters_and_contextual_actions(window, application, tmp_
     assert workspace.list_footer.isHidden()
     window.panel("Export")
     workspace.select_project(None)
-    assert workspace.more.isEnabled() and workspace.new_action.isEnabled()
+    assert workspace.more.isEnabled() and workspace.selector.isEnabled()
     assert not workspace.rename_action.isEnabled() and not workspace.delete_action.isEnabled()
 
 
