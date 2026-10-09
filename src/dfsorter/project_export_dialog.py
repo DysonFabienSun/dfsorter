@@ -22,8 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .config import title
-from .output import check_destination, prepare_export_manifest, safe_stem
+from .output import check_destination, export_title, prepare_export_manifest, safe_stem
 from .theme import role
 from .widgets import UNDERLINE_ROLE, FlowLayout, UnderlinedComboBox
 
@@ -48,6 +47,7 @@ def normalized_preferences(saved, games, registry, fallback_destination):
         }
     options.setdefault("destination", fallback_destination)
     options.setdefault("group_rating", False)
+    options.setdefault("include_rating", True)
     return options
 
 
@@ -107,6 +107,10 @@ class ProjectExportDialog(QDialog):
         self.field_layout.setContentsMargins(12, 12, 12, 12)
         self.field_layout.setSpacing(8)
         body.addWidget(self.fields)
+        self.include_rating = QCheckBox("Include rating in filename")
+        self.include_rating.setChecked(self.options["include_rating"])
+        self.include_rating.toggled.connect(self.toggle_rating)
+        body.addWidget(self.include_rating)
         self.group_rating = QCheckBox("Group by Rating")
         self.group_rating.setChecked(self.options["group_rating"])
         body.addWidget(self.group_rating)
@@ -165,6 +169,10 @@ class ProjectExportDialog(QDialog):
             control.toggled.connect(toggle)
             flow.addWidget(control)
 
+    def toggle_rating(self, checked):
+        self.options["include_rating"] = checked
+        self.refresh_game_labels()
+
     def refresh_game_labels(self):
         for index in range(self.game.count()):
             name = self.game.itemData(index)
@@ -172,9 +180,10 @@ class ProjectExportDialog(QDialog):
             clip = self.examples[name]
             options = self.options["formats"][name]
             spans = []
-            stem = safe_stem(title(
+            stem = safe_stem(export_title(
                 clip, self.window.registry, options["fields"], options["prefix"],
                 lowercase=self.window.settings.get("lowercase_generated_titles", True),
+                include_rating=self.options["include_rating"],
                 text_spans=spans,
             ), text_spans=spans)
             filename = stem + Path(clip["source_path"]).suffix
@@ -231,6 +240,7 @@ class ProjectExportDialog(QDialog):
                 options["formats"],
                 options["group_rating"],
                 lowercase=lowercase,
+                include_rating=options["include_rating"],
                 defer_validation=True,
             )
             manifest["project_name"] = self.project["name"]
@@ -238,6 +248,7 @@ class ProjectExportDialog(QDialog):
                 "project_id": self.project_id,
                 "formats": options["formats"],
                 "group_rating": options["group_rating"],
+                "include_rating": options["include_rating"],
                 "lowercase": lowercase,
             }
             job_id = str(uuid4())

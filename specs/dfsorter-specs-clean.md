@@ -916,7 +916,7 @@ Readiness counts always describe the whole project: **Ready** means Keep passing
 
 Immediately left of **Export…**, show **Estimated export: N.NN GB** for the total current original-file size of all Ready members in the selected project. Use binary GB (2³⁰ = 1,073,741,824 bytes), defined in the tooltip, and two decimal places. Exclude Pending, Blocked and Discard members. Selection, list filters, temporary skips and In/Out ranges do not change this estimate. Refresh with project readiness and membership changes. An empty project shows 0.00 GB; without a project or if a Ready source size cannot be read, show an em dash instead of a numeric size and explain it in the tooltip. Job validation still rejects blockers before any copies are made.
 
-The dialog opens with that project's last successfully submitted choices. Without saved choices, use the application's last export folder, current game display orders, enabled prefixes and Group by Rating off. Omit removed fields, normalize choices to current display orders, and give newly encountered games their current defaults. Title casing remains the application preference and is frozen in the submitted job.
+The dialog opens with that project's last successfully submitted choices. Without saved choices, use the application's last export folder, current game display orders, enabled prefixes, Include rating in filename on and Group by Rating off. Existing project preferences without a filename-rating choice also default to on. Omit removed fields, normalize choices to current display orders, and give newly encountered games their current defaults. Title casing remains the application preference and is frozen in the submitted job.
 
 On submission, verify current project membership and destination, freeze filename choices, source identities and any eligibility errors through the existing engine, and atomically record the queued job with project preferences before dispatch. A changed input snapshot or failed transaction saves neither. Preferences survive later job failure/cancellation; frozen jobs ignore subsequent project, metadata, preference and game-configuration changes. Keep the existing output concurrency, collision handling, whole-file copies, cancellation cleanup and verified Resume behavior.
 
@@ -945,6 +945,8 @@ The user may independently choose whether to include:
 - `mainline`.
 
 Selected fields follow the game's YAML `display_order`.
+
+Project Export offers an independent **Include rating in filename** checkbox, enabled by default and remembered per project only after successful submission. When enabled, insert `r1` through `r5` immediately after the game-code prefix, followed by a space before the selected fields or original-filename fallback; for example, `VAL_r5 jett clutch.mp4`. With the prefix disabled, the rating starts the filename. Unrated clips add no token. The token follows generated-title casing (`R5` when lowercase is disabled). Live examples use the same naming logic, and submitted jobs freeze the result. Group by Rating remains independent. Working titles and Share filenames are unchanged.
 
 `description` is not included in generated filenames.
 

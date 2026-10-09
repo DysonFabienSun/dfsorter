@@ -764,6 +764,48 @@ def test_grouped_export_rating_folder_names(catalogue, clips, registry, tmp_path
     result = run_export_manifest(catalogue, "rating-folders")
     assert result.error is None
     assert Path(result.completed[0]).parent == tmp_path / "output" / folder
+    token = f"r{rating} " if rating is not None else ""
+    assert Path(result.completed[0]).stem == f"VAL_{token}example"
+
+
+@pytest.mark.parametrize("prefix, lowercase, include_rating", [
+    (True, True, True), (False, True, True), (True, False, True),
+    (True, True, False),
+])
+def test_export_rating_filename_choices(catalogue, clips, registry, tmp_path,
+                                       monkeypatch, prefix, lowercase, include_rating):
+    catalogue.patch(clips[0]["clip_id"], {
+        "triage": "keep", "mainline": "Highlight", "rating": 5,
+    })
+    clip = catalogue.clip(clips[0]["clip_id"])
+    before = deepcopy(clip)
+    formats = {"VALORANT": {"fields": ["mainline"], "prefix": prefix}}
+    expected = ("VAL_" if prefix else "")
+    expected += ("r5 " if lowercase else "R5 ") if include_rating else ""
+    expected += "highlight" if lowercase else "Highlight"
+    manifest = prepare_export_manifest(
+        [clip], registry, tmp_path / "queued", catalogue.folders(), formats,
+        lowercase=lowercase, include_rating=include_rating,
+    )
+    assert manifest["items"][0]["stem"] == expected
+    result = export_project(
+        [clip], registry, tmp_path / "direct", catalogue.folders(), formats,
+        lowercase=lowercase, include_rating=include_rating,
+    )
+    assert result.error is None
+    assert Path(result.completed[0]).stem == expected
+    assert Path(result.completed[0]).read_bytes() == Path(clip["source_path"]).read_bytes()
+    assert title(clip, registry, ["mainline"], prefix, lowercase=lowercase) == (
+        ("VAL_" if prefix else "") + ("highlight" if lowercase else "Highlight")
+    )
+    received = []
+    monkeypatch.setattr(
+        "dfsorter.sharing.encode_share", lambda c, d, stem, *args: received.append(stem)
+    )
+    share_clip(clip, registry, tmp_path / "share", [], fields=["mainline"],
+               prefix=prefix, lowercase=lowercase)
+    assert received == [("VAL_" if prefix else "") + ("highlight" if lowercase else "Highlight")]
+    assert clip == before == catalogue.clip(clip["clip_id"])
 
 
 def test_export_minimum_metadata_and_yaml_suggestions(catalogue, clips, registry):

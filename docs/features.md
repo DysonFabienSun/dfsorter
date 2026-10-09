@@ -1,3 +1,8 @@
+# Export filename ratings
+
+- [x] Project Export includes rating tokens after the game prefix by default, with a per-project checkbox and matching live examples. Tokens follow the existing casing preference; unrated clips omit them. Prefix-free and original-filename fallback outputs retain ratings. Group by Rating remains independent, and Share and working titles retain their existing naming.
+- [x] Focused checks cover R1–R5/unrated whole-file output, casing, prefix and opt-out choices, preview underlining, cancel/save behavior and frozen jobs. Light and Dark setup captures were inspected.
+
 # Export collection and player refinements
 
 - [x] Group by Rating exports use R1–R5 and lowercase unrated folders.

@@ -1245,6 +1245,43 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
 
 
 @pytest.mark.parametrize("prefix", [False, True])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_export_rating_preview(window, application, tmp_path, prefix, theme):
+    ids, project = seed_workspace(window, tmp_path, 1)
+    window.set_theme(theme, persist=False)
+    window.settings["lowercase_generated_titles"] = theme == "light"
+    window.catalogue.patch(ids[0], {"rating": 4, "mainline": "Clutch: Win?"})
+    window.catalogue.batch_membership(project, ids, True)
+    dialog = ProjectExportDialog(window, project)
+    dialog.field_layout.itemAt(0).widget().setChecked(prefix)
+    clip = window.catalogue.clip(ids[0])
+    for included in (True, False):
+        dialog.include_rating.setChecked(included)
+        manifest = prepare_export_manifest(
+            [clip], window.registry, tmp_path / "output", window.catalogue.folders(),
+            dialog.options["formats"], include_rating=included,
+            lowercase=theme == "light",
+        )
+        assert dialog.game.currentText() == f"VAL · {manifest['items'][0]['stem']}.mp4"
+        spans = dialog.game.currentData(UNDERLINE_ROLE)
+        assert [dialog.game.currentText()[start:start + length] for start, length in spans] == [
+            "clutch_ win_" if theme == "light" else "Clutch_ Win_"
+        ]
+    dialog.include_rating.setChecked(True)
+    for control in dialog.field_layout.itemAt(1).widget().findChildren(QCheckBox):
+        control.setChecked(False)
+    token = "r4" if theme == "light" else "R4"
+    assert dialog.game.currentText() == f"VAL · {'VAL_' if prefix else ''}{token} clip-000.mp4"
+    assert not dialog.game.currentData(UNDERLINE_ROLE)
+    dialog.show()
+    application.processEvents()
+    artifact = ROOT / "cache/verification/export-rating"
+    artifact.mkdir(parents=True, exist_ok=True)
+    dialog.grab().save(str(artifact / f"{theme}-{prefix}.png"))
+    dialog.reject()
+
+
+@pytest.mark.parametrize("prefix", [False, True])
 def test_export_preview_tracks_mainline_through_sanitizing_and_custom_order(
     window, tmp_path, prefix
 ):
@@ -1264,11 +1301,15 @@ def test_export_preview_tracks_mainline_through_sanitizing_and_custom_order(
     dialog.reject()
 
 
-def test_export_dialog_isolation_blockers_cancel_and_enqueue(window, tmp_path, monkeypatch):
+@pytest.mark.parametrize("include_rating", [False, True])
+def test_export_dialog_isolation_blockers_cancel_and_enqueue(
+    window, tmp_path, monkeypatch, include_rating
+):
     ids, project = seed_workspace(window, tmp_path, 3)
     window.catalogue.batch_membership(project, ids, True)
     window.catalogue.patch(ids[1], {"triage": None})
     window.catalogue.patch(ids[2], {"triage": "discard"})
+    window.catalogue.patch(ids[0], {"rating": 5})
     window.workspace.refresh()
     assert window.export_button.isEnabled()
     dialog = ProjectExportDialog(window, project)
@@ -1276,23 +1317,31 @@ def test_export_dialog_isolation_blockers_cancel_and_enqueue(window, tmp_path, m
     assert dialog.submit_button.isEnabled()
     assert not hasattr(dialog, "details") and not hasattr(dialog, "readiness")
     dialog.group_rating.setChecked(True)
+    assert dialog.include_rating.isChecked()
+    dialog.include_rating.setChecked(False)
     dialog.reject()
     assert window.catalogue.projects()[0]["output_preferences"] == {}
     assert not window.catalogue.export_jobs()
     window.catalogue.patch(ids[1], {"triage": "discard"})
     dialog = ProjectExportDialog(window, project)
     assert not dialog.group_rating.isChecked()
+    assert dialog.include_rating.isChecked()
     dialog.destination.setText(str(tmp_path / "out"))
     dialog.group_rating.setChecked(True)
+    dialog.include_rating.setChecked(include_rating)
     monkeypatch.setattr(window, "add_export_job", lambda *args: None)
     dialog.submit()
     assert dialog.job_id
     record = window.catalogue.export_jobs()[0]
     assert len(record["manifest"]["items"]) == 1
+    assert ("r5 " in record["manifest"]["items"][0]["stem"]) == include_rating
+    assert record["manifest"]["choices"]["include_rating"] == include_rating
+    assert ProjectExportDialog(window, project).include_rating.isChecked() == include_rating
     assert ProjectExportDialog(window, project).group_rating.isChecked()
     other = window.catalogue.save_project("Other")
     assert not ProjectExportDialog(window, other).group_rating.isChecked()
-    window.catalogue.patch(ids[0], {"mainline": "Later"})
+    assert ProjectExportDialog(window, other).include_rating.isChecked()
+    window.catalogue.patch(ids[0], {"mainline": "Later", "rating": 1})
     assert window.catalogue.export_jobs()[0]["manifest"] == record["manifest"]
     for clip in window.catalogue.clips():
         assert Path(clip["source_path"]).read_bytes() == b"original"
@@ -1411,6 +1460,11 @@ def test_filename_preferences_normalize_without_mutation(registry):
         result["formats"]["Apex Legends"]["fields"] == registry.game("Apex Legends").display_order
     )
     assert saved["formats"]["VALORANT"]["fields"] == ["agent", "removed"]
+    assert result["include_rating"] is True
+    assert "include_rating" not in saved
+    assert normalized_preferences(
+        {**saved, "include_rating": False}, {"VALORANT"}, registry, "last-folder"
+    )["include_rating"] is False
 
 
 def test_workspace_project_view_state_and_readiness(window, application, tmp_path):

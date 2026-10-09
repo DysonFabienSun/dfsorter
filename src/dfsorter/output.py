@@ -36,6 +36,22 @@ def safe_stem(value: str, *, text_spans=None) -> str:
     return value
 
 
+def export_title(clip, registry, selected=None, prefix=True, *, lowercase=True,
+                 include_rating=True, text_spans=None):
+    """Generate an export title with an optional rating after the game prefix."""
+    value = title(clip, registry, selected, prefix, lowercase=lowercase,
+                  text_spans=text_spans)
+    if include_rating and clip.get("rating") is not None:
+        game = registry.game(clip.get("game"))
+        offset = len(game.code) + 1 if game and prefix else 0
+        token = f"{'r' if lowercase else 'R'}{clip['rating']} "
+        value = value[:offset] + token + value[offset:]
+        if text_spans is not None:
+            text_spans[:] = [(role, start + len(token), length)
+                             for role, start, length in text_spans]
+    return value
+
+
 def validate(clips, registry):
     errors = []
     for clip in clips:
@@ -126,6 +142,7 @@ def export_project(
     progress=lambda text: None,
     *,
     lowercase=True,
+    include_rating=True,
 ):
     errors = validate(clips, registry)
     if errors:
@@ -136,8 +153,9 @@ def export_project(
         if clip["triage"] != "keep":
             continue
         options = (formats or {}).get(clip["game"], {})
-        stem = title(
-            clip, registry, options.get("fields"), options.get("prefix", True), lowercase=lowercase
+        stem = export_title(
+            clip, registry, options.get("fields"), options.get("prefix", True),
+            lowercase=lowercase, include_rating=include_rating,
         )
         directory = destination
         if group_rating:
@@ -153,7 +171,8 @@ def export_project(
 
 
 def prepare_export_manifest(clips, registry, destination, folders, formats=None,
-                            group_rating=False, *, lowercase=True, defer_validation=False):
+                            group_rating=False, *, lowercase=True, include_rating=True,
+                            defer_validation=False):
     """Freeze export choices, optionally recording eligibility failures for the queued job."""
     errors = validate(clips, registry)
     if errors and not defer_validation:
@@ -173,9 +192,9 @@ def prepare_export_manifest(clips, registry, destination, folders, formats=None,
             if not any(clip_id == clip["clip_id"] for clip_id, _ in errors):
                 errors.append((clip["clip_id"], f"{source.name}: {error}"))
         options = (formats or {}).get(clip["game"], {})
-        name = safe_stem(title(
+        name = safe_stem(export_title(
             clip, registry, options.get("fields"), options.get("prefix", True),
-            lowercase=lowercase,
+            lowercase=lowercase, include_rating=include_rating,
         ))
         directory = (
             f"R{clip['rating']}" if clip["rating"] else "unrated"
