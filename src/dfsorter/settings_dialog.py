@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from .playback import playback_start_settings, start_offset_seconds
+from .release_update import DEFAULT_DOWNLOAD_SOURCE, DOWNLOAD_SOURCES, download_source
 from .share_profiles import SHARE_QUALITY_CHOICES, share_quality
 from .theme import font, role
 
@@ -161,6 +162,29 @@ class SettingsDialog(QDialog):
         share_layout.addWidget(share_explanation)
         self.share_quality.currentIndexChanged.connect(self.save_share_preference)
         preferences.addWidget(share_group)
+        updates_group, updates_layout = self.preference_group("Updates")
+        source_row = QHBoxLayout()
+        source_label = QLabel("Download source:")
+        self.update_download_source = QComboBox()
+        for label, value in DOWNLOAD_SOURCES:
+            self.update_download_source.addItem(label, value)
+        self.update_download_source.setCurrentIndex(self.update_download_source.findData(
+            download_source(window.settings.get("update_download_source", DEFAULT_DOWNLOAD_SOURCE))
+        ))
+        source_label.setBuddy(self.update_download_source)
+        source_row.addWidget(source_label)
+        source_row.addWidget(self.update_download_source)
+        source_row.addStretch()
+        updates_layout.addLayout(source_row)
+        updates_description = QLabel(
+            "gh-proxy.org mirrors release ZIP downloads. Version checks use GitHub. "
+            "Downloaded ZIPs are verified against GitHub's SHA-256 digest."
+        )
+        updates_description.setWordWrap(True)
+        role(updates_description, "secondary")
+        updates_layout.addWidget(updates_description)
+        self.update_download_source.currentIndexChanged.connect(self.save_update_source)
+        preferences.addWidget(updates_group)
         preferences.addStretch()
         self.start_near_end.toggled.connect(self.save_playback_preferences)
         self.start_offset.valueChanged.connect(self.save_playback_preferences)
@@ -251,6 +275,10 @@ class SettingsDialog(QDialog):
 
     def save_share_preference(self):
         self.window.settings["share_quality"] = self.share_quality.currentData()
+        self.window.save_settings()
+
+    def save_update_source(self):
+        self.window.settings["update_download_source"] = self.update_download_source.currentData()
         self.window.save_settings()
 
     def save_playback_preferences(self):

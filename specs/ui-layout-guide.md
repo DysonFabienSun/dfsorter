@@ -153,6 +153,8 @@ text and icons.
 
 General's Share group uses an **Output quality:** label and ordinary noneditable select box in the same horizontal label/buddy/control/stretch arrangement as Appearance's Theme row. Reuse its typography, padding, popup, focus and hover behavior without custom delegates, fixed selector widths or local stylesheets. Keep a wrapped shared-secondary description beneath the row and use the existing group spacing.
 
+General's Updates group follows the same arrangement for **Download source:**, with a noneditable dropdown and a wrapped shared-secondary explanation beneath it. Update download and local ZIP verification dialogs use the shared progress bar styling, with phase, percentage and decimal MB in the label; unknown-size downloads retain the shared indeterminate bar.
+
 General playback settings use the existing grouped controls. Indent **Use separate start positions for Browse, Editing, and Export** 12 px beneath the unified start-position row, with a compact 4 px vertical gap. Separate start positions show an
 outlined group with aligned Browse, Editing and Export enable and seconds controls; the unified
 enable and seconds controls are hidden while that group is shown.

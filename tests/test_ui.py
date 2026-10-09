@@ -597,6 +597,102 @@ def test_update_check_is_in_settings_menu(window):
     assert "Check for updates…" in [action.text() for action in window.settings_menu.actions()]
 
 
+def test_update_download_progress_known_and_unknown_size(window):
+    window.set_theme("dark")
+    controller = UpdateController(window)
+    controller._busy("Downloading update…", cancel=True)
+    try:
+        controller._download_progress(2_500_000, 10_000_000)
+        assert controller.progress.value() == 25
+        assert "25%" in controller.progress.labelText()
+        assert "2.5 / 10.0 MB" in controller.progress.labelText()
+        controller._download_progress(10_000_000, 10_000_000)
+        assert controller.progress.value() == 99
+        assert controller.progress.isVisible()
+        controller._download_progress(2_500_000, 0)
+        assert controller.progress.maximum() == 0
+        assert "2.5 MB downloaded" in controller.progress.labelText()
+        controller.progress.cancel()
+        controller.cancelled.set()
+        controller._download_progress(5_000_000, 10_000_000)
+        assert not controller.progress.isVisible()
+    finally:
+        controller.progress.close()
+
+
+def test_update_source_dropdown_defaults_and_persists(window):
+    window.set_theme("dark")
+    dialog = SettingsDialog(window)
+    dialog.show()
+    QApplication.instance().processEvents()
+    assert dialog.update_download_source.currentData() == "gh-proxy"
+    assert not dialog.update_download_source.isEditable()
+    assert dialog.update_download_source.count() == 2
+    assert dialog.update_download_source.isVisible()
+    assert dialog.update_download_source.geometry().bottom() < dialog.update_download_source.parentWidget().height()
+    dialog.update_download_source.setCurrentIndex(dialog.update_download_source.findData("github"))
+    assert yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))["update_download_source"] == "github"
+    reopened = SettingsDialog(window)
+    assert reopened.update_download_source.currentData() == "github"
+    reopened.close()
+    dialog.close()
+
+
+def test_update_check_detects_local_zip_and_verifies_without_download(
+    window, application, tmp_path, monkeypatch
+):
+    import dfsorter.update_ui as update_ui
+
+    window.set_theme("dark")
+    monkeypatch.setattr(update_ui, "ROOT", tmp_path)
+    monkeypatch.setattr(update_ui, "installed_release", lambda: {"version": "1.0.0"})
+    release = {"version": "2.0.0", "sha256": "digest"}
+    archive = tmp_path / "DFSorter-v2.0.0-Windows-x64.zip"
+    archive.write_bytes(b"archive")
+    prompts = []
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *args: prompts.append(args[2]) or QMessageBox.StandardButton.Yes,
+    )
+    verified = []
+    monkeypatch.setattr(update_ui, "verify_release", lambda *args: verified.append(args[:2]))
+    monkeypatch.setattr(update_ui, "download_release", lambda *args, **kwargs: pytest.fail("download"))
+    completed = []
+    controller = UpdateController(window)
+    controller.downloaded.disconnect(controller._downloaded)
+    controller.downloaded.connect(completed.append)
+    controller.quiet = True
+    controller._checked(release)
+    try:
+        assert wait_for(application, lambda: bool(completed))
+        assert "install ZIP" in prompts[0]
+        assert verified == [(release, archive)]
+        assert completed == [(release, archive)]
+        assert archive.is_file()
+    finally:
+        controller.progress.close()
+
+
+def test_update_download_failure_provides_manual_zip_instructions(window, monkeypatch):
+    import dfsorter.update_ui as update_ui
+
+    window.set_theme("dark")
+    controller = UpdateController(window)
+    controller.release = {
+        "version": "2.0.0",
+        "url": "https://github.com/owner/repo/releases/download/v2.0.0/DFSorter-v2.0.0-Windows-x64.zip",
+    }
+    dialogs = []
+    monkeypatch.setattr(update_ui.QMessageBox, "exec", lambda dialog: dialogs.append(dialog.text()))
+    controller._busy("Downloading update…", cancel=True)
+    controller._downloaded(TimeoutError("operation timed out"))
+    assert controller.progress is None
+    assert "https://gh-proxy.org/https://github.com/" in dialogs[0]
+    assert "DFSorter-v2.0.0-Windows-x64.zip" in dialogs[0]
+    assert "installation folder" in dialogs[0]
+    assert "Check for updates again" in dialogs[0]
+
+
 def test_portable_launch_checks_for_updates_once(application, tmp_path, monkeypatch):
     import dfsorter.ui as ui
 

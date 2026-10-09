@@ -15,6 +15,24 @@ from .app_paths import ROOT
 
 REPO = "DysonFabienSun/dfsorter"
 ASSET_SUFFIX = "-Windows-x64.zip"
+DOWNLOAD_SOURCES = (("gh-proxy.org", "gh-proxy"), ("GitHub (direct)", "github"))
+DEFAULT_DOWNLOAD_SOURCE = "gh-proxy"
+
+
+def download_source(value):
+    return value if value in dict(DOWNLOAD_SOURCES).values() else DEFAULT_DOWNLOAD_SOURCE
+
+
+def release_download_url(release, source=DEFAULT_DOWNLOAD_SOURCE):
+    if download_source(source) == "gh-proxy":
+        return "https://gh-proxy.org/" + release["url"]
+    return release["url"]
+
+
+def release_filename(release):
+    return f"DFSorter-v{release['version']}{ASSET_SUFFIX}"
+
+
 MANAGED = {
     "DFSorter.exe",
     "DFSorterUpdater.exe",
@@ -59,24 +77,61 @@ def latest_release():
         "version": release["tag_name"].removeprefix("v"),
         "url": asset["browser_download_url"],
         "sha256": asset["digest"][7:],
+        "size": asset.get("size", 0),
     }
 
 
-def download_release(release, destination, cancelled=lambda: False):
+def verify_release(release, archive, cancelled=lambda: False, progress=lambda *_: None):
+    digest = hashlib.sha256()
+    total = archive.stat().st_size
+    processed = 0
+    progress(processed, total)
+    with archive.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            if cancelled():
+                raise InterruptedError("Update verification cancelled")
+            digest.update(chunk)
+            processed += len(chunk)
+            progress(processed, total)
+    if cancelled():
+        raise InterruptedError("Update verification cancelled")
+    if digest.hexdigest().lower() != release["sha256"].lower():
+        raise ValueError("Release ZIP SHA-256 mismatch")
+
+
+def download_release(
+    release, destination, cancelled=lambda: False, progress=lambda *_: None,
+    source=DEFAULT_DOWNLOAD_SOURCE,
+):
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".partial")
     digest = hashlib.sha256()
+    total = release.get("size", 0)
+    downloaded = 0
+    progress(downloaded, total)
     try:
-        request = urllib.request.Request(release["url"], headers={"User-Agent": "DFSorter-Updater"})
+        request = urllib.request.Request(
+            release_download_url(release, source), headers={"User-Agent": "DFSorter-Updater"}
+        )
         with (
             urllib.request.urlopen(request, timeout=30) as response,
             temporary.open("wb") as output,
         ):
+            if not total:
+                try:
+                    total = int(response.headers.get("Content-Length", 0))
+                except (AttributeError, TypeError, ValueError):
+                    total = 0
+            progress(downloaded, total)
             while chunk := response.read(1024 * 1024):
                 if cancelled():
                     raise InterruptedError("Update download cancelled")
                 output.write(chunk)
                 digest.update(chunk)
+                downloaded += len(chunk)
+                progress(downloaded, total)
+        if cancelled():
+            raise InterruptedError("Update download cancelled")
         if digest.hexdigest().lower() != release["sha256"].lower():
             raise ValueError("Release ZIP SHA-256 mismatch")
         temporary.replace(destination)

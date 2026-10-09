@@ -21,6 +21,7 @@ def test_latest_release_selects_asset_matching_tag(monkeypatch):
                 "name": "DFSorter-v0.2.2-Windows-x64.zip",
                 "browser_download_url": "https://example.com/versioned.zip",
                 "digest": "sha256:" + "a" * 64,
+                "size": 12345,
             },
         ],
     }
@@ -34,6 +35,7 @@ def test_latest_release_selects_asset_matching_tag(monkeypatch):
         "version": "0.2.2",
         "url": "https://example.com/versioned.zip",
         "sha256": "a" * 64,
+        "size": 12345,
     }
 
 
@@ -47,6 +49,81 @@ def test_latest_release_rejects_unrecognized_version(monkeypatch):
 
     with pytest.raises(ValueError, match="Invalid release version"):
         release_update.latest_release()
+
+
+@pytest.mark.parametrize("known_size", [True, False])
+def test_download_reports_bytes_and_verifies_before_publication(tmp_path, monkeypatch, known_size):
+    content = b"release" * 200_000
+    response = io.BytesIO(content)
+    response.headers = {"Content-Length": str(len(content))} if known_size else {}
+    monkeypatch.setattr(release_update.urllib.request, "urlopen", lambda *args, **kwargs: response)
+    destination = tmp_path / "release.zip"
+    updates = []
+    release = {"url": "https://example.com/update.zip", "sha256": hashlib.sha256(content).hexdigest()}
+    release_update.download_release(release, destination, progress=lambda *args: updates.append(args))
+    assert destination.read_bytes() == content
+    assert updates[-1] == (len(content), len(content) if known_size else 0)
+    assert any(0 < received < len(content) for received, total in updates)
+    assert not destination.with_suffix(".partial").exists()
+
+
+def test_download_cancellation_cleans_partial_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        release_update.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b"release")
+    )
+    destination = tmp_path / "release.zip"
+    with pytest.raises(InterruptedError):
+        release_update.download_release(
+            {"url": "https://example.com/update.zip"}, destination, cancelled=lambda: True
+        )
+    assert not destination.exists()
+    assert not destination.with_suffix(".partial").exists()
+
+
+def test_download_hash_mismatch_preserves_existing_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        release_update.urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b"invalid")
+    )
+    destination = tmp_path / "release.zip"
+    destination.write_bytes(b"existing")
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        release_update.download_release(
+            {"url": "https://example.com/update.zip", "sha256": "0" * 64}, destination
+        )
+    assert destination.read_bytes() == b"existing"
+    assert not destination.with_suffix(".partial").exists()
+
+
+@pytest.mark.parametrize("source, prefix", [("gh-proxy", "https://gh-proxy.org/"), ("github", "")])
+def test_update_download_uses_selected_source(tmp_path, monkeypatch, source, prefix):
+    content = b"release"
+    requests = []
+    def open_request(request, **kwargs):
+        requests.append(request.full_url)
+        return io.BytesIO(content)
+    monkeypatch.setattr(release_update.urllib.request, "urlopen", open_request)
+    release = {
+        "url": "https://github.com/owner/repo/releases/download/v1.0.0/file.zip",
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    release_update.download_release(release, tmp_path / "release.zip", source=source)
+    assert requests == [prefix + release["url"]]
+    assert release_update.download_source(None) == "gh-proxy"
+
+
+def test_local_release_verification_keeps_zip_and_rejects_bad_digest(tmp_path):
+    archive = tmp_path / "release.zip"
+    content = b"release"
+    archive.write_bytes(content)
+    release = {"sha256": hashlib.sha256(content).hexdigest()}
+    updates = []
+    release_update.verify_release(release, archive, progress=lambda *args: updates.append(args))
+    assert updates[-1] == (len(content), len(content))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        release_update.verify_release({"sha256": "0" * 64}, archive)
+    with pytest.raises(InterruptedError):
+        release_update.verify_release(release, archive, cancelled=lambda: True)
+    assert archive.read_bytes() == content
 
 
 def test_packaged_game_defaults_preserve_local_edits(tmp_path, monkeypatch):
