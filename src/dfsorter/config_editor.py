@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFormLayout,
     QHBoxLayout,
     QInputDialog,
@@ -33,7 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .config import GLOBAL_FIELDS
+from .config import GAME_CODE_MAX_LENGTH, GAME_CODE_PATTERN, GLOBAL_FIELDS
 from .config_store import GameFile, new_game_path, validate_candidate, yaml_parser
 from .history import EditHistory
 from .theme import COLORS, font, role
@@ -46,6 +47,65 @@ GAME_ADDITIONS_ROLE = Qt.ItemDataRole.UserRole + 3
 
 def yaml_size_text(size):
     return f"{size / 1024:.1f} KB" if size >= 1024 else f"{size} B"
+
+
+def initial_game_draft(name, code):
+    return {
+        "name": name, "code": code, "aliases": [], "fields": {"kill": {}},
+        "display_order": ["kill", "mainline"], "suggested_fields": [], "command_example": "",
+    }
+
+
+class NewGameDialog(QDialog):
+    def __init__(self, directory, parent=None):
+        super().__init__(parent)
+        self.directory = directory
+        self.setWindowTitle("New game")
+        self.setMinimumWidth(440)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        form = QFormLayout()
+        self.name = QLineEdit()
+        self.code = QLineEdit()
+        form.addRow("Canonical game name", self.name)
+        form.addRow("Display code", self.code)
+        layout.addLayout(form)
+        requirements = QLabel(
+            "Name: unique official name, suitable for a filename.\n"
+            "Code: unique, 2–6 uppercase letters or digits (e.g. VAL, BF6)."
+        )
+        requirements.setWordWrap(True)
+        role(requirements, "muted")
+        layout.addWidget(requirements)
+        self.error = QLabel()
+        self.error.setWordWrap(True)
+        role(self.error, "error")
+        layout.addWidget(self.error)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        cancel = action("Cancel", self.reject)
+        self.create = action("Create draft", self.accept)
+        role(self.create, "primary")
+        actions.addWidget(cancel)
+        actions.addWidget(self.create)
+        layout.addLayout(actions)
+        self.name.textChanged.connect(self.validate)
+        self.code.textChanged.connect(self.validate)
+        self.validate()
+
+    def validate(self):
+        try:
+            path = new_game_path(self.directory, self.name.text())
+            if not re.fullmatch(GAME_CODE_PATTERN, self.code.text()):
+                raise ValueError("Display code requires 2–6 uppercase letters or digits.")
+            validate_candidate(self.directory, path.name, initial_game_draft(self.name.text(), self.code.text()))
+        except ValueError as error:
+            self.error.setText(str(error) if self.name.text() or self.code.text() else "")
+            self.create.setEnabled(False)
+        else:
+            self.error.setText("")
+            self.create.setEnabled(True)
 
 
 def action(label, callback):
@@ -535,7 +595,7 @@ class ConfigEditor(QWidget):
         form = QFormLayout(page)
         self.name = QLineEdit()
         self.code = QLineEdit()
-        self.code.setMaxLength(3)
+        self.code.setMaxLength(GAME_CODE_MAX_LENGTH)
         self.example = QLineEdit()
         for control in (self.name, self.code, self.example):
             control.textChanged.connect(self.mark_dirty)
@@ -714,6 +774,16 @@ class ConfigEditor(QWidget):
         name = self.source.path.name
         content = self.state_content(self.last_state)
         self.dirty = self.source.digest is None or content != self.state_content(self.saved_states[name])
+        if self.source.digest is None:
+            for index in range(self.games.count()):
+                item = self.games.item(index)
+                if item.data(Qt.ItemDataRole.UserRole) == name:
+                    item.setText(self.name.text())
+                    count = len(self.draft.get("fields", {}))
+                    summary = f"{self.code.text()} · {count} {'field' if count == 1 else 'fields'}"
+                    item.setData(GAME_SUMMARY_ROLE, summary)
+                    item.setData(GAME_SIZE_ROLE, "Unsaved")
+                    item.setToolTip(f"{self.name.text()}\n{summary} · Unsaved")
         self.validate_draft()
         self.save_button.setEnabled(self.dirty and not self.validation_message.text())
         self.revert_button.setEnabled(content != self.state_content(self.initial_states[name]))
@@ -1019,6 +1089,13 @@ class ConfigEditor(QWidget):
         choice = QMessageBox(self)
         choice.setWindowTitle("Unsaved configuration")
         choice.setText("Save changes to the current game configuration?")
+        warning = (
+            "The new game draft has not been saved. Discarding it will lose the entire draft; "
+            "no configuration file will be created."
+            if self.source is not None and self.source.digest is None else
+            "Unsaved changes will be lost if discarded. The saved configuration will remain unchanged."
+        )
+        choice.setInformativeText(warning)
         choice.setStandardButtons(
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard
@@ -1027,7 +1104,7 @@ class ConfigEditor(QWidget):
         choice.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if self.validation_message.text():
             choice.button(QMessageBox.StandardButton.Save).setEnabled(False)
-            choice.setInformativeText(self.validation_message.text())
+            choice.setInformativeText(f"{warning}\n\n{self.validation_message.text()}")
         result = choice.exec()
         if result == QMessageBox.StandardButton.Save:
             if self.validation_message.text():
@@ -1053,6 +1130,8 @@ class ConfigEditor(QWidget):
         if item is None:
             return
         filename = item.data(Qt.ItemDataRole.UserRole)
+        if self.source and self.source.path.name == filename:
+            return
         if not self.confirm_discard():
             self.games.blockSignals(True)
             if previous is None:
@@ -1509,6 +1588,8 @@ class ConfigEditor(QWidget):
         filename = self.source.path.name
         self.histories[filename] = deepcopy(self.saved_histories.get(filename, EditHistory()))
         if self.source.digest is None:
+            for states in (self.histories, self.saved_histories, self.initial_states, self.saved_states):
+                states.pop(filename, None)
             self.refresh_files()
         else:
             self.load_game(self.source.path.name)
@@ -1523,28 +1604,33 @@ class ConfigEditor(QWidget):
     def new_game(self):
         if not self.confirm_discard():
             return
-        name, accepted = QInputDialog.getText(self, "New game", "Canonical game name:")
-        if not accepted:
-            return
+        dialog = NewGameDialog(self.directory, self)
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            name, code = dialog.name.text(), dialog.code.text()
+        finally:
+            dialog.deleteLater()
         try:
             path = new_game_path(self.directory, name)
+            validate_candidate(self.directory, path.name, initial_game_draft(name, code))
         except ValueError as error:
             self.message(str(error), True)
             return
         self.loading = True
         self.source = GameFile(path)
         self.games.blockSignals(True)
-        self.games.setCurrentRow(-1)
+        item = QListWidgetItem(name)
+        item.setData(Qt.ItemDataRole.UserRole, path.name)
+        item.setData(GAME_SUMMARY_ROLE, f"{code} · 1 field")
+        item.setData(GAME_SIZE_ROLE, "Unsaved")
+        item.setToolTip(f"{name}\n{code} · 1 field · Unsaved")
+        self.games.addItem(item)
+        self.games.setCurrentItem(item)
         self.games.blockSignals(False)
-        self.draft = {
-            "name": name,
-            "code": "",
-            "aliases": [],
-            "fields": {"kill": {}},
-            "display_order": ["kill", "mainline"],
-            "suggested_fields": [],
-            "command_example": "",
-        }
+        self.game_search.clear()
+        self.games.scrollToItem(item)
+        self.draft = initial_game_draft(name, code)
         self.show_draft()
         for index in range(3):
             self.tabs.setTabEnabled(index, True)
@@ -1559,4 +1645,4 @@ class ConfigEditor(QWidget):
         self.initial_states[filename] = deepcopy(self.last_state)
         self.saved_states[filename] = deepcopy(self.last_state)
         self.update_dirty()
-        self.message("New game draft. Add a two- or three-character uppercase display code before saving.")
+        self.message("New game draft. Save to create the configuration file.")

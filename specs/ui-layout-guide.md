@@ -538,6 +538,8 @@ toolbar surface above the list. Use the shared 8 px search inset on both sides a
 6 px top inset, an
 8 px gap between the heading row and search, and a subtle bottom divider. Align the
 search with game-row content and keep the list rows and selection styling unchanged.
+New game uses a compact application-owned modal dialog with Canonical game name and Display code inputs, concise muted requirements, an inline error, and right-aligned Cancel / Create draft actions. Reuse shared form typography, 16 px outer padding, 8 px spacing, and the primary action role. Temporary game rows reuse the existing list delegate, displaying the name above code · field count · Unsaved; update the count as fields change, and select and reveal the new row immediately. Discard removes it; Save replaces Unsaved with YAML size.
+
 Config Revert changes in place to a red Confirm revert button while confirmation is armed, using the shared danger role. Outside interaction restores its secondary appearance.
 Config tables use consistent header typography regardless of column selection. Brief
 wrapping notes beneath tables use the shared secondary-text role to explain command syntax.

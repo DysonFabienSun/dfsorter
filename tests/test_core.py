@@ -133,7 +133,10 @@ def test_apex_weapon_roster_and_shortcuts(registry):
     }
 
 
-@pytest.mark.parametrize("code, valid", [("D", False), ("DF", True), ("DFO", True), ("DFOR", False)])
+@pytest.mark.parametrize("code, valid", [
+    ("D", False), ("DF", True), ("DFO", True), ("DFOR", True),
+    ("ABCDEF", True), ("ABC123", True), ("ABCDEFG", False), ("abcdef", False),
+])
 def test_game_display_code_length(tmp_path, code, valid):
     raw = {"name": "Example", "code": code, "fields": {"kill": {}},
            "display_order": ["kill", "mainline"]}

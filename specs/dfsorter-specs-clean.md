@@ -27,7 +27,7 @@ A **Session** is a temporary-but-persisted, fixed review queue. It freezes the m
 - Matching, parsing, aliases, filtering, and text sorting are case-insensitive.
 - Case-insensitive matching must not destroy the canonical capitalization of stored structured metadata.
 - Parsed field values have leading and trailing whitespace removed. Free-form human text such as `mainline` and `description` preserves the user's original capitalization, punctuation, and internal spacing.
-- Game-specific YAML files define the canonical game name and a two- or three-character uppercase display code such as `DF`, `VAL`, or `BF6`.
+- Game-specific YAML files define the canonical game name and a unique display code of 2–6 uppercase letters or digits, such as `DF`, `VAL`, or `BF6`.
 
 ---
 
@@ -160,7 +160,7 @@ One YAML file is stored per supported game under `configs/games/`.
 Each config should define at least:
 
 - canonical game name;
-- two- or three-character uppercase display code;
+- unique display code of 2–6 uppercase letters or digits;
 - accepted aliases for identifying the game;
 - game-specific field definitions;
 - aliases/shorthand for structured field values;
@@ -1041,6 +1041,10 @@ current application run. Counts accumulate per game until application close; thi
 notice creates no Config undo step. Retain the complete summary in the row tooltip
 when the sidebar is too narrow to display it.
 New weapon fields include `wpn` as a prefix alias by default.
+
+New game opens one dialog requesting the canonical game name and display code. Briefly explain that the name must be unique and suitable for a filename, and the code must be unique with 2–6 uppercase letters or digits, such as VAL or BF6. Validate both against filename rules and the prospective registry; disable Create draft for invalid input and show an inline diagnostic. Cancellation creates nothing. Creation immediately selects a temporary left-pane entry displaying the name above code · field count · Unsaved, clears any search hiding it, and opens the Identity tab. No YAML file or registry entry is created until Save. Identity and field edits update the draft row. Saving converts it to a normal saved entry; leaving with Discard removes the temporary entry and its draft history, while Cancel retains it.
+
+The Save/Discard/Cancel prompt on leaving Config, switching configurations, or exiting the application explicitly warns that discarded unsaved edits will be lost. For a new unsaved configuration, state that the entire draft will be lost and no configuration file will be created. Invalid-draft diagnostics appear alongside this warning, with Save disabled.
 
 Edits remain drafts until Save. Validate the prospective YAML and registry on every edit, including raw-YAML repair. Invalid drafts disable Save and show a red diagnostic left of Save. Leaving a dirty draft offers Save, Discard or Cancel; when invalid, Save is disabled and the dialog shows the diagnostic while Discard and Cancel remain available. Discard restores the latest saved configuration and drops the unsaved history branch while retaining saved history. Save validates the prospective registry before atomically replacing the YAML file, preserves comments and unrecognized keys where possible, reloads configurations and refreshes affected views. A file changed outside DFSorter cannot be overwritten from a stale draft. Invalid files open in a raw-YAML repair view; a valid repair returns to structured editing.
 

@@ -9,6 +9,9 @@ GLOBAL_FIELDS = {
     "source_path", "in_ms", "out_ms", "catalogue_modified_at",
 }
 
+GAME_CODE_MAX_LENGTH = 6
+GAME_CODE_PATTERN = r"[A-Z0-9]{2,6}"
+
 
 @dataclass
 class Game:
@@ -52,8 +55,8 @@ class Registry:
 
     def _load(self, raw):
         name, code = raw["name"], raw["code"]
-        if not isinstance(name, str) or not name.strip() or not re.fullmatch(r"[A-Z0-9]{2,3}", code):
-            raise ValueError("Expected a game name and two- or three-character uppercase display code")
+        if not isinstance(name, str) or not name.strip() or not re.fullmatch(GAME_CODE_PATTERN, code):
+            raise ValueError("Expected a game name and a display code of 2–6 uppercase letters or digits")
         fields = raw["fields"]
         reserved = GLOBAL_FIELDS
         if not isinstance(fields, dict) or reserved.intersection(fields):

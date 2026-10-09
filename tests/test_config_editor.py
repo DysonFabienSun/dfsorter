@@ -4,10 +4,16 @@ from pathlib import Path
 import PySide6
 import pytest
 from PySide6.QtCore import QCoreApplication, QPoint, Qt
-from PySide6.QtWidgets import QApplication, QComboBox, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QInputDialog, QMessageBox
 
 from dfsorter.config import Registry
-from dfsorter.config_editor import GAME_SIZE_ROLE, GAME_SUMMARY_ROLE, Rows, yaml_size_text
+from dfsorter.config_editor import (
+    GAME_SIZE_ROLE,
+    GAME_SUMMARY_ROLE,
+    NewGameDialog,
+    Rows,
+    yaml_size_text,
+)
 from dfsorter.config_store import GameFile
 from dfsorter.parsing import parse_command
 from dfsorter.ui import ROOT, Window, style_application
@@ -571,6 +577,7 @@ def select_game(editor, filename):
 
 def test_structured_values_aliases_and_new_game(editor_window, monkeypatch):
     window = editor_window
+    window.set_theme("dark")
     window.panel("Config")
     editor = window.config_editor
     select_game(editor, "VALORANT.yaml")
@@ -584,9 +591,17 @@ def test_structured_values_aliases_and_new_game(editor_window, monkeypatch):
     assert parse_command("ion", "VALORANT", window.registry)["metadata"] == {
         "weapon": ["Ion Blade"]
     }
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("New Game", True))
+    def create(dialog):
+        dialog.name.setText("New Game")
+        dialog.code.setText("NEW")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(NewGameDialog, "exec", create)
     editor.new_game()
-    editor.code.setText("NEW")
+    assert editor.games.currentItem().text() == "New Game"
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 1 field"
+    assert editor.games.currentItem().data(GAME_SIZE_ROLE) == "Unsaved"
+    assert not editor.source.path.exists()
     assert editor.save(), editor.status.text()
     assert window.registry.game("New Game").fields["kill"] == {}
 
@@ -716,13 +731,139 @@ def test_duplicate_config_entry_marks_cell_and_blocks_save(
 
 def test_new_weapon_field_starts_with_wpn_prefix(editor_window, monkeypatch):
     window = editor_window
+    window.set_theme("dark")
     window.panel("Config")
     editor = window.config_editor
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("New Game", True))
+    def create(dialog):
+        dialog.name.setText("New Game")
+        dialog.code.setText("NEW")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(NewGameDialog, "exec", create)
     editor.new_game()
     monkeypatch.setattr(QInputDialog, "getText", lambda *args: ("weapon", True))
     editor.add_field()
     assert editor.prefixes.values() == [["wpn"]]
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == "NEW · 2 fields"
+    assert editor.games.currentItem().data(GAME_SIZE_ROLE) == "Unsaved"
+
+
+@pytest.mark.parametrize("new_draft", [False, True])
+def test_config_exit_warns_about_unsaved_changes(editor_window, monkeypatch, new_draft):
+    window = editor_window
+    window.set_theme("dark")
+    window.panel("Config")
+    editor = window.config_editor
+    if new_draft:
+        def create(dialog):
+            dialog.name.setText("New Game")
+            dialog.code.setText("NEW")
+            return QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(NewGameDialog, "exec", create)
+        editor.new_game()
+    else:
+        select_game(editor, "VALORANT.yaml")
+        editor.example.setText("Unsaved change")
+
+    def cancel(dialog):
+        warning = dialog.informativeText()
+        if new_draft:
+            assert "new game draft has not been saved" in warning
+            assert "no configuration file will be created" in warning
+        else:
+            assert "Unsaved changes will be lost" in warning
+        assert dialog.standardButtons() & QMessageBox.StandardButton.Save
+        return QMessageBox.StandardButton.Cancel
+
+    monkeypatch.setattr(QMessageBox, "exec", cancel)
+    window.close()
+    assert window.isVisible()
+    assert editor.dirty
+    editor.code.setText("INVALID")
+    assert not editor.confirm_discard()
+
+
+@pytest.mark.parametrize("code", ["END", "ENDF", "ABC123"])
+def test_long_game_code_survives_creation_editing_and_reload(editor_window, monkeypatch, code):
+    from dfsorter.config import source_fallback, title
+    from dfsorter.output import export_title
+
+    window = editor_window
+    window.set_theme("dark")
+    window.panel("Config")
+    editor = window.config_editor
+
+    def create(dialog):
+        dialog.name.setText("Example Game")
+        dialog.code.setText(code)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(NewGameDialog, "exec", create)
+    editor.new_game()
+    assert editor.code.text() == code
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == f"{code} · 1 field"
+    assert editor.save(), editor.status.text()
+    editor.reload()
+    assert editor.code.text() == code
+    assert editor.games.currentItem().data(GAME_SUMMARY_ROLE) == f"{code} · 1 field"
+    editor.example.setText("Example")
+    assert editor.save(), editor.status.text()
+    game = window.registry.game("Example Game")
+    assert game.code == code
+    clip = {"game": game.name, "source_path": f"{code}_recording.mp4",
+            "metadata": {}, "mainline": "", "rating": 4}
+    assert source_fallback(clip, game) == "recording"
+    assert title(clip, window.registry) == f"{code}_recording"
+    assert code + "_" in title(clip, window.registry, rich=True)
+    assert export_title(clip, window.registry) == f"{code}_r4 recording"
+
+
+def test_new_game_dialog_validation_and_draft_discard(editor_window, monkeypatch):
+    window = editor_window
+    window.set_theme("dark")
+    window.panel("Config")
+    editor = window.config_editor
+    dialog = NewGameDialog(editor.directory, editor)
+    assert not dialog.create.isEnabled()
+    dialog.name.setText("New Game")
+    for code in ("", "nEW", "N", "TOOLONG", "N!"):
+        dialog.code.setText(code)
+        assert not dialog.create.isEnabled()
+    dialog.code.setText("VAL")
+    assert not dialog.create.isEnabled()
+    dialog.code.setText("N3")
+    assert dialog.create.isEnabled()
+    for code in ("LONG", "SIXLET"):
+        dialog.code.setText(code)
+        assert dialog.create.isEnabled()
+    dialog.name.setText("VALORANT")
+    assert not dialog.create.isEnabled()
+    dialog.name.setText("Bad/Name")
+    assert not dialog.create.isEnabled()
+    dialog.deleteLater()
+
+    def create(dialog):
+        dialog.name.setText("New Game")
+        dialog.code.setText("NEW")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(NewGameDialog, "exec", create)
+    editor.game_search.setText("VALORANT")
+    editor.new_game()
+    assert editor.game_search.text() == ""
+    draft = editor.games.currentItem()
+    assert draft.text() == "New Game" and not draft.isHidden()
+    path = editor.source.path
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Cancel)
+    window.panel("Home")
+    assert window.current_panel == "Config"
+    assert editor.games.currentItem() == draft
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Discard)
+    window.panel("Home")
+    assert window.current_panel == "Home"
+    assert not path.exists()
+    assert all(editor.games.item(index).text() != "New Game" for index in range(editor.games.count()))
 
 
 def test_invalid_link_cells_marked_and_clear_live(editor_window):
