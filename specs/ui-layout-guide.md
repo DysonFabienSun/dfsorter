@@ -153,7 +153,7 @@ text and icons.
 
 General's Share group uses an **Output quality:** label and ordinary noneditable select box in the same horizontal label/buddy/control/stretch arrangement as Appearance's Theme row. Reuse its typography, padding, popup, focus and hover behavior without custom delegates, fixed selector widths or local stylesheets. Keep a wrapped shared-secondary description beneath the row and use the existing group spacing.
 
-General playback settings use the existing grouped controls. Separate start positions show an
+General playback settings use the existing grouped controls. Indent **Use separate start positions for Browse, Editing, and Export** 12 px beneath the unified start-position row, with a compact 4 px vertical gap. Separate start positions show an
 outlined group with aligned Browse, Editing and Export enable and seconds controls; the unified
 enable and seconds controls are hidden while that group is shown.
 Use 8 px between controls within Settings groups and 12 px between groups. The playback seconds
@@ -195,6 +195,8 @@ Ordinary controls and menus use 13 px regular; secondary metadata uses 12 px; ca
 Use 12 px panel padding, 4–8 px gaps within groups, 12–16 px between groups, and 24 px between large sections. Prefer 32 px ordinary actions, 36 px prominent commit actions, and 28 px icon toolbar controls. Button/input radius is 4 px; structural panels and grouped containers use at most 2 px. Avoid simultaneously visible nested rounded container contours within 16 logical pixels: remove redundant framing or square the inner container. This rule excludes ordinary controls, menus, tooltips and transient row highlights. Font metrics take precedence over dimensions where necessary to avoid clipping. Empty space may remain when a screen has little content; deliberate alignment and constrained group widths should keep content from appearing stranded.
 
 Combo boxes use a shared list-style popup. Show every item when the list fits within the combo's visible-item limit, with no scroll arrows or clipped rows; longer lists scroll only after that limit. Give popup entries 4 px vertical and 8 px horizontal padding, including the Config field Type choices `enum` and `freeform`. Keep the closed combo at its ordinary compact control height. Use shared styling and Qt's item-based popup sizing for all combo boxes rather than fixing individual popup heights.
+
+Indent subordinate checkboxes by 12 logical pixels relative to the parent control or row.
 
 Checkbox label areas remain transparent so their text sits on the actual parent surface in every theme and container, including subtle and outlined groups. The indicator itself retains a visible square border when unchecked and a filled, marked square when checked. Keep the focus state without painting a separate background behind the label. Check new checkbox controls on their intended parent surface in both themes.
 Keyboard focus on checkboxes strengthens the indicator border with `focus`; it never draws a rectangle around the label text. Selector popups retain the shared cyan row highlight and keyboard navigation without a native gray focus rectangle wrapped around the item text.
