@@ -11,6 +11,7 @@
 - Do not run the full suite by default, including before commits or amendments. Broaden testing only when a failure or concrete dependency impact requires it, or when the user explicitly requests it.
 - Once relevant checks pass, do not repeat them unless subsequent code changes affect their results. Scope lint and other checks to changed files where supported.
 - Documentation-only or instruction-only edits require diff review, not runtime tests.
+- Run UI tests only in Dark mode unless explicitly instructed otherwise; select only Dark-mode cases from theme-parametrized tests because functional behavior is generally shared across themes.
 
 ## Portable ZIP Builds
 
