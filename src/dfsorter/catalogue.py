@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from .folder_assignment import validate_assignment
+
 
 def normalized(path) -> str:
     """Resolve a stored path without discarding its filesystem capitalization."""
@@ -29,7 +31,7 @@ class Catalogue:
         self.removed_clip_ids = set()
         with self.connection() as database:
             version = database.execute("PRAGMA user_version").fetchone()[0]
-            if version > 9:
+            if version > 10:
                 raise ValueError("This catalogue requires a newer DFSorter version")
             database.executescript("""
                 BEGIN IMMEDIATE;
@@ -130,7 +132,17 @@ class Catalogue:
                         "INSERT OR IGNORE INTO state VALUES ('review_destination', ?)", (legacy[0],)
                     )
                 database.execute("DELETE FROM state WHERE key='active_project'")
-            database.execute("PRAGMA user_version = 9")
+            if "assignment_mode" not in {
+                row["name"] for row in database.execute("PRAGMA table_info(folders)")
+            }:
+                database.execute(
+                    "ALTER TABLE folders ADD COLUMN assignment_mode TEXT NOT NULL DEFAULT 'automatic'"
+                )
+                database.execute(
+                    "UPDATE folders SET assignment_mode='single_game' "
+                    "WHERE forced_game IS NOT NULL AND forced_game != ''"
+                )
+            database.execute("PRAGMA user_version = 10")
 
     def export_jobs(self):
         return [
@@ -250,7 +262,8 @@ class Catalogue:
             )
         }
 
-    def add_folder(self, path, forced_game=None):
+    def add_folder(self, path, forced_game=None, *, assignment_mode=None):
+        assignment_mode, forced_game = validate_assignment(assignment_mode, forced_game)
         path = normalized(path)
         if not Path(path).is_dir():
             raise ValueError("Capture folder does not exist")
@@ -262,8 +275,21 @@ class Catalogue:
             raise ValueError("Capture folders must not overlap")
         folder_id = uuid4().hex
         with self.connection() as database:
-            database.execute("INSERT INTO folders VALUES (?,?,1,?)", (folder_id, path, forced_game))
+            database.execute(
+                "INSERT INTO folders(folder_id,path,enabled,forced_game,assignment_mode) VALUES (?,?,1,?,?)",
+                (folder_id, path, forced_game, assignment_mode),
+            )
         return folder_id
+
+    def set_folder_assignment(self, folder_id, mode, game=None, *, games):
+        mode, game = validate_assignment(mode, game, games)
+        with self.connection() as database:
+            result = database.execute(
+                "UPDATE folders SET assignment_mode=?,forced_game=? WHERE folder_id=?",
+                (mode, game, folder_id),
+            )
+            if not result.rowcount:
+                raise ValueError("Capture folder no longer exists")
 
     def enable_folder(self, folder_id, enabled):
         with self.connection() as database:
@@ -456,7 +482,8 @@ class Catalogue:
             if linked_folder is None:
                 folder_id = uuid4().hex
                 database.execute(
-                    "INSERT INTO folders VALUES (?,?,1,NULL)", (folder_id, str(destination))
+                    "INSERT INTO folders(folder_id,path,enabled,forced_game) VALUES (?,?,1,NULL)",
+                    (folder_id, str(destination))
                 )
             else:
                 folder_id = linked_folder["folder_id"]

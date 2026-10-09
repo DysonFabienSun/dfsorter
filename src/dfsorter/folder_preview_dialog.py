@@ -17,8 +17,86 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .folder_assignment import MODES, assigned_game
 from .theme import COLORS, font, role
 from .widgets import icon
+
+
+class AssignmentControls(QWidget):
+    def __init__(self, games, mode="automatic", game=None):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        row = QHBoxLayout()
+        label = QLabel("Game assignment")
+        label.setFont(font("base", "semibold"))
+        row.addWidget(label)
+        self.mode = QComboBox()
+        for value, label in MODES.items():
+            self.mode.addItem(label, value)
+        row.addWidget(self.mode, 1)
+        layout.addLayout(row)
+        self.game = QComboBox()
+        self.game.addItem("Select a game…", None)
+        for name in games:
+            self.game.addItem(name, name)
+        if game and game not in games:
+            self.game.addItem(f"{game} (configuration unavailable)", game)
+        self.games = games
+        layout.addWidget(self.game)
+        note = QLabel(
+            "Applies to this folder, all subfolders, and future discoveries. "
+            "Existing assigned games remain unchanged; missing games can be filled on later scans."
+        )
+        note.setWordWrap(True)
+        role(note, "muted")
+        layout.addWidget(note)
+        guidance = QLabel("Additional games can be added from Game configs… on Home.")
+        guidance.setWordWrap(True)
+        role(guidance, "muted")
+        layout.addWidget(guidance)
+        self.mode.setCurrentIndex(self.mode.findData(mode))
+        self.game.setCurrentIndex(max(0, self.game.findData(game)))
+        self.mode.currentIndexChanged.connect(self.update_visibility)
+        self.update_visibility()
+
+    def update_visibility(self):
+        self.game.setVisible(self.mode.currentData() == "single_game")
+
+    @property
+    def valid(self):
+        return self.mode.currentData() != "single_game" or self.game.currentData() in self.games
+
+    @property
+    def selected_game(self):
+        return self.game.currentData() if self.mode.currentData() == "single_game" else None
+
+
+class FolderAssignmentDialog(QDialog):
+    def __init__(self, folder, games, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Game assignment")
+        self.setMinimumWidth(550)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        path = FolderPathLabel(folder["path"])
+        layout.addWidget(path)
+        self.assignment = AssignmentControls(games, folder["assignment_mode"], folder["forced_game"])
+        layout.addWidget(self.assignment)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        save = QPushButton("Save")
+        role(save, "primary")
+        save.clicked.connect(self.accept)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        actions.addWidget(save)
+        actions.addWidget(cancel)
+        layout.addLayout(actions)
+        for control in (self.assignment.mode, self.assignment.game):
+            control.currentIndexChanged.connect(lambda: save.setEnabled(self.assignment.valid))
+        save.setEnabled(self.assignment.valid)
 
 
 def icon_label(name, color="text_secondary"):
@@ -78,7 +156,8 @@ class ResultScrollArea(QScrollArea):
 
 
 class FolderPreviewDialog(QDialog):
-    def __init__(self, directory, found, games, parent=None, *, game_folder=False):
+    def __init__(self, directory, found, games, parent=None, *, game_folder=False,
+                 assignment_mode="automatic", selected_game=None):
         super().__init__(parent)
         self.setWindowTitle("Add capture folder")
         self.setMinimumWidth(550)
@@ -122,6 +201,10 @@ class FolderPreviewDialog(QDialog):
         folder_row.addWidget(edit_folder)
         content_layout.addLayout(folder_row)
         content_layout.addSpacing(12)
+        self.assignment = AssignmentControls(games, assignment_mode, selected_game)
+        self.game = self.assignment.game
+        content_layout.addWidget(self.assignment)
+        content_layout.addSpacing(12)
 
         result_heading = QHBoxLayout()
         result_heading.setSpacing(8)
@@ -137,6 +220,7 @@ class FolderPreviewDialog(QDialog):
         composition_layout = QVBoxLayout(self.composition)
         composition_layout.setContentsMargins(24, 0, 0, 0)
         composition_layout.setSpacing(0)
+        self.result_rows = []
         for game, count in sorted(
             counts.items(), key=lambda item: (item[0] == "Unclassified", item[0])
         ):
@@ -153,12 +237,12 @@ class FolderPreviewDialog(QDialog):
             entry_layout.addWidget(name, 1)
             entry_layout.addWidget(amount, 0, Qt.AlignmentFlag.AlignRight)
             composition_layout.addWidget(entry)
-        if counts:
-            self.results_scroll = ResultScrollArea(len(counts))
-            self.results_scroll.setWidget(self.composition)
-            content_layout.addWidget(self.results_scroll)
+            self.result_rows.append((entry, name, amount))
+        self.results_scroll = ResultScrollArea(len(counts))
+        self.results_scroll.setWidget(self.composition)
+        content_layout.addWidget(self.results_scroll)
 
-        explanation = QLabel("Games are detected from the selected folder and its subfolders.")
+        explanation = QLabel("Automatic detection uses the nearest recognized folder name, including the selected folder.")
         explanation.setWordWrap(True)
         role(explanation, "muted")
         content_layout.addSpacing(6)
@@ -182,42 +266,14 @@ class FolderPreviewDialog(QDialog):
         )
         tip_text.setWordWrap(True)
         tip_layout.addWidget(tip_text, 1)
-        self.parent_folder_tip.setVisible(game_folder)
-        if game_folder:
-            content_layout.addSpacing(12)
-            content_layout.addWidget(self.parent_folder_tip)
+        self.game_folder = game_folder
+        content_layout.addSpacing(12)
+        content_layout.addWidget(self.parent_folder_tip)
 
-        self.override_section = QWidget()
-        override_layout = QVBoxLayout(self.override_section)
-        override_layout.setContentsMargins(0, 0, 0, 0)
-        override_layout.setSpacing(4)
-        override_row = QHBoxLayout()
-        override_row.setSpacing(8)
-        override_title = QLabel("Unclassified videos")
-        override_title.setFont(font("base", "semibold"))
-        override_row.addWidget(override_title)
-        self.game = QComboBox()
-        self.game.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        self.game.addItem("Keep unclassified", None)
-        for game in games:
-            self.game.addItem(game, game)
-        override_row.addWidget(self.game, 1)
-        override_layout.addLayout(override_row)
         self.assignment_note = QLabel()
         self.assignment_note.setWordWrap(True)
         role(self.assignment_note, "muted")
-        override_layout.addWidget(self.assignment_note)
-        game_configs_tip = QLabel("Additional games can be added from Game configs… on Home.")
-        game_configs_tip.setWordWrap(True)
-        role(game_configs_tip, "muted")
-        override_layout.addWidget(game_configs_tip)
-        if self.unclassified_count:
-            content_layout.addSpacing(12)
-            content_layout.addWidget(self.override_section)
-        else:
-            self.override_section.hide()
-        self.game.currentIndexChanged.connect(self.update_assignment_note)
-        self.update_assignment_note()
+        content_layout.addWidget(self.assignment_note)
 
         layout.addSpacing(12)
         layout.addWidget(self.divider())
@@ -227,6 +283,7 @@ class FolderPreviewDialog(QDialog):
         actions.setSpacing(8)
         actions.addStretch()
         add = QPushButton("Add folder")
+        self.add_button = add
         role(add, "primary")
         add.setDefault(True)
         add.clicked.connect(self.accept)
@@ -235,6 +292,9 @@ class FolderPreviewDialog(QDialog):
         cancel.clicked.connect(self.reject)
         actions.addWidget(cancel)
         layout.addLayout(actions)
+        self.game.currentIndexChanged.connect(self.update_assignment_note)
+        self.assignment.mode.currentIndexChanged.connect(self.update_assignment_note)
+        self.update_assignment_note()
 
         screen = self.screen() or QApplication.primaryScreen()
         self.setMaximumHeight(int(screen.availableGeometry().height() * 0.85))
@@ -248,7 +308,17 @@ class FolderPreviewDialog(QDialog):
 
     @property
     def forced_game(self):
-        return self.game.currentData()
+        return self.assignment.selected_game
+
+    @property
+    def assignment_mode(self):
+        return self.assignment.mode.currentData()
+
+    def assigned_items(self):
+        return [
+            {**item, "game": assigned_game(item["game"], self.assignment_mode, self.forced_game)}
+            for item in self.found
+        ]
 
     def choose_folder(self):
         directory = QFileDialog.getExistingDirectory(self, "Capture folder", self.directory)
@@ -257,12 +327,19 @@ class FolderPreviewDialog(QDialog):
             self.reject()
 
     def update_assignment_note(self):
-        videos = f"{self.unclassified_count} unidentified video"
-        if self.unclassified_count != 1:
-            videos += "s"
-        if self.forced_game:
-            self.assignment_note.setText(
-                f"{videos} will be assigned to {self.forced_game} during import."
-            )
-        else:
-            self.assignment_note.setText(f"{videos} will remain unclassified.")
+        self.add_button.setEnabled(self.assignment.valid)
+        self.parent_folder_tip.setVisible(self.game_folder and self.assignment_mode == "automatic")
+        counts = Counter(item["game"] or "Unclassified" for item in self.assigned_items())
+        entries = sorted(counts.items(), key=lambda item: (item[0] == "Unclassified", item[0]))
+        for index, (entry, name, amount) in enumerate(self.result_rows):
+            entry.setVisible(index < len(entries))
+            if index < len(entries):
+                name.setText(entries[index][0])
+                amount.setText(str(entries[index][1]))
+        self.results_scroll.row_count = len(entries)
+        self.results_scroll.updateGeometry()
+        conflicts = sum(bool(item["game"]) and item["game"] != self.forced_game for item in self.found)
+        self.assignment_note.setText(
+            f"{conflicts} video{'s' if conflicts != 1 else ''} detected as other games will be assigned to {self.forced_game}."
+            if self.forced_game and conflicts else ""
+        )

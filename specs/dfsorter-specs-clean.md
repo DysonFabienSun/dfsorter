@@ -76,7 +76,7 @@ After a successful scan of an enabled capture folder, a missing source with no s
 
 Removing a capture folder requires explicit confirmation and removes its catalogue entries, cached media information, and project/session references. Save a database backup first. Original source files are never deleted. Pause scanning is the reversible alternative that retains the folder and its clips.
 
-On Home, right-clicking a capture folder selects it and opens a context menu containing Pause scanning (enabled folders) or Resume scanning (paused folders), Relink folder…, and Remove folder…. Disable these actions during background operations. Empty list space and unlinked catalogue entries have no folder context menu.
+On Home, right-clicking a capture folder selects it and opens a context menu containing Pause scanning (enabled folders) or Resume scanning (paused folders), Game assignment…, Relink folder…, and Remove folder…. Disable these actions during background operations. Empty list space and unlinked catalogue entries have no folder context menu.
 
 ---
 
@@ -510,7 +510,9 @@ When recursively scanning a recorder-organized capture root:
 2. use the nearest ancestor whose folder name resolves to a known game using game-config aliases;
 3. if no recognized ancestor exists, leave the clip's game undefined.
 
-An explicitly forced game assignment for a capture root overrides automatic folder-name classification.
+Each capture folder persists one game-assignment mode: **Detect from folder names** (the default, using the rules above), **Assign one game** (a configured game overrides folder-name detection throughout the root), or **Leave unclassified** (disable automatic assignment). All modes recursively discover MP4s. Registered roots must not overlap; no recorder-specific or subtree rules are provided. Existing folders retain their behavior, including previously forced games. Relinking retains the assignment rule; newly registered reassociation destinations default to automatic detection, while reused destinations retain their rules.
+
+Scans preserve existing assigned games and may fill missing games. Leave unclassified never clears existing assignments. A missing configured game for a saved single-game rule reports a folder error and skips ingestion and cleanup for that folder; other folders continue scanning. No bulk reclassification is provided.
 
 ### 11.2 Capture-Folder UI
 
@@ -526,9 +528,11 @@ Home shows:
 - Remove folder… from the folder context menu;
 - Relink folder… from the folder context menu.
 
-After inspecting a selected folder, show a preview before confirmation with the number of videos per detected game, unclassified videos, and media inspection warnings. Explain that game names are detected from the selected folder and its subfolders. Only when the scan contains unclassified videos, show an optional assignment of those unidentified videos to one game during import. Keep recognized game assignments; later scans use nearest-ancestor classification. The preview also points to Game configs… on Home for adding more games.
-The preview permits changing the selected folder with Edit folder…. A completed selection restarts inspection and the preview, including when the same folder is chosen.
-When the selected folder's name resolves to a game, show a highlighted tip suggesting the parent recordings folder for including sibling game folders.
+After inspecting a selected folder, show a preview before confirmation with a persistent **Game assignment** selector above resulting game counts and media inspection warnings. Show a game selector only for Assign one game; require an explicit configured-game selection. Changing the rule recomputes assignment counts without repeating media inspection. Report conflicting automatic detections when assigning one game. Replace the former import-only assignment with these persistent rules, available even for empty folders. Explain that the rule includes all subfolders and future discoveries, preserves existing assigned games, and can fill missing games on later scans. Point to Game configs… on Home for adding games.
+The preview permits changing the selected folder with Edit folder…. A completed selection restarts inspection and the preview, including when the same folder is chosen, retaining the selected assignment rule. Cancelling leaves registration unchanged.
+Only in automatic mode, when the selected folder's name resolves to a game, show a highlighted tip suggesting the parent recordings folder for including sibling game folders.
+
+Home folder summaries include Automatic, Single game · <game>, or Unclassified, with complete text in the tooltip. Both More… and the folder context menu offer Game assignment…. Its modal editor uses the same selectors with Save and Cancel, requires no filesystem access, and persists the rule atomically without starting a scan or resuming paused folders. Cancel or failure preserves the saved rule. Disable the action during background operations and without a registered-folder selection. The next ordinary scan uses the saved rule.
 
 ### 11.3 Missing Files and Folder Migration
 

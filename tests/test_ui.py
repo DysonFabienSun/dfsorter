@@ -2066,6 +2066,10 @@ def test_deletion_confirmation_and_settings(window, application, tmp_path, monke
 
 @pytest.mark.parametrize("enabled", [True, False])
 def test_home_folder_context_toggle(window, application, tmp_path, enabled):
+    window.toggle_theme()
+    assert wait_for(application, lambda: window.worker is None and not window.activities.busy())
+    window.scan_timer.stop()
+    window.scan_retry_timer.stop()
     ids = add_clips(window, tmp_path)
     session = window.catalogue.state("session")
     target = window.catalogue.folders()[0]["folder_id"]
@@ -2088,6 +2092,7 @@ def test_home_folder_context_toggle(window, application, tmp_path, enabled):
     assert window.selected_id(window.folders) == target
     assert [action.text() for action in menu.actions()] == [
         "Pause scanning" if enabled else "Resume scanning",
+        "Game assignment…",
         "Relink folder…",
         "Remove folder…",
     ]
@@ -2108,6 +2113,7 @@ def test_home_folder_context_toggle(window, application, tmp_path, enabled):
 
 
 def test_home_folder_context_guards(window, application, tmp_path):
+    window.toggle_theme()
     add_clips(window, tmp_path)
     window.panel("Home")
     menu = window.folder_context_menu
@@ -2133,6 +2139,7 @@ def test_home_folder_context_guards(window, application, tmp_path):
 
 
 def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
+    window.toggle_theme()
     first = tmp_path / "MEDAL-EXP"
     second = tmp_path / "NVIDIA"
     first.mkdir()
@@ -2192,7 +2199,7 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         "path": str(first),
         "status": "Enabled",
         "enabled": True,
-        "summary": "3 clips · 0.00 GB",
+        "summary": "Automatic · 3 clips · 0.00 GB",
         "summary_new": "",
         "details": "VALORANT: 2 (2 new)   Escape from Tarkov: 1 (1 new)",
         "game_details": [
@@ -2207,8 +2214,6 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
     artifact = ROOT / "cache/verification/home-folders"
     artifact.mkdir(parents=True, exist_ok=True)
     window.resize(1100, 720)
-    window.grab().save(str(artifact / "hierarchy-light.png"))
-    window.set_theme("dark")
     application.processEvents()
     window.grab().save(str(artifact / "hierarchy-dark.png"))
 
@@ -5374,6 +5379,7 @@ def test_game_change_confirmation_and_undo(window, application, tmp_path, monkey
 def test_folder_dialogs_and_background_scan(
     window, application, tmp_path, monkeypatch, folder_name, forced_game, game
 ):
+    window.toggle_theme()
     from PySide6.QtWidgets import QFileDialog
 
     from dfsorter.folder_preview_dialog import FolderPreviewDialog
@@ -5388,11 +5394,12 @@ def test_folder_dialogs_and_background_scan(
             label.text() for label in dialog.composition.findChildren(QLabel)
         ]
         assert dialog.parent_folder_tip.isHidden() == (folder_name != "VALORANT")
-        assert dialog.override_section.isHidden() == (folder_name == "VALORANT")
+        assert dialog.assignment_mode == "automatic"
         if forced_game:
+            dialog.assignment.mode.setCurrentIndex(1)
             dialog.game.setCurrentText(forced_game)
             assert dialog.forced_game == forced_game
-            assert "Unclassified" in [
+            assert forced_game in [
                 label.text() for label in dialog.composition.findChildren(QLabel)
             ]
         # Reproduce a modal dialog processing worker-finished events.
@@ -5407,13 +5414,14 @@ def test_folder_dialogs_and_background_scan(
     assert len(window.catalogue.clips()) == 1
     assert window.catalogue.clips()[0]["game"] == game
     assert Path(window.catalogue.folders()[0]["path"]) == captures
-    assert window.catalogue.folders()[0]["forced_game"] is None
+    assert window.catalogue.folders()[0]["forced_game"] == forced_game
     window.rescan()
     assert wait_for(application, lambda: window.worker is None)
     assert len(window.catalogue.clips()) == 1
 
 
 def test_folder_preview_groups_mixed_scan_and_optional_assignment(window, application, tmp_path):
+    window.toggle_theme()
     from dfsorter.folder_preview_dialog import FolderPreviewDialog
 
     found = [
@@ -5433,36 +5441,89 @@ def test_folder_preview_groups_mixed_scan_and_optional_assignment(window, applic
         ] == [("VALORANT", "1"), ("Unclassified", "1")]
         labels = [label.text() for label in dialog.findChildren(QLabel)]
         assert "Additional games can be added from Game configs… on Home." in labels
-        assert dialog.game.currentText() == "Keep unclassified"
+        assert dialog.game.currentText() == "Select a game…"
         assert dialog.forced_game is None
-        assert dialog.assignment_note.text() == "1 unidentified video will remain unclassified."
+        assert dialog.assignment_note.text() == ""
         assert len([
             widget for widget in dialog.findChildren(QWidget)
             if widget.property("role") == "divider"
         ]) == 1
         folder_heading = next(label for label in dialog.findChildren(QLabel) if label.text() == "Folder")
-        override_heading = next(label for label in dialog.findChildren(QLabel) if label.text() == "Unclassified videos")
+        override_heading = next(label for label in dialog.findChildren(QLabel) if label.text() == "Game assignment")
         assert folder_heading.font().pixelSize() == dialog.summary.font().pixelSize()
         assert override_heading.font().pixelSize() == dialog.summary.font().pixelSize()
-        assert dialog.override_section.isVisible()
+        assert dialog.assignment.isVisible()
         assert dialog.game.isEnabled()
+        dialog.assignment.mode.setCurrentIndex(1)
+        assert not dialog.add_button.isEnabled()
         dialog.game.setCurrentText("Battlefield 6")
+        assert dialog.add_button.isEnabled()
         assert dialog.forced_game == dialog.game.currentText()
-        assert "Unclassified" in {
+        assert "Battlefield 6" in {
             label.text() for label in dialog.composition.findChildren(QLabel)
         }
         assert dialog.assignment_note.text() == (
-            "1 unidentified video will be assigned to Battlefield 6 during import."
+            "1 video detected as other games will be assigned to Battlefield 6."
         )
         assert [
             tuple(label.text() for label in row.findChildren(QLabel))
             for row in dialog.composition.findChildren(QWidget, "folderPreviewResultRow")
-        ] == [("VALORANT", "1"), ("Unclassified", "1")]
+            if not row.isHidden()
+        ] == [("Battlefield 6", "2")]
+        dialog.assignment.mode.setCurrentIndex(2)
+        assert dialog.forced_game is None
+        assert all(item["game"] is None for item in dialog.assigned_items())
     finally:
         dialog.close()
 
 
+def test_folder_assignment_editor_save_cancel_and_missing_game(window, application, tmp_path, monkeypatch):
+    from dfsorter.folder_preview_dialog import FolderAssignmentDialog, FolderPreviewDialog
+
+    window.toggle_theme()
+    root = tmp_path / "captures"
+    root.mkdir()
+    folder_id = window.catalogue.add_folder(root)
+    window.catalogue.enable_folder(folder_id, False)
+    root.rmdir()
+    window.refresh_references()
+    window.folders.setCurrentRow(0)
+    assert window.folder_assignment_action in window.folder_menu.actions()
+    assert window.folder_assignment_action in window.folder_context_menu.actions()
+    assert wait_for(application, lambda: window.worker is None and not window.activities.busy())
+
+    def edit(dialog):
+        dialog.assignment.mode.setCurrentIndex(1)
+        dialog.assignment.game.setCurrentText("VALORANT")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(FolderAssignmentDialog, "exec", edit)
+    window.edit_folder_assignment()
+    folder = window.catalogue.folders()[0]
+    assert folder["forced_game"] == "VALORANT"
+    assert folder["enabled"] == 0
+    assert window.worker is None
+    assert "Single game · VALORANT" in window.folders.item(0).toolTip()
+    monkeypatch.setattr(FolderAssignmentDialog, "exec", lambda dialog: QDialog.DialogCode.Rejected)
+    window.edit_folder_assignment()
+    assert window.catalogue.folders()[0] == folder
+    dialog = FolderAssignmentDialog(folder, {}, window)
+    assert not dialog.assignment.valid
+    assert "configuration unavailable" in dialog.assignment.game.currentText()
+    dialog.assignment.mode.setCurrentIndex(2)
+    assert dialog.assignment.valid
+    dialog.deleteLater()
+    preview = FolderPreviewDialog(str(root), [], {}, window)
+    assert preview.add_button.isEnabled()
+    preview.assignment.mode.setCurrentIndex(1)
+    assert not preview.add_button.isEnabled()
+    preview.assignment.mode.setCurrentIndex(2)
+    assert preview.add_button.isEnabled()
+    preview.deleteLater()
+
+
 def test_folder_preview_handles_empty_games_and_long_results(window, application, tmp_path):
+    window.toggle_theme()
     from dfsorter.folder_preview_dialog import FolderPreviewDialog
 
     directory = str(tmp_path / "A long recordings folder name")
@@ -5491,6 +5552,7 @@ def test_folder_preview_handles_empty_games_and_long_results(window, application
 def test_edit_folder_restarts_preview_after_inspection(
     window, application, tmp_path, monkeypatch, same_folder
 ):
+    window.toggle_theme()
     from PySide6.QtWidgets import QFileDialog
 
     from dfsorter.folder_preview_dialog import FolderPreviewDialog
@@ -5514,8 +5576,10 @@ def test_edit_folder_restarts_preview_after_inspection(
     def preview(dialog):
         previews.append(dialog.directory)
         if len(previews) == 1:
+            dialog.assignment.mode.setCurrentIndex(2)
             dialog.choose_folder()
             return QDialog.DialogCode.Rejected
+        assert dialog.assignment_mode == "unclassified"
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(FolderPreviewDialog, "exec", preview)
@@ -5527,9 +5591,10 @@ def test_edit_folder_restarts_preview_after_inspection(
     assert Path(window.catalogue.clips()[0]["source_path"]).parent == Path(selection)
 
 
-def test_folder_assignment_only_changes_unidentified_videos_on_import(
+def test_folder_assignment_persists_for_future_discoveries(
     window, application, tmp_path, monkeypatch
 ):
+    window.toggle_theme()
     from PySide6.QtWidgets import QFileDialog
 
     from dfsorter.folder_preview_dialog import FolderPreviewDialog
@@ -5544,9 +5609,10 @@ def test_folder_assignment_only_changes_unidentified_videos_on_import(
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(captures))
 
     def preview(dialog):
+        dialog.assignment.mode.setCurrentIndex(1)
         dialog.game.setCurrentText("Battlefield 6")
         assert {label.text() for label in dialog.composition.findChildren(QLabel)} >= {
-            "VALORANT", "Unclassified", "1"
+            "Battlefield 6", "2"
         }
         return QDialog.DialogCode.Accepted
 
@@ -5554,14 +5620,14 @@ def test_folder_assignment_only_changes_unidentified_videos_on_import(
     window.add_folder()
     assert wait_for(application, lambda: window.worker is None)
     clips = {Path(clip["source_path"]).name: clip for clip in window.catalogue.clips()}
-    assert clips["known.mp4"]["game"] == "VALORANT"
+    assert clips["known.mp4"]["game"] == "Battlefield 6"
     assert clips["unknown.mp4"]["game"] == "Battlefield 6"
-    assert window.catalogue.folders()[0]["forced_game"] is None
+    assert window.catalogue.folders()[0]["forced_game"] == "Battlefield 6"
     (unidentified / "later.mp4").write_bytes(b"test")
     window.rescan()
     assert wait_for(application, lambda: window.worker is None)
     clips = {Path(clip["source_path"]).name: clip for clip in window.catalogue.clips()}
-    assert clips["later.mp4"]["game"] is None
+    assert clips["later.mp4"]["game"] == "Battlefield 6"
 
 
 def test_rescan_modal_cache_restart(window, application, tmp_path, monkeypatch):

@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from .app_paths import tool
+from .folder_assignment import assigned_game, validate_assignment
 
 
 def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=20) -> dict:
@@ -60,8 +61,10 @@ def inspect_media(path: Path, executable=None, cancelled=lambda: False, timeout=
 
 
 def discover_paths(
-    root: Path, registry, forced_game=None, cancelled=lambda: False, progress=lambda text: None
+    root: Path, registry, forced_game=None, cancelled=lambda: False, progress=lambda text: None,
+    *, assignment_mode=None,
 ):
+    assignment_mode, forced_game = validate_assignment(assignment_mode, forced_game, registry.games)
     root = root.resolve()
     if not root.is_dir():
         raise ValueError(f"Capture folder unavailable: {root}")
@@ -86,14 +89,14 @@ def discover_paths(
             path = Path(directory) / filename
             if path.suffix.casefold() != ".mp4" or path.is_symlink():
                 continue
-            game = forced_game
+            game = None
             parent = path.parent
             while not game and parent.is_relative_to(root):
                 game = registry.resolve(parent.name)
                 if parent == root:
                     break
                 parent = parent.parent
-            found.append({"path": str(path), "game": game})
+            found.append({"path": str(path), "game": assigned_game(game, assignment_mode, forced_game)})
     return found
 
 

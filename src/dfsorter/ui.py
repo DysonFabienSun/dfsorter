@@ -85,7 +85,8 @@ from .config_editor import ConfigEditor
 from .config_store import GameFile
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
-from .folder_preview_dialog import FolderPreviewDialog
+from .folder_assignment import assignment_summary, validate_assignment
+from .folder_preview_dialog import FolderAssignmentDialog, FolderPreviewDialog
 from .history import EditHistory
 from .output import run_export_manifest, safe_stem, share_clip
 from .overview import (
@@ -1044,6 +1045,7 @@ class Window(QMainWindow):
         self.folder_more.setFixedHeight(SIZES["large"])
         self.folder_menu = QMenu(self.folder_more)
         self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
+        self.folder_assignment_action = self.folder_menu.addAction("Game assignment…", self.edit_folder_assignment)
         self.folder_toggle_action.setToolTip(
             "Pause scanning and exclude this folder from new sessions. Existing clips and sessions remain."
         )
@@ -1069,6 +1071,7 @@ class Window(QMainWindow):
         self.folders.setWordWrap(True)
         self.folder_context_menu = QMenu(self.folders)
         self.folder_context_menu.addAction(self.folder_toggle_action)
+        self.folder_context_menu.addAction(self.folder_assignment_action)
         self.folder_migrate_action = self.folder_context_menu.addAction("Relink folder…", self.migrate)
         self.folder_migrate_action.setToolTip("Find an already moved folder; no files are moved.")
         self.folder_remove_action = self.folder_context_menu.addAction("Remove folder…", self.remove_folder)
@@ -1077,7 +1080,7 @@ class Window(QMainWindow):
         self.folders.customContextMenuRequested.connect(self.show_folder_context_menu)
         home.addWidget(self.folders, 1)
         note = QLabel(
-            "Right-click a folder to pause or resume scanning, relink it, or remove it.\n"
+            "Right-click a folder to change game assignment, pause or resume scanning, relink it, or remove it.\n"
             "Paused folders remain in the library but are excluded from new sessions. "
             "Unlinked clips are saved entries from folders no longer tracked."
         )
@@ -2345,9 +2348,11 @@ class Window(QMainWindow):
                 if name not in counts:
                     game_details.append({"text": f"{name}: 0", "new": 0, "deleted": count})
                     games += ("   " if games else "") + f"{name}: 0 ({count} deleted)"
-            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {len(ids)} clips · {size_text}{new_size_text}\n"
+            rule = assignment_summary(folder)
+            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {rule} · {len(ids)} clips · {size_text}{new_size_text}\n"
             text += games or "No detected games"
             item = QListWidgetItem(text)
+            item.setToolTip(text)
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
             item.setData(
                 FOLDER_ROLE,
@@ -2355,7 +2360,7 @@ class Window(QMainWindow):
                     "path": folder["path"],
                     "status": "Enabled" if folder["enabled"] else "Paused",
                     "enabled": bool(folder["enabled"]),
-                    "summary": f"{len(ids)} clips · {size_text}",
+                    "summary": f"{rule} · {len(ids)} clips · {size_text}",
                     "summary_new": new_size_text,
                     "details": games or "No detected games",
                     "game_details": game_details,
@@ -4833,7 +4838,7 @@ class Window(QMainWindow):
         progress.repaint()
         QTimer.singleShot(0, self.worker.start)
 
-    def add_folder(self, directory=None):
+    def add_folder(self, directory=None, *, assignment_mode="automatic", selected_game=None):
         if self.current_panel == "Browse":
             return
         if self.worker is not None:
@@ -4847,23 +4852,24 @@ class Window(QMainWindow):
             dialog = FolderPreviewDialog(
                 directory, found, self.registry.games, self,
                 game_folder=bool(self.registry.resolve(Path(directory).name)),
+                assignment_mode=assignment_mode, selected_game=selected_game,
             )
             accepted = dialog.exec() == QDialog.DialogCode.Accepted
             forced_game = dialog.forced_game
+            mode = dialog.assignment_mode
+            assigned = dialog.assigned_items()
             edit_directory = dialog.edit_directory
             dialog.deleteLater()
             if edit_directory:
-                return lambda: self.add_folder(edit_directory)
+                return lambda: self.add_folder(edit_directory, assignment_mode=mode, selected_game=forced_game)
             if accepted:
-                if forced_game:
-                    found = [
-                        {**item, "game": item["game"] or forced_game} for item in found
-                    ]
+                validate_assignment(mode, forced_game, self.registry.games)
+                found = assigned
 
                 def ingest(cancelled, progress):
                     if cancelled():
                         raise InterruptedError("Import cancelled")
-                    folder_id = self.catalogue.add_folder(directory)
+                    folder_id = self.catalogue.add_folder(directory, forced_game, assignment_mode=mode)
                     try:
                         self.catalogue.ingest(folder_id, found, cancelled)
                     except Exception:
@@ -4969,10 +4975,11 @@ class Window(QMainWindow):
         )
         for action in (
             self.folder_toggle_action,
+            self.folder_assignment_action,
             self.folder_migrate_action,
             self.folder_remove_action,
         ):
-            action.setEnabled(folder is not None and self.worker is None)
+            action.setEnabled(folder is not None and self.worker is None and not self.activities.busy())
         self.folder_toggle_action.setText(
             "Pause scanning" if not folder or folder["enabled"] else "Resume scanning"
         )
@@ -4980,6 +4987,26 @@ class Window(QMainWindow):
         self.folder_unlinked_remove_action.setEnabled(
             folder_id == "__unlinked__" and self.worker is None
         )
+
+    def edit_folder_assignment(self):
+        if self.worker is not None or self.activities.busy() or self.current_panel == "Browse":
+            return
+        folder = next((entry for entry in self.catalogue.folders()
+                       if entry["folder_id"] == self.selected_id(self.folders)), None)
+        if folder is None:
+            return
+        dialog = FolderAssignmentDialog(folder, self.registry.games, self)
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.catalogue.set_folder_assignment(
+                    folder["folder_id"], dialog.assignment.mode.currentData(),
+                    dialog.assignment.selected_game, games=self.registry.games,
+                )
+                self.refresh_references()
+        except Exception as error:
+            self.error(error)
+        finally:
+            dialog.deleteLater()
 
     def toggle_folder(self):
         if self.current_panel == "Browse":

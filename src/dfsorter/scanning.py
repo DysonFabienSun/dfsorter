@@ -88,6 +88,7 @@ class ScanCoordinator:
             folder.get("forced_game"),
             self.cancelled,
             self.report,
+            assignment_mode=folder.get("assignment_mode"),
         )
         for item in found:
             item["path"] = normalized(item["path"])

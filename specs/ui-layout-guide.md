@@ -224,23 +224,24 @@ Copy full path context action. A completed folder selection restarts inspection 
 including when the same path is chosen. Cancelling the picker leaves the preview open.
 
 After a 12 px gap, show the emphasized video total with a 16 px video icon, then the detected
-game counts and an Unclassified count when present. Keep these original scan counts unchanged
-when an import assignment is selected. Use aligned secondary labels and right-aligned semibold
+game counts and an Unclassified count when present. These counts reflect the selected persistent
+assignment rule and update without media reinspection. Use aligned secondary labels and right-aligned semibold
 values, with subtle row separators. Rows and their containing area share the dialog surface;
 avoid bordered result cards and contrasting row backgrounds. Show at most six game/count rows
 before the results area scrolls; allow it to grow when the dialog grows. Show a short, muted
-explanation that game names come from the selected folder and its subfolders. Show inspection
+explanation that automatic detection uses the nearest recognized folder name, including the selected folder. Show inspection
 warnings when present.
 
-Only when unclassified videos exist, show one row with an Unclassified videos label and a
-selector. Its first, default option is Keep unclassified; configured games follow. Selecting a
-game assigns only unidentified videos from this import. Show a short muted confirmation with
-the count and selected game, or state that the unidentified videos will remain unclassified.
-Keep the Game configs… on Home guidance nearby. If no games are configured, leave the selector
-on Keep unclassified. Hide the entire assignment group when every video is classified. Keep
-the detected counts separate from the proposed assignment so their meaning does not shift.
+Below the path row and above results, show Game assignment with Detect from folder names,
+Assign one game, and Leave unclassified. Default to detection. Only Assign one game shows a
+game selector, initially Select a game…. Disable Add until a configured game is selected.
+Keep the assignment group available for empty or fully classified folders. Explain the recursive,
+persistent scope and preservation of existing assigned games in muted text; keep Game configs…
+guidance nearby. Report the count of conflicting folder detections when assigning one game.
+Use the same controls in the Game assignment editor, with Save and Cancel. An unavailable saved
+game remains visible with a configuration-unavailable suffix; require a valid choice before Save.
 
-Show the existing parent-folder tip only when the selected folder name resolves to a known game.
+Show the existing parent-folder tip only in automatic mode when the selected folder name resolves to a known game.
 Its message should suggest using Edit folder… to select the parent recordings folder while
 allowing the current folder to be added as-is. Use the shared quiet informational-tip styling.
 Keep 4–8 px within groups and 12–16 px between groups. The footer has a subtle top divider,

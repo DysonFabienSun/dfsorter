@@ -138,7 +138,7 @@ def test_v8_migration_preserves_catalogue_and_jobs(catalogue, clips):
     assert migrated.projects()[0]["output_preferences"] == {}
     assert migrated.state("review_destination") == project
     assert migrated.state("active_project") is None
-    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 9
+    assert migrated.rows("PRAGMA user_version")[0]["user_version"] == 10
 
 
 def test_batch_idempotency_rollback_and_membership_history(catalogue, clips):
