@@ -209,7 +209,7 @@ class ProjectWorkspace:
         self.scope = QLabel()
         role(self.scope, "secondary")
         search_row.addWidget(self.scope)
-        self.category = QPushButton("All members")
+        self.category = QPushButton("Clear filters")
         self.category.clicked.connect(lambda: self.open_category(None))
         search_row.addWidget(self.category)
         body.addLayout(search_row)
@@ -443,7 +443,7 @@ class ProjectWorkspace:
             "Ready clips can export; Pending clips need a verdict; Blocked clips have an "
             "unavailable source or invalid export metadata; Skipped counts Discard members. "
             "These counts cover the whole project. Click a category to inspect it; "
-            "All members returns to the complete project. Resolve or remove Pending and "
+            "Clear filters returns to the complete project. Resolve or remove Pending and "
             "Blocked clips before export. Temporary candidate skips do not affect readiness.\n\n"
             "6. Export the project\n"
             "Export… opens destination, filename format, folder organization and a size summary. Resolve Pending and Blocked members before submission. Submission exports the "
@@ -597,7 +597,7 @@ class ProjectWorkspace:
         self.update_unavailable_toggle()
         self.category.setVisible(self.view == "Assigned")
         self.category.setToolTip(
-            f"{state.readiness} · Return to all members" if state.readiness else "All members"
+            "Clear search, game, verdict, date and readiness filters to show all project members"
         )
         self.category.setAccessibleName(self.category.toolTip())
         self.scope.setText(f"{state.readiness} only" if self.view == "Assigned" and state.readiness else "")

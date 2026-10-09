@@ -1705,7 +1705,7 @@ def test_workspace_visual_states(window, application, tmp_path, theme):
             workspace = window.workspace
             assert workspace.category.isHidden() == (view != "Assigned")
             if view == "Assigned":
-                assert workspace.category.text() == "All members"
+                assert workspace.category.text() == "Clear filters"
                 assert workspace.category.parentWidget() is workspace.search.parentWidget()
                 assert abs(workspace.category.geometry().center().y()
                            - workspace.search.geometry().center().y()) <= 1
