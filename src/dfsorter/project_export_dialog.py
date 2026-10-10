@@ -49,6 +49,7 @@ def normalized_preferences(saved, games, registry, fallback_destination):
     options.setdefault("destination", fallback_destination)
     options.setdefault("group_rating", True)
     options.setdefault("include_rating", True)
+    options.setdefault("include_tag", True)
     return options
 
 
@@ -137,6 +138,11 @@ class ProjectExportDialog(QDialog):
         self.include_rating.setToolTip("Include rating in filenames for all games in this project")
         self.include_rating.setChecked(self.options["include_rating"])
         self.include_rating.toggled.connect(self.toggle_rating)
+        self.include_tag = QCheckBox("Tag")
+        self.include_tag.setAccessibleName("Include tag in filename")
+        self.include_tag.setToolTip("Include a leading [tag] in filenames for tagged clips in all games in this project")
+        self.include_tag.setChecked(self.options["include_tag"])
+        self.include_tag.toggled.connect(self.toggle_tag)
         preview = QVBoxLayout()
         preview.setSpacing(8)
         preview.addSpacing(4)
@@ -230,9 +236,11 @@ class ProjectExportDialog(QDialog):
         return [clip for clip in self.window.catalogue.clips() if clip["clip_id"] in ids]
 
     def show_fields(self):
-        # Keep the project-wide rating choice alive when rebuilding game controls.
+        # Keep project-wide choices alive when rebuilding game controls.
         self.include_rating.setParent(self.fields)
         self.include_rating.hide()
+        self.include_tag.setParent(self.fields)
+        self.include_tag.hide()
         while self.field_layout.count():
             item = self.field_layout.takeAt(0)
             if item.widget():
@@ -248,8 +256,10 @@ class ProjectExportDialog(QDialog):
             self.prefix = QCheckBox(f"Game code [{game.code}]")
             prefix_layout.addWidget(self.prefix)
         prefix_layout.addWidget(self.include_rating)
+        prefix_layout.addWidget(self.include_tag)
         prefix_layout.addStretch()
         self.include_rating.show()
+        self.include_tag.show()
         if not game:
             self.refresh_game_labels()
             return
@@ -282,22 +292,31 @@ class ProjectExportDialog(QDialog):
         self.options["include_rating"] = checked
         self.refresh_game_labels()
 
+    def toggle_tag(self, checked):
+        self.options["include_tag"] = checked
+        self.refresh_game_labels()
+
     def refresh_game_labels(self):
         name = self.game.currentData()
         if name not in self.examples:
             self.preview.set_filename("No configured Keep clips available for a filename preview.")
             return
-        clip = self.examples[name]
+        clip = {**self.examples[name], "tag": "TAG"}
         options = self.options["formats"][name]
         spans = []
         stem = safe_stem(export_title(
             clip, self.window.registry, options["fields"], options["prefix"],
             lowercase=self.window.settings.get("lowercase_generated_titles", True),
-            include_rating=self.options["include_rating"], text_spans=spans,
+            include_rating=self.options["include_rating"],
+            include_tag=self.options["include_tag"], text_spans=spans,
         ), text_spans=spans)
+        # Keep the format placeholder uppercase regardless of generated-title casing.
+        if self.options["include_tag"]:
+            stem = "[TAG]" + stem[5:]
         self.preview.set_filename(
             stem + Path(clip["source_path"]).suffix,
             [(start, length) for field, start, length in spans if field == "mainline"],
+            tag_spans=[(start, length) for field, start, length in spans if field == "tag"],
         )
 
     def choose_folder(self):
@@ -372,6 +391,7 @@ class ProjectExportDialog(QDialog):
                 options["group_rating"],
                 lowercase=lowercase,
                 include_rating=options["include_rating"],
+                include_tag=options["include_tag"],
             )
             manifest["project_name"] = self.project["name"]
             manifest["choices"] = {
@@ -379,6 +399,7 @@ class ProjectExportDialog(QDialog):
                 "formats": options["formats"],
                 "group_rating": options["group_rating"],
                 "include_rating": options["include_rating"],
+                "include_tag": options["include_tag"],
                 "lowercase": lowercase,
             }
             job_id = str(uuid4())

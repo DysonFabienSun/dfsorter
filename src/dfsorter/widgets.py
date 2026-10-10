@@ -715,7 +715,7 @@ class MiddleElideComboBox(QComboBox):
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
-def draw_underlined_text(painter, rect, text, spans, text_font, color):
+def draw_underlined_text(painter, rect, text, spans, text_font, color, colored_spans=()):
     display = QFontMetrics(text_font).elidedText(text, Qt.TextElideMode.ElideMiddle, rect.width())
     if not display:
         return
@@ -733,18 +733,24 @@ def draw_underlined_text(painter, rect, text, spans, text_font, color):
         position is not None and any(start <= position < start + length for start, length in spans)
         for position in positions
     ]
+    colors = [next((span_color for span_start, length, span_color in colored_spans
+                    if position is not None and span_start <= position < span_start + length), None)
+              for position in positions]
     formats = []
     start = 0
     while start < len(display):
         end = start + 1
-        while end < len(display) and underlined[end] == underlined[start]:
+        while (end < len(display) and underlined[end] == underlined[start]
+               and colors[end] == colors[start]):
             end += 1
-        if underlined[start]:
+        if underlined[start] or colors[start]:
             formatting = QTextLayout.FormatRange()
             formatting.start = len(display[:start].encode("utf-16-le")) // 2
             formatting.length = len(display[start:end].encode("utf-16-le")) // 2
             formatting.format = QTextCharFormat()
-            formatting.format.setFontUnderline(True)
+            formatting.format.setFontUnderline(underlined[start])
+            if colors[start]:
+                formatting.format.setForeground(QColor(colors[start]))
             formats.append(formatting)
         start = end
     layout = QTextLayout(display, text_font)
@@ -771,6 +777,7 @@ class FilenamePreview(QWidget):
         self.setAccessibleName("Live filename preview")
         self._text = ""
         self.spans = []
+        self.tag_spans = []
 
     def sizeHint(self):
         return QSize(160, max(SIZES["normal"], self.fontMetrics().height() + 16))
@@ -781,9 +788,10 @@ class FilenamePreview(QWidget):
     def text(self):
         return self._text
 
-    def set_filename(self, text, spans=()):
+    def set_filename(self, text, spans=(), *, tag_spans=()):
         self._text = text
         self.spans = list(spans)
+        self.tag_spans = list(tag_spans)
         self.setToolTip(text)
         self.setAccessibleDescription(text)
         self.update()
@@ -796,6 +804,7 @@ class FilenamePreview(QWidget):
         draw_underlined_text(
             painter, self.rect().adjusted(8, 0, -8, 0), self._text,
             self.spans, self.font(), COLORS["text_primary"],
+            [(start, length, COLORS["tag_preview"]) for start, length in self.tag_spans],
         )
 
 

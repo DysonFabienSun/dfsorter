@@ -74,6 +74,7 @@ THEMES = {
         "component_tooltip": "#252B33",
         "component_tooltip_text": "#F1F4F6",
         "tag": "#A66A00",
+        "tag_preview": "#887344",
         "hdr_label": "#A66A00",
     },
     "dark": {
@@ -142,6 +143,7 @@ THEMES = {
         "component_tooltip": "#11151A",
         "component_tooltip_text": "#F1F4F6",
         "tag": "#E8C45A",
+        "tag_preview": "#B5A16A",
         "hdr_label": "#E8C45A",
     },
 }

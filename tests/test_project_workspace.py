@@ -1320,6 +1320,7 @@ def test_export_dialog_live_filename_examples_and_compact_fields(
     window.catalogue.patch(ids[2], {"game": "Battlefield 6", "triage": "discard"})
     window.catalogue.patch(ids[3], {"game": "Overwatch", "triage": None})
     dialog = ProjectExportDialog(window, project)
+    dialog.include_tag.setChecked(False)
     dialog.show()
     application.processEvents()
     assert {dialog.game.itemData(i) for i in range(dialog.game.count())} == {
@@ -1408,6 +1409,7 @@ def test_export_rating_preview(window, application, tmp_path, prefix, theme):
     window.catalogue.patch(ids[0], {"rating": 4, "mainline": "Clutch: Win?"})
     window.catalogue.batch_membership(project, ids, True)
     dialog = ProjectExportDialog(window, project)
+    dialog.include_tag.setChecked(False)
     dialog.prefix.setChecked(prefix)
     clip = window.catalogue.clip(ids[0])
     for included in (True, False):
@@ -1447,6 +1449,7 @@ def test_export_preview_tracks_mainline_through_sanitizing_and_custom_order(
     })
     window.catalogue.batch_membership(project, ids, True)
     dialog = ProjectExportDialog(window, project)
+    dialog.include_tag.setChecked(False)
     dialog.prefix.setChecked(prefix)
     spans = dialog.preview.spans
     rendered = dialog.preview.text()
@@ -2136,3 +2139,52 @@ def test_export_folder_structure_defaults_and_pointer_states(window, application
     assert normalized_preferences(
         {"group_rating": False}, {"VALORANT"}, window.registry, ""
     )["group_rating"] is False
+
+
+@pytest.mark.parametrize("included", [False, True])
+def test_export_tag_placeholder_layout_and_saved_choices(window, application, tmp_path, monkeypatch, included):
+    window.set_theme("dark", persist=False)
+    ids, project = seed_workspace(window, tmp_path, 2)
+    window.catalogue.batch_membership(project, ids, True)
+    window.catalogue.patch(ids[0], {"tag": "LOW_FPS", "rating": 5, "mainline": "Highlight?"})
+    dialog = ProjectExportDialog(window, project)
+    assert dialog.include_tag.isChecked()
+    assert dialog.preview.text() == "[TAG] VAL_r5 highlight_.mp4"
+    assert dialog.preview.tag_spans == [(0, 5)]
+    dialog.examples["VALORANT"] = {**dialog.examples["VALORANT"], "tag": None}
+    dialog.refresh_game_labels()
+    assert dialog.preview.text() == "[TAG] VAL_r5 highlight_.mp4"
+    assert [dialog.preview.text()[start:start + length] for start, length in dialog.preview.spans] == ["highlight_"]
+    dialog.show()
+    application.processEvents()
+    assert dialog.include_tag.parentWidget() is dialog.include_rating.parentWidget()
+    assert dialog.include_tag.geometry().center().y() == dialog.include_rating.geometry().center().y()
+    assert dialog.include_rating.geometry().right() < dialog.include_tag.x()
+    artifact = ROOT / "cache/verification/export-tag"
+    artifact.mkdir(parents=True, exist_ok=True)
+    dialog.grab().save(str(artifact / "dark.png"))
+    rendered = dialog.preview.grab().toImage()
+    assert any(rendered.pixelColor(x, y) == QColor(COLORS["tag_preview"])
+               for x in range(rendered.width()) for y in range(rendered.height()))
+    dialog.resize(340, 540)
+    application.processEvents()
+    assert dialog.include_tag.geometry().right() < dialog.include_tag.parentWidget().width()
+    dialog.grab().save(str(artifact / "dark-narrow.png"))
+    dialog.include_tag.setChecked(False)
+    assert not dialog.preview.tag_spans
+    dialog.reject()
+    assert window.catalogue.projects()[0]["output_preferences"] == {}
+    dialog = ProjectExportDialog(window, project)
+    assert dialog.include_tag.isChecked()
+    dialog.include_tag.setChecked(included)
+    dialog.destination.setText(str(tmp_path / "output"))
+    monkeypatch.setattr(window, "add_export_job", lambda *args: None)
+    dialog.submit()
+    assert dialog.job_id
+    record = window.catalogue.export_jobs()[0]
+    assert record["manifest"]["choices"]["include_tag"] == included
+    assert record["manifest"]["items"][0]["stem"] == ("[low_fps] " if included else "") + "VAL_r5 highlight_"
+    assert "[TAG]" not in str(record["manifest"])
+    assert ProjectExportDialog(window, project).include_tag.isChecked() == included
+    window.catalogue.patch(ids[0], {"tag": "changed"})
+    assert window.catalogue.export_jobs()[0]["manifest"] == record["manifest"]

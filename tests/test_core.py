@@ -1180,3 +1180,22 @@ def test_generated_title_casing(registry, catalogue, clips, tmp_path, monkeypatc
     assert title(clip, registry, selected=["kill"], prefix=False, lowercase=lowercase) == (
         "4k" if lowercase else "4K"
     )
+
+
+@pytest.mark.parametrize("prefix,lowercase,included,tag", [
+    (True, True, True, "LOW_FPS"), (False, False, True, "LOW_FPS"),
+    (True, True, False, "LOW_FPS"), (True, True, True, None),
+])
+def test_export_tag_filename_choices(catalogue, clips, registry, tmp_path, prefix, lowercase, included, tag):
+    catalogue.patch(clips[0]["clip_id"], {"triage": "keep", "mainline": "Highlight", "rating": 5, "tag": tag})
+    clip = catalogue.clip(clips[0]["clip_id"])
+    formats = {"VALORANT": {"fields": ["mainline"], "prefix": prefix}}
+    expected = (f"[{tag.lower() if lowercase else tag}] " if tag and included else "")
+    expected += ("VAL_" if prefix else "") + ("r5 highlight" if lowercase else "R5 Highlight")
+    manifest = prepare_export_manifest([clip], registry, tmp_path / "queued", catalogue.folders(), formats,
+                                       lowercase=lowercase, include_tag=included)
+    assert manifest["items"][0]["stem"] == expected
+    result = export_project([clip], registry, tmp_path / "direct", catalogue.folders(), formats,
+                            lowercase=lowercase, include_tag=included)
+    assert result.error is None
+    assert Path(result.completed[0]).stem == expected
