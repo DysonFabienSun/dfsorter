@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
@@ -3740,6 +3741,119 @@ def test_clip_card_rating_scope(window, tmp_path):
     window.render_card(item, clip)
     assert "R4" not in item.text()
     assert item.data(CLIP_ROLE)["browse_details"] is not None
+
+
+@pytest.fixture
+def completed_playback(window, monkeypatch):
+    def complete(pane):
+        window.set_theme("dark", persist=False)
+        window.current_panel = pane
+        player = window.active_player()
+        monkeypatch.setattr(QApplication, "focusWidget", lambda: player)
+        player.loaded_clip = {"clip_id": "finished"}
+        player.media._duration = 120_000
+        player.media._position = 120_000
+        player.media._prepared = True
+        player.play.setEnabled(True)
+        player.seek.marker_range = (None, None)
+        calls = []
+        clock = {"elapsed": None}
+        player.end_space_press = SimpleNamespace(
+            isValid=lambda: clock["elapsed"] is not None,
+            elapsed=lambda: clock["elapsed"],
+            start=lambda: clock.update(elapsed=0),
+            invalidate=lambda: clock.update(elapsed=None),
+        )
+
+        def play():
+            calls.append(player.media.position())
+            player.media._set_state(QMediaPlayer.PlaybackState.PlayingState)
+
+        def seek(position):
+            player.media._position = position
+            player.media._set_status(QMediaPlayer.MediaStatus.LoadedMedia)
+
+        monkeypatch.setattr(player.media, "play", play)
+        monkeypatch.setattr(player.media, "pause", lambda: player.media._set_state(
+            QMediaPlayer.PlaybackState.PausedState
+        ))
+        monkeypatch.setattr(player.media, "setPosition", seek)
+        player.media._set_state(QMediaPlayer.PlaybackState.PlayingState)
+        player.media._receive(player.media.generation, "eof-reached", True)
+        return player, calls, clock
+
+    return complete
+
+
+@pytest.mark.parametrize("pane", ["Browse", "Editing", "Export"])
+@pytest.mark.parametrize("space_pressed", [False, True])
+def test_natural_completion_stops_and_preserves_navigation_intent(
+    window, completed_playback, pane, space_pressed
+):
+    player, calls, _ = completed_playback(pane)
+    assert player.ended
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.StoppedState
+    assert calls == []
+    if space_pressed:
+        for event_type in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            assert window.eventFilter(player, QKeyEvent(
+                event_type, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier
+            ))
+        assert calls == []
+    with player.continue_playback_on_navigation():
+        player.loaded_clip = {"clip_id": "next"}
+        player.awaiting_frame = True
+    assert player.play_on_ready == (not space_pressed)
+
+
+@pytest.mark.parametrize("pane,seconds", [("Browse", 7), ("Editing", 13), ("Export", 21)])
+@pytest.mark.parametrize("start_mode", ["offset", "range", "disabled"])
+def test_double_space_after_completion_uses_normal_start(
+    window, completed_playback, pane, seconds, start_mode
+):
+    player, calls, clock = completed_playback(pane)
+    player.settings.update(start_near_end_separate=True)
+    player.settings[f"start_near_end_{pane.lower()}_seconds"] = seconds
+    if start_mode == "range":
+        player.seek.marker_range = (20_000, 30_000)
+    elif start_mode == "disabled":
+        player.settings[f"start_near_end_{pane.lower()}_enabled"] = False
+
+    def space():
+        for event_type in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            assert window.eventFilter(player, QKeyEvent(
+                event_type, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier
+            ))
+
+    space()
+    assert calls == []
+    clock["elapsed"] = 301
+    space()
+    assert calls == []
+    clock["elapsed"] = 300
+    space()
+    expected = {"range": 20_000, "offset": 120_000 - seconds * 1000, "disabled": 0}
+    assert calls == [expected[start_mode]]
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+    assert not player.ended
+
+
+@pytest.mark.parametrize("pane", ["Browse", "Editing", "Export"])
+def test_held_space_does_not_restart_completed_video(window, completed_playback, pane):
+    player, calls, _ = completed_playback(pane)
+    window.eventFilter(player, QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier
+    ))
+    assert not window.space_timer.isActive()
+    player.fast(True)
+    window.eventFilter(player, QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier, " ", True
+    ))
+    window.eventFilter(player, QKeyEvent(
+        QEvent.Type.KeyRelease, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier
+    ))
+    assert calls == []
+    assert player.ended
 
 
 @pytest.mark.parametrize("codec", ["libx264", "libaom-av1"])

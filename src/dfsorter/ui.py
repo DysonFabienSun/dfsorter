@@ -2153,6 +2153,7 @@ class Window(QMainWindow):
         self.cancel_space()
         for player in (self.player, self.export_player, self.browse.player):
             player.play_on_ready = False
+            player.end_space_press.invalidate()
             player.media.pause()
         leaving_browse = self.current_panel == "Browse" and name != "Browse"
         if leaving_browse:
@@ -4159,7 +4160,7 @@ class Window(QMainWindow):
             if not event.isAutoRepeat() and self.space_down:
                 held = not self.space_timer.isActive()
                 self.cancel_space()
-                if not held:
+                if not held and not self.active_player().ended:
                     self.active_player().toggle()
                 return True
         if (
@@ -4240,6 +4241,17 @@ class Window(QMainWindow):
                 return True
         if key == Qt.Key.Key_Space and self.consume_resume_space:
             return True
+        if (
+            key == Qt.Key.Key_Space
+            and modifiers == Qt.KeyboardModifier.NoModifier
+            and not text_editing
+            and self.active_player().ended
+        ):
+            if not event.isAutoRepeat():
+                self.consume_resume_space = True
+                self.cancel_space()
+                self.active_player().space_at_end()
+            return True
         if key == Qt.Key.Key_Escape and self.current_panel == "Editing":
             self.review_mode()
             return True
@@ -4263,6 +4275,7 @@ class Window(QMainWindow):
                     key == Qt.Key.Key_Space
                     and modifiers == Qt.KeyboardModifier.NoModifier
                     and self.editing_paused()
+                    and not self.player.ended
                 )
                 self.submit_resume = False
                 self.update_command_state()

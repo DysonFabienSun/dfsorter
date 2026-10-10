@@ -1,7 +1,16 @@
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QElapsedTimer,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QColor, QCursor, QPainter, QPalette, QPixmap
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
@@ -357,6 +366,8 @@ class Player(QWidget):
         self.pending_seek = None
         self.scrub_playing = False
         self.ended = False
+        self.continue_after_end = False
+        self.end_space_press = QElapsedTimer()
         self.media.mediaStatusChanged.connect(self.media_status_changed)
         layout.addWidget(self.seek)
         self.fast_indicator = QLabel(">>>")
@@ -686,12 +697,41 @@ class Player(QWidget):
     def media_status_changed(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.ended = True
+            self.end_space_press.invalidate()
+            if self.fast_state is not None:
+                self.continue_after_end = (
+                    self.fast_state[0] == QMediaPlayer.PlaybackState.PlayingState
+                )
         elif status in {QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia}:
             self.ended = False
+            self.continue_after_end = False
+            self.end_space_press.invalidate()
 
     def playback_state_changed(self, state):
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.ended = False
+            self.continue_after_end = True
+            self.end_space_press.invalidate()
+        elif state == QMediaPlayer.PlaybackState.PausedState:
+            self.continue_after_end = False
+
+    def start_position(self, marker_range):
+        start, end = marker_range
+        if (
+            isinstance(start, int) and isinstance(end, int)
+            and 0 <= start < end <= self.media.duration()
+        ):
+            return start
+        enabled, seconds = playback_start_settings(self.settings, self.pane)
+        return max(0, self.media.duration() - seconds * 1000) if enabled else 0
+
+    def space_at_end(self):
+        self.continue_after_end = False
+        if self.end_space_press.isValid() and self.end_space_press.elapsed() <= 300:
+            self.end_space_press.invalidate()
+            self.toggle()
+        else:
+            self.end_space_press.start()
 
     def seek_to(self, position, preview=False):
         position = max(0, min(self.media.duration(), position))
@@ -711,7 +751,10 @@ class Player(QWidget):
         """Carry playback through an explicit previous/next clip change."""
         previous = self.loaded_clip
         state = self.fast_state[0] if self.fast_state else self.media.playbackState()
-        playing = self.play_on_ready or state == QMediaPlayer.PlaybackState.PlayingState
+        playing = (
+            self.play_on_ready or state == QMediaPlayer.PlaybackState.PlayingState
+            or (self.ended and self.continue_after_end)
+        )
         yield
         if (playing and self.loaded_clip is not None
                 and (previous is None or previous["clip_id"] != self.loaded_clip["clip_id"])):
@@ -722,6 +765,8 @@ class Player(QWidget):
 
     def load(self, clip):
         self.play_on_ready = False
+        self.continue_after_end = False
+        self.end_space_press.invalidate()
         self.loaded_start_settings = playback_start_settings(self.settings, self.pane)
         self.video_container.clear_prepared_frame()
         self.prepared_image = None
@@ -762,19 +807,7 @@ class Player(QWidget):
         if self.awaiting_frame and not self.initial_seek_done:
             self.initial_seek_done = True
             self.media.pause()
-            start, end = self.initial_range
-            valid_range = (
-                isinstance(start, int)
-                and isinstance(end, int)
-                and 0 <= start < end <= self.media.duration()
-            )
-            fallback = 0
-            enabled, seconds = playback_start_settings(self.settings, self.pane)
-            if enabled:
-                fallback = max(
-                    0, self.media.duration() - seconds * 1000
-                )
-            self.media.setPosition(start if valid_range else fallback)
+            self.media.setPosition(self.start_position(self.initial_range))
         elif self.awaiting_frame:
             self.preview_frame_ready = True
             self.finish_preview_if_ready()
@@ -821,6 +854,8 @@ class Player(QWidget):
 
     def load_error(self, error, message):
         self.play_on_ready = False
+        self.continue_after_end = False
+        self.end_space_press.invalidate()
         self.preview_reveal_timer.stop()
         self.set_status(message)
         self.play.setEnabled(False)
@@ -833,6 +868,8 @@ class Player(QWidget):
     def load_timed_out(self):
         if self.awaiting_frame:
             self.play_on_ready = False
+            self.continue_after_end = False
+            self.end_space_press.invalidate()
             self.preview_reveal_timer.stop()
             self.awaiting_frame = False
             self.media.stop()
@@ -859,6 +896,9 @@ class Player(QWidget):
             self.media.pause()
             self.show_fullscreen_feedback("pause")
         else:
+            if self.ended:
+                self.media.pause()
+                self.media.setPosition(self.start_position(self.seek.marker_range))
             self.media.play()
             self.show_fullscreen_feedback("play")
 
@@ -873,7 +913,7 @@ class Player(QWidget):
         self.fast_indicator_phase = (self.fast_indicator_phase + 1) % 3
 
     def fast(self, enabled):
-        if enabled and (self.awaiting_frame or not self.play.isEnabled()):
+        if enabled and (self.ended or self.awaiting_frame or not self.play.isEnabled()):
             return
         if enabled and self.fast_state is None:
             self.awaiting_frame = False
