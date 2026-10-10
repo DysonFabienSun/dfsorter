@@ -499,6 +499,7 @@ class BlockedCloseBell:
                 modal is not None
                 and (modal is self.window or self.window.isAncestorOf(modal))
             ):
+                self.window.defer_close_until_unblocked()
                 self.user32.MessageBeep(0xFFFFFFFF)
                 if modal is not None:
                     modal.raise_()
@@ -519,6 +520,7 @@ class Window(QMainWindow):
         self.named_value_additions = Counter()
         self.named_value_error = ""
         self.close_requested = False
+        self.deferred_close_requested = False
         self.root = Path(root)
         self.registry = Registry(self.root / "configs/games")
         self.tips = TipLibrary(self.root / "configs/tips")
@@ -4032,6 +4034,14 @@ class Window(QMainWindow):
                 self.library.viewport().update(self.library.visualItemRect(item))
 
     def eventFilter(self, watched: QObject, event):
+        if self.deferred_close_requested and (
+            watched is self and event.type() == QEvent.Type.WindowUnblocked
+            or isinstance(watched, QDialog) and event.type() in {
+                QEvent.Type.Hide, QEvent.Type.Destroy,
+            }
+        ):
+            QTimer.singleShot(0, self.resume_deferred_close)
+
         if hasattr(self, "named_value_registration") and self.named_value_registration and (
             event.type() == QEvent.Type.ApplicationDeactivate
             or event.type() == QEvent.Type.FocusOut and watched is self.command
@@ -5573,7 +5583,39 @@ class Window(QMainWindow):
         self.resize(1400, 918)
         self.splitter.setSizes([420, 980])
 
+    def blocking_modal(self):
+        modal = QApplication.activeModalWidget()
+        if modal is None:
+            return None
+        if modal.windowModality() == Qt.WindowModality.ApplicationModal:
+            return modal
+        parent = modal
+        while parent is not None:
+            if parent is self:
+                return modal
+            parent = parent.parentWidget()
+        return None
+
+    def defer_close_until_unblocked(self):
+        # This records intent only; normal exit confirmation/cancellation runs after the modal.
+        self.deferred_close_requested = True
+        QTimer.singleShot(0, self.resume_deferred_close)
+
+    def resume_deferred_close(self):
+        if not self.deferred_close_requested or not self.isVisible():
+            return
+        if self.blocking_modal() is not None:
+            return
+        if sys.platform == "win32" and not self.blocked_close_bell.user32.IsWindowEnabled(
+            self.blocked_close_bell.handle
+        ):
+            return
+        self.deferred_close_requested = False
+        self.close()
+
     def closeEvent(self, event):
+        self.deferred_close_requested = False
+
         if (
             not self.close_requested
             and self.current_panel == "Config"

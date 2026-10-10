@@ -7294,3 +7294,58 @@ def test_browse_fullscreen_restores_player_and_window(window, application, tmp_p
         window.panel(panel)
         QTest.keyClick(window.active_player(), Qt.Key.Key_F11)
         assert not window.isFullScreen()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows blocked close behavior")
+@pytest.mark.parametrize("message,wparam", [(0x0010, 0), (0x0112, 0xF060)])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_windows_blocked_close_resumes_after_export_dialog(window, application, message, wparam, accepted):
+    import ctypes
+
+    from dfsorter.project_export_dialog import ProjectExportDialog
+
+    window.set_theme("dark", persist=False)
+    project = window.catalogue.save_project("Deferred exit")
+    dialog = ProjectExportDialog(window, project)
+    dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dialog.show()
+    application.processEvents()
+    assert QApplication.activeModalWidget() is dialog
+    for _ in range(2):
+        assert ctypes.windll.user32.PostMessageW(int(window.winId()), message, wparam, 0)
+    assert wait_for(application, lambda: window.deferred_close_requested)
+    assert window.isVisible() and dialog.isVisible()
+    assert not window.close_requested
+    dialog.accept() if accepted else dialog.reject()
+    assert wait_for(application, lambda: not window.isVisible())
+    assert not window.deferred_close_requested
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows blocked close behavior")
+def test_deferred_close_waits_for_nested_dialogs_and_allows_exit_decline(window, application, monkeypatch):
+    import ctypes
+
+    window.set_theme("dark", persist=False)
+    outer = QDialog(window)
+    outer.setWindowModality(Qt.WindowModality.ApplicationModal)
+    outer.show()
+    inner = QDialog(outer)
+    inner.setWindowModality(Qt.WindowModality.ApplicationModal)
+    inner.show()
+    application.processEvents()
+    assert ctypes.windll.user32.PostMessageW(int(window.winId()), 0x0010, 0, 0)
+    assert wait_for(application, lambda: window.deferred_close_requested)
+    inner.reject()
+    application.processEvents()
+    assert window.isVisible() and outer.isVisible()
+    assert window.deferred_close_requested
+    job = window.activities.submit("Share", "Pending", lambda *args: None, paused=True)
+    job.state = "Queued"
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
+    outer.reject()
+    assert wait_for(application, lambda: not window.deferred_close_requested)
+    assert window.isVisible() and not window.close_requested
+    assert job.state == "Queued"
+    application.processEvents()
+    assert window.isVisible()
+    window.activities.cancel_all()
