@@ -7183,7 +7183,8 @@ def test_browse_fullscreen_chrome_and_share_flow(window, application, tmp_path):
         + player.video_container.height() // 5
     )) <= 1
     readout_image = readout.grab().toImage()
-    assert readout.width() == readout.height()
+    assert readout.width() == 88
+    assert readout.fontMetrics().height() < readout.height() < readout.width()
     assert 0 < readout_image.pixelColor(0, 0).alpha() < 100
     assert wait_for(application, lambda: not readout.isVisible(), timeout=2)
     player.chrome_timer.setInterval(80)

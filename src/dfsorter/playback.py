@@ -258,7 +258,11 @@ class FullscreenFeedback(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput)
-        self.setFixedSize(88 if text_only else 112, 88 if text_only else 112)
+        if text_only:
+            self.setFont(font("xxl", "bold", base=self.font()))
+            self.setFixedSize(88, self.fontMetrics().height() + 16)
+        else:
+            self.setFixedSize(112, 112)
         self.text_only = text_only
         self.icon_name = "pause"
         self.text = ""
@@ -306,7 +310,7 @@ class FullscreenFeedback(QWidget):
         if self.text_only:
             painter.fillRect(self.rect(), QColor(0, 0, 0, 55))
             painter.setPen(QColor(COLORS["player_chrome_text"]))
-            painter.setFont(font("xxl", "bold", base=painter.font()))
+            painter.setFont(self.font())
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text)
             return
         painter.setBrush(QColor(0, 0, 0, 175))
