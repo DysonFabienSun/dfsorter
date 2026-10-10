@@ -3599,7 +3599,7 @@ class Window(QMainWindow):
         if self.atomic_edit:
             return
         if self.current_panel == "Export":
-            self.workspace.navigate(offset)
+            self.workspace.navigate(offset, select_current=True)
             return
         if self.current_panel == "Browse":
             index = self.library.currentRow() + offset

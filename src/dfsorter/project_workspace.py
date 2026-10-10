@@ -419,7 +419,9 @@ class ProjectWorkspace:
             "Assigned offers Remove selected below the list. Bulk actions → All matching acts on every filtered "
             "result, including offscreen rows. Plain-click starts a new selection; "
             "Ctrl-click adds separate rows; Shift-click selects a range; Ctrl+A selects "
-            "all visible rows. The eye toggle shows or hides unavailable sources. "
+            "all visible rows. Up/Down selects the previous/next previewed clip; "
+            "the preview buttons preserve bulk selection. "
+            "The eye toggle shows or hides unavailable sources. "
             "Without a project, the view selector is disabled and the catalogue is shown.\n\n"
             "3. Remove exceptions in Assigned\n"
             "To include a broad set except a few recordings, add all matching first. "
@@ -967,13 +969,17 @@ class ProjectWorkspace:
             clips[0] if clips else None,
         )
 
-    def navigate(self, offset):
+    def navigate(self, offset, *, select_current=False):
         if not self.window.ensure_range_complete():
             return
         listing = self.window.library
         index = listing.currentRow() + offset
         if 0 <= index < listing.count():
-            listing.setCurrentRow(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+            command = (
+                QItemSelectionModel.SelectionFlag.ClearAndSelect
+                if select_current else QItemSelectionModel.SelectionFlag.NoUpdate
+            )
+            listing.setCurrentRow(index, command)
             listing.scrollToItem(listing.item(index))
             self.remember()
 
