@@ -979,9 +979,10 @@ class ProjectWorkspace:
                 QItemSelectionModel.SelectionFlag.ClearAndSelect
                 if select_current else QItemSelectionModel.SelectionFlag.NoUpdate
             )
-            listing.setCurrentRow(index, command)
-            listing.scrollToItem(listing.item(index))
-            self.remember()
+            with self.player.continue_playback_on_navigation():
+                listing.setCurrentRow(index, command)
+                listing.scrollToItem(listing.item(index))
+                self.remember()
 
     def update_actions(self):
         if self.window.current_panel != "Export":

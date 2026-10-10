@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, Qt, QTimer, QUrl, Signal
@@ -428,6 +429,7 @@ class Player(QWidget):
         self.media.errorOccurred.connect(self.load_error)
         self.media.frameReady.connect(self.first_frame)
         self.awaiting_frame = False
+        self.play_on_ready = False
         self.preview_frame_ready = False
         self.fast_state = None
         self.load_timeout = QTimer(self)
@@ -700,7 +702,22 @@ class Player(QWidget):
         if recover and not preview:
             self.media.play()
 
+    @contextmanager
+    def continue_playback_on_navigation(self):
+        """Carry playback through an explicit previous/next clip change."""
+        previous = self.loaded_clip
+        state = self.fast_state[0] if self.fast_state else self.media.playbackState()
+        playing = self.play_on_ready or state == QMediaPlayer.PlaybackState.PlayingState
+        yield
+        if (playing and self.loaded_clip is not None
+                and (previous is None or previous["clip_id"] != self.loaded_clip["clip_id"])):
+            if self.awaiting_frame:
+                self.play_on_ready = True
+            elif self.play.isEnabled():
+                self.media.play()
+
     def load(self, clip):
+        self.play_on_ready = False
         self.loaded_start_settings = playback_start_settings(self.settings, self.pane)
         self.video_container.clear_prepared_frame()
         self.prepared_image = None
@@ -793,9 +810,13 @@ class Player(QWidget):
         self.play.setEnabled(True)
         self.seek.setEnabled(True)
         self.load_timeout.stop()
+        if self.play_on_ready:
+            self.play_on_ready = False
+            self.media.play()
         self.loading_finished.emit()
 
     def load_error(self, error, message):
+        self.play_on_ready = False
         self.preview_reveal_timer.stop()
         self.set_status(message)
         self.play.setEnabled(False)
@@ -807,6 +828,7 @@ class Player(QWidget):
 
     def load_timed_out(self):
         if self.awaiting_frame:
+            self.play_on_ready = False
             self.preview_reveal_timer.stop()
             self.awaiting_frame = False
             self.media.stop()

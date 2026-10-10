@@ -2151,9 +2151,9 @@ class Window(QMainWindow):
             ready_player.video.setSizePolicy(policy)
             ready_player.video.hide()
         self.cancel_space()
-        self.player.media.pause()
-        self.export_player.media.pause()
-        self.browse.player.media.pause()
+        for player in (self.player, self.export_player, self.browse.player):
+            player.play_on_ready = False
+            player.media.pause()
         leaving_browse = self.current_panel == "Browse" and name != "Browse"
         if leaving_browse:
             self.browse.set_fullscreen(False)
@@ -3506,7 +3506,7 @@ class Window(QMainWindow):
         try:
             self.catalogue.patch(self.current_id, {}, membership=(project_id, True))
             if session["index"] + 1 < len(session["ids"]):
-                self.navigate(1)
+                self.switch_editing_clip(session["ids"][session["index"] + 1])
             else:
                 self.render_clip()
                 self.statusBar().showMessage("Added to review destination — end of session.", 12000)
@@ -3601,16 +3601,17 @@ class Window(QMainWindow):
         if self.current_panel == "Export":
             self.workspace.navigate(offset, select_current=True)
             return
-        if self.current_panel == "Browse":
-            index = self.library.currentRow() + offset
-            if 0 <= index < self.library.count():
-                self.library.setCurrentRow(index)
-            return
-        session = self.catalogue.state("session")
-        if not session:
-            return
-        index = max(0, min(len(session["ids"]) - 1, session["index"] + offset))
-        self.switch_editing_clip(session["ids"][index])
+        with self.active_player().continue_playback_on_navigation():
+            if self.current_panel == "Browse":
+                index = self.library.currentRow() + offset
+                if 0 <= index < self.library.count():
+                    self.library.setCurrentRow(index)
+                return
+            session = self.catalogue.state("session")
+            if not session:
+                return
+            index = max(0, min(len(session["ids"]) - 1, session["index"] + offset))
+            self.switch_editing_clip(session["ids"][index])
 
     def active_player(self):
         if self.current_panel == "Browse":
