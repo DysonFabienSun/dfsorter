@@ -166,8 +166,8 @@ class MembershipHistory:
 class ProjectWorkspace:
     def __init__(self, window, layout):
         self.window = window
-        self.project_id = None
-        self.view = "Available"
+        self.project_id = window.catalogue.state("workspace_project")
+        self.view = "Assigned" if self.project_id else "Available"
         self.states = {}
         self.project_views = {}
         self.histories = {}
@@ -484,8 +484,12 @@ class ProjectWorkspace:
                 mapping.pop(project_id)
         self.states = {key: state for key, state in self.states.items()
                        if key[0] is None or key[0] in existing}
-        if self.project_id not in {project["project_id"] for project in projects}:
-            self.project_id = None
+        if self.project_id not in existing:
+            self.project_id = projects[0]["project_id"] if projects else None
+            self.view = self.project_views.get(
+                self.project_id, "Assigned" if self.project_id else "Available"
+            )
+            self.window.catalogue.set_state("workspace_project", self.project_id)
         self.selector.clear()
         for project in projects:
             self.selector.addItem(project["name"], project["project_id"])
@@ -524,6 +528,7 @@ class ProjectWorkspace:
         self.remember()
         self.project_views[self.project_id] = self.view
         self.project_id = self.selector.currentData()
+        self.window.catalogue.set_state("workspace_project", self.project_id)
         self.view = self.project_views.get(
             self.project_id, "Assigned" if self.project_id else "Available"
         )
@@ -538,8 +543,14 @@ class ProjectWorkspace:
             self.window.new_project()
 
     def select_project(self, project_id, *, new=False):
+        if project_id is None and self.selector.count() > 1:
+            project_id = self.selector.itemData(0)
         if new:
             self.project_views[project_id] = "Available"
+            if self.project_id == project_id:
+                self.view = "Available"
+                self.load_controls()
+                self.refresh(restore=True)
         self.selector.setCurrentIndex(self.selector.findData(project_id))
 
     def switch_view(self, view, *, deselect=False):

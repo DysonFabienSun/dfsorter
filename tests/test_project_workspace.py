@@ -82,8 +82,8 @@ def test_project_chooser_startup_and_creation_cancellation(window, tmp_path, mon
     monkeypatch.setattr(ProjectWorkspace, "__init__", observe_startup)
     restarted = Window(tmp_path)
     try:
-        assert observed == [None]
-        assert restarted.workspace.selector.currentIndex() == -1
+        assert observed == [project]
+        assert restarted.workspace.selector.currentData() == project
     finally:
         restarted.close()
         restarted.deleteLater()
@@ -94,11 +94,17 @@ def test_project_chooser_startup_and_creation_cancellation(window, tmp_path, mon
     selector.activated.emit(index)
     assert workspace.project_id == project
     assert selector.currentData() == project
-    workspace.select_project(None)
-    selector.setCurrentIndex(index)
-    selector.activated.emit(index)
+    window.catalogue.delete_project(project)
+    window.refresh_references()
+    selector.setCurrentIndex(selector.count() - 1)
+    selector.activated.emit(selector.count() - 1)
     assert workspace.project_id is None
     assert selector.currentIndex() == -1
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args, **_kwargs: ("First project", True))
+    window.new_project()
+    assert workspace.selector.currentText() == "First project"
+    assert workspace.view == "Available"
+    assert window.catalogue.state("workspace_project") == workspace.project_id
 
 
 @pytest.mark.parametrize("category", ["Ready", "Pending", "Blocked", "Skipped"])
@@ -259,11 +265,11 @@ def test_workspace_project_management_and_destination_isolation(window, tmp_path
     assert window.auto_collect_enabled
     monkeypatch.setattr(window, "confirm", lambda *_: True)
     window.delete_project()
-    assert window.workspace.project_id is None
-    assert window.workspace.views.itemText(0) == "Assigned (0)"
+    assert window.workspace.project_id == original
+    assert window.workspace.views.itemText(0) == "Assigned - Highlights (0)"
     assert window.catalogue.state("review_destination") is None
     assert not window.auto_collect_enabled
-    assert not window.workspace.export_button.isEnabled()
+    assert window.workspace.export_button.isEnabled()
     assert len(window.catalogue.export_jobs()) == 1
     assert len(window.catalogue.clips()) == len(ids)
     assert all(Path(clip["source_path"]).is_file() for clip in window.catalogue.clips())
@@ -417,7 +423,10 @@ def test_export_size_counts_ready_originals_independently_of_workspace_view(
     window.refresh_references()
     workspace.select_project(other, new=True)
     assert workspace.export_size.text() == "0 ready · Estimated export: 0.00 GB"
-    workspace.select_project(None)
+    for remaining in window.catalogue.projects():
+        window.catalogue.delete_project(remaining["project_id"])
+    window.refresh_references()
+    workspace.refresh(restore=True)
     assert workspace.export_size.text() == "0 ready · Estimated export: — GB"
 
 
@@ -509,7 +518,10 @@ def test_membership_views_and_unavailable_icon(window, application, tmp_path, th
     select_view(window, "Available")
     assert workspace.unavailable.isChecked()
     assert set(workspace.state.visible) == set(ids[:2])
-    workspace.select_project(None)
+    for remaining in window.catalogue.projects():
+        window.catalogue.delete_project(remaining["project_id"])
+    window.refresh_references()
+    workspace.refresh(restore=True)
     assert not workspace.views.isEnabled()
     assert workspace.view == "Available"
     workspace.unavailable.click()
@@ -1876,7 +1888,10 @@ def test_export_refined_filters_and_contextual_actions(window, application, tmp_
     window.panel("Browse")
     assert workspace.list_footer.isHidden()
     window.panel("Export")
-    workspace.select_project(None)
+    for remaining in window.catalogue.projects():
+        window.catalogue.delete_project(remaining["project_id"])
+    window.refresh_references()
+    workspace.refresh(restore=True)
     assert workspace.more.isEnabled() and workspace.selector.isEnabled()
     assert not workspace.rename_action.isEnabled() and not workspace.delete_action.isEnabled()
 
@@ -2188,3 +2203,45 @@ def test_export_tag_placeholder_layout_and_saved_choices(window, application, tm
     assert ProjectExportDialog(window, project).include_tag.isChecked() == included
     window.catalogue.patch(ids[0], {"tag": "changed"})
     assert window.catalogue.export_jobs()[0]["manifest"] == record["manifest"]
+
+
+def test_workspace_restores_last_project_and_alphabetical_fallback(window, application, tmp_path):
+    window.set_theme("dark", persist=False)
+    zulu = window.catalogue.save_project("Zulu")
+    alpha = window.catalogue.save_project("Alpha")
+    window.refresh_references()
+    workspace = window.workspace
+    assert workspace.project_id == alpha
+    assert workspace.selector.currentText() == "Alpha"
+    workspace.select_project(zulu)
+    assert window.catalogue.state("workspace_project") == zulu
+    window.catalogue.set_state("review_destination", alpha)
+    restarted = Window(tmp_path)
+    try:
+        assert restarted.workspace.project_id == zulu
+        assert restarted.workspace.selector.currentText() == "Zulu"
+        assert restarted.catalogue.state("review_destination") == alpha
+    finally:
+        restarted.close()
+        application.processEvents()
+        restarted.deleteLater()
+    window.catalogue.delete_project(zulu)
+    window.refresh_references()
+    assert workspace.project_id == alpha
+    assert window.catalogue.state("workspace_project") == alpha
+    window.catalogue.delete_project(alpha)
+    window.refresh_references()
+    assert workspace.project_id is None
+    assert workspace.selector.currentIndex() == -1
+    assert window.catalogue.state("workspace_project") is None
+    window.catalogue.set_state("workspace_project", "deleted-project")
+    beta = window.catalogue.save_project("Beta")
+    restarted = Window(tmp_path)
+    try:
+        assert restarted.workspace.project_id == beta
+        assert restarted.workspace.selector.currentText() == "Beta"
+        assert restarted.catalogue.state("workspace_project") == beta
+    finally:
+        restarted.close()
+        application.processEvents()
+        restarted.deleteLater()
