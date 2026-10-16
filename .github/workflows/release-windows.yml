@@ -13,6 +13,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -48,6 +50,9 @@ jobs:
           if ($response.StatusCode -ne 404) {
             throw "Release lookup failed with HTTP $($response.StatusCode)."
           }
+      - name: Read proposed changelog from annotated tag
+        shell: pwsh
+        run: ./packaging/read-release-notes.ps1 -Tag $env:GITHUB_REF_NAME -OutputPath "$env:RUNNER_TEMP/release-notes.md"
       - name: Build portable ZIP
         shell: pwsh
         run: ./packaging/build-release.ps1 -NoProxy
@@ -58,4 +63,4 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create '${{ github.ref_name }}' "./build/DFSorter-$env:GITHUB_REF_NAME-Windows-x64.zip" --title 'DFSorter ${{ github.ref_name }}' --generate-notes --verify-tag --draft
+        run: gh release create "$env:GITHUB_REF_NAME" "./build/DFSorter-$env:GITHUB_REF_NAME-Windows-x64.zip" --title "DFSorter $env:GITHUB_REF_NAME" --notes-file "$env:RUNNER_TEMP/release-notes.md" --verify-tag --draft
