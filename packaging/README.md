@@ -39,3 +39,11 @@ to `gh release create --notes-file`. Lightweight tags, mismatched headings and m
 comparison links fail instead of falling back to generated notes. CI attaches the
 portable ZIP and leaves the release as a draft; publication remains a separate action.
 After pushing, the skill checks CI and the draft's notes and asset before reporting completion.
+
+The workflow re-fetches the original tag object after checkout, because checkout can
+replace the runner's local annotated tag with its underlying commit. It verifies
+that the restored tag still points to the checked-out source. To retry an existing
+tag with a corrected workflow, run the workflow manually from `main` with the `tag`
+input, for example `gh workflow run release-windows.yml --ref main -f tag=v1.1.9`.
+The selected tag supplies the source and notes; an existing release still aborts the
+run, and retrying never requires replacing the remote tag.

@@ -1,5 +1,6 @@
 # Annotated release changelogs
 
+- [x] CI restores the remote annotated tag after checkout and verifies that its commit matches the build source. Manual workflow dispatch accepts an existing tag so workflow repairs can retry a release without changing the remote tag; focused local-clone checks cover restoration and mismatched-source rejection.
 - [x] Version-tag releases read the proposed changelog from the annotated Git tag and use it as the GitHub draft release body, with categorized bullets and a Full Changelog comparison link. Missing or malformed annotations stop CI before the portable build; releases remain drafts.
 - [x] The local push-version-tag skill prepares the notes before tagging, preserves Markdown with verbatim cleanup, validates extraction before pushing, and checks the resulting CI draft and ZIP asset. The standalone version-preparation commit remains limited to version files.
 - [x] Four isolated Git/PowerShell checks pass for Unicode preservation and rejection of lightweight tags, mismatched headings and missing comparison links. No version tag was pushed or release created during implementation.
