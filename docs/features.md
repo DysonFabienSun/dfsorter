@@ -1,3 +1,9 @@
+# Exclusive library filters
+
+- [x] Clips, Games and Projects share exclusive All/whitelist selection. Clicking an entry from All filters directly to that entry; clearing the last entry restores All. Clips retains Pending + Keep at startup, and selections remain immediate and limited to the current run.
+- [x] Filter menus retain actions during checkbox changes and unchanged background refreshes, preventing repeated popup resizing and lost hover state. Changed option lists retain surviving actions and prune unavailable selections.
+- [x] Ten focused Dark-mode cases pass, including native Windows library integration, option changes, and open-popup stability. Scoped lint and diff review pass.
+
 # Export layout refinement
 
 - [x] Filename option/preview subtitles match the dialog headings with larger surrounding gaps. Folder organization places By rating first and defaults it on for unsaved choices; existing Flat choices are preserved. Segmented controls retain consistent focus borders.

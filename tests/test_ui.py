@@ -1600,6 +1600,7 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
 
 
 def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch):
+    window.set_theme("dark")
     root = tmp_path / "browse-captures"
     root.mkdir()
     folder = window.catalogue.add_folder(root)
@@ -1676,7 +1677,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
         if action.text() == "Uncategorized":
             action.trigger()
             break
-    assert window.library.count() == 2
+    assert window.library.count() == 1
     window.browse_search.setText("missing text")
     window.refresh_library()
     assert window.library.count() == 0
@@ -6837,6 +6838,7 @@ def test_empty_browse_entry_does_not_warm_video(window, application):
 
 
 def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, application):
+    window.set_theme("dark")
     captures = tmp_path / "filter-captures"
     captures.mkdir()
     available = captures / "available.mp4"
@@ -6872,7 +6874,8 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
         if action.text() == "Discard":
             action.trigger()
             break
-    assert window.clip_filter.text() == "Clips: all"
+    assert window.clip_filter.text() == "Clips: pending, keep, discard"
+    assert not window.clip_filter.all_selected()
     assert window.library.count() == 1
     window.unavailable_toggle.click()
     assert window.settings["show_unavailable_clips"] is True
@@ -6892,6 +6895,7 @@ def test_library_filter_menus_and_unavailable_persistence(window, tmp_path, appl
 
 @pytest.mark.parametrize("panel", ["Home", "Browse", "Session"])
 def test_project_filter_all_clips_is_separate_from_all_named_projects(window, tmp_path, panel):
+    window.set_theme("dark")
     captures = tmp_path / "project-filter-captures"
     captures.mkdir()
     paths = [captures / f"clip-{number}.mp4" for number in range(3)]
@@ -6946,6 +6950,7 @@ def test_project_filter_all_clips_is_separate_from_all_named_projects(window, tm
 
 
 def test_filter_button_labels_follow_selected_options(window, application):
+    window.set_theme("dark")
     window.panel("Home")
     window.clip_filter.set_selected_values({None})
     assert window.clip_filter.text() == "Clips: pending"
@@ -6956,12 +6961,12 @@ def test_filter_button_labels_follow_selected_options(window, application):
     assert window.clip_filter.sizeHint().width() > narrow_width
     assert window.clip_filter.width() >= window.clip_filter.sizeHint().width()
     window.clip_filter.set_selected_values(set())
-    assert window.clip_filter.text() == "Clips: none"
+    assert window.clip_filter.text() == "Clips: all"
 
     window.game_filter.set_selected_values({""})
     assert window.game_filter.text() == "Games (1)"
     window.game_filter.set_selected_values(set())
-    assert window.game_filter.text() == "Games (0)"
+    assert window.game_filter.text() == f"Games ({len(window.registry.games) + 1})"
 
     first_project = window.catalogue.save_project("First")
     second_project = window.catalogue.save_project("Second")

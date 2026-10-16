@@ -337,33 +337,65 @@ class ProjectMembershipMenu(CheckMenu):
 class FilterMenuButton(QPushButton):
     selectionChanged = Signal()
 
-    def __init__(
-        self, label, all_label, options=(), selected=None, empty_text=None, *, exclusive_all=False
-    ):
+    def __init__(self, label, all_label, options=(), selected=None, empty_text=None):
         super().__init__(label)
         self.label = label
         self.all_label = all_label
         self.empty_text = empty_text
-        self.exclusive_all = exclusive_all
-        self._all_selected = selected is None
+        self._all_selected = selected is None or not selected
         self._selected = set(selected or ())
         self._options = []
+        self._option_actions = {}
         self._menu = CheckMenu(self)
         self.setMenu(self._menu)
         self.setAccessibleName(f"{label} filter")
+        self._all_action = self._menu.addAction(all_label)
+        self._all_action.setCheckable(True)
+        self._all_action.triggered.connect(self._toggle_all)
+        self._separator = QAction(self._menu)
+        self._separator.setSeparator(True)
+        self._empty_action = QAction(empty_text or "", self._menu)
+        self._empty_action.setEnabled(False)
         self.set_options(options)
 
     def set_options(self, options):
-        self._options = list(options)
-        values = {value for _label, value in self._options}
-        if not values:
+        options = list(options)
+        changed = options != self._options
+        self._options = options
+        values = {value for _label, value in options}
+        self._selected.intersection_update(values)
+        if not self._selected:
             self._all_selected = True
-            self._selected.clear()
-        elif not self._all_selected:
-            self._selected.intersection_update(values)
-            if self.exclusive_all and not self._selected:
-                self._all_selected = True
-        self._rebuild_menu()
+        if changed or len(self._menu.actions()) == 1:
+            for value in self._option_actions.keys() - values:
+                action = self._option_actions.pop(value)
+                self._menu.removeAction(action)
+                action.deleteLater()
+            desired = [self._all_action]
+            if options or self.empty_text:
+                desired.append(self._separator)
+            for label, value in options:
+                action = self._option_actions.get(value)
+                if action is None:
+                    action = QAction(self._menu)
+                    action.setCheckable(True)
+                    action.triggered.connect(
+                        lambda checked=False, value=value: self._toggle_value(value, checked)
+                    )
+                    self._option_actions[value] = action
+                action.setText(label)
+                desired.append(action)
+            if not options and self.empty_text:
+                desired.append(self._empty_action)
+            for action in self._menu.actions():
+                if action not in desired:
+                    self._menu.removeAction(action)
+            for index, action in enumerate(desired):
+                current = self._menu.actions()
+                if index >= len(current) or current[index] is not action:
+                    before = current[index] if index < len(current) else None
+                    self._menu.insertAction(before, action)
+        self._update_selection()
 
     def selected_values(self):
         if self._all_selected:
@@ -372,64 +404,44 @@ class FilterMenuButton(QPushButton):
 
     def set_selected_values(self, selected):
         values = {value for _label, value in self._options}
-        selected = set(selected).intersection(values)
-        self._all_selected = not selected if self.exclusive_all else selected == values
-        self._selected = set() if self._all_selected else selected
-        self._rebuild_menu()
+        self._selected = set(selected).intersection(values)
+        self._all_selected = not self._selected
+        self._update_selection()
         self.selectionChanged.emit()
 
     def all_selected(self):
         return self._all_selected
 
-    def _rebuild_menu(self):
+    def _update_selection(self):
         selected = self.selected_values()
         if self.label == "Clips":
             choices = (
                 "all" if self._all_selected
                 else ", ".join(label.lower() for label, value in self._options if value in selected)
-                or "none"
             )
             self.setText(f"Clips: {choices}")
         else:
             self.setText(f"{self.label} ({len(selected)})")
         self.setMinimumWidth(self.sizeHint().width())
-        self._menu.clear()
-        all_action = self._menu.addAction(self.all_label)
-        all_action.setCheckable(True)
-        all_action.setChecked(self._all_selected)
-        all_action.triggered.connect(self._toggle_all)
-        if self._options:
-            self._menu.addSeparator()
-            for label, value in self._options:
-                action = self._menu.addAction(label)
-                action.setCheckable(True)
-                action.setChecked(
-                    (self._all_selected and not self.exclusive_all) or value in self._selected
-                )
-                action.triggered.connect(
-                    lambda checked=False, value=value: self._toggle_value(value, checked)
-                )
-        elif self.empty_text:
-            self._menu.addSeparator()
-            empty = self._menu.addAction(self.empty_text)
-            empty.setEnabled(False)
+        self._all_action.setChecked(self._all_selected)
+        for value, action in self._option_actions.items():
+            action.setChecked(not self._all_selected and value in self._selected)
 
     def _toggle_all(self, checked):
-        self._all_selected = checked or self.exclusive_all
+        changed = not self._all_selected
+        self._all_selected = True
         self._selected.clear()
-        self._rebuild_menu()
-        self.selectionChanged.emit()
+        self._update_selection()
+        if changed:
+            self.selectionChanged.emit()
 
     def _toggle_value(self, value, checked):
-        selected = set(self._selected) if self.exclusive_all else self.selected_values()
         if checked:
-            selected.add(value)
+            self._selected.add(value)
         else:
-            selected.discard(value)
-        values = {option_value for _label, option_value in self._options}
-        self._all_selected = not selected if self.exclusive_all else selected == values
-        self._selected = set() if self._all_selected else selected
-        self._rebuild_menu()
+            self._selected.discard(value)
+        self._all_selected = not self._selected
+        self._update_selection()
         self.selectionChanged.emit()
 
 
@@ -714,7 +726,7 @@ class Window(QMainWindow):
             "Games", "All games", [("Uncategorized", "")]
         )
         self.project_filter = FilterMenuButton(
-            "Projects", "All clips", empty_text="No projects", exclusive_all=True
+            "Projects", "All clips", empty_text="No projects"
         )
         for control in (self.clip_filter, self.game_filter, self.project_filter):
             control.selectionChanged.connect(self.refresh_library_from_controls)
