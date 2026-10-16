@@ -230,7 +230,7 @@ def stylesheet():
         **SIZES,
         **{f"radius_{key}": value for key, value in RADII.items()},
         **{f"font_{key}": value for key, value in FONT_SIZES.items()},
-        "project_menu_label_inset": SIZES["menu_check_column"] + SIZES["menu_gap"],
+        "check_menu_label_inset": SIZES["menu_check_column"] + SIZES["menu_gap"],
         "project_menu_trailing_inset": SIZES["icon_md"] + 2 * SIZES["menu_gap"],
         "combo_chevron": (
             ROOT / "resources/icons/chevron-down.svg"
@@ -447,11 +447,14 @@ def stylesheet():
         QMenuBar::item { background: transparent; border: none; padding: 2px 4px; }
         QMenu { border: 1px solid %(border_default)s; }
         QMenu::item { padding: 6px 24px; }
+        QMenu[checkMenu="true"]::item {
+            padding-left: %(check_menu_label_inset)spx;
+            padding-right: %(menu_gap)spx;
+        }
+        QMenu[checkMenu="true"]::indicator { width: 0px; height: 0px; }
         QMenu#projectMembershipMenu::item {
-            padding-left: %(project_menu_label_inset)spx;
             padding-right: %(project_menu_trailing_inset)spx;
         }
-        QMenu#projectMembershipMenu::indicator { width: 0px; height: 0px; }
         QMenu::item:selected, QMenuBar::item:selected { background: %(accent_selection)s; }
         QMenu::separator { height: 1px; background: %(border_subtle)s; margin: 4px 8px; }
         QTabWidget::pane { border: 1px solid %(border_subtle)s; background: %(surface_panel)s; }

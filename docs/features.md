@@ -1,5 +1,6 @@
 # Exclusive library filters
 
+- [x] Filter checkmarks share Editing's 16 px Lucide renderer and centered 24 px leading column, with consistent label spacing and an 8 px trailing inset. Dark-mode selected, hovered, multiple-selection and empty-menu screenshots were inspected; five focused filter and Editing membership/collection checks pass.
 - [x] Clips, Games and Projects share exclusive All/whitelist selection. Clicking an entry from All filters directly to that entry; clearing the last entry restores All. Clips retains Pending + Keep at startup, and selections remain immediate and limited to the current run.
 - [x] Filter menus retain actions during checkbox changes and unchanged background refreshes, preventing repeated popup resizing and lost hover state. Changed option lists retain surviving actions and prune unavailable selections.
 - [x] Ten focused Dark-mode cases pass, including native Windows library integration, option changes, and open-popup stability. Scoped lint and diff review pass.

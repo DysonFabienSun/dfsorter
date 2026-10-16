@@ -255,6 +255,10 @@ def folder_storage(paths, cancelled):
 
 
 class CheckMenu(QMenu):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setProperty("checkMenu", True)
+
     def mouseReleaseEvent(self, event):
         action = self.activeAction()
         if action is not None and action.isCheckable() and action.isEnabled():
@@ -262,6 +266,44 @@ class CheckMenu(QMenu):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        gap = SIZES["menu_gap"]
+        check_size = SIZES["menu_check"]
+        check_column = SIZES["menu_check_column"]
+        for action in self.actions():
+            if not action.isCheckable() or not action.isVisible():
+                continue
+            rect = self.actionGeometry(action)
+            option = QStyleOptionMenuItem()
+            self.initStyleOption(option, action)
+            # Keep native action geometry and interaction, but draw an explicit
+            # check column instead of combining Qt's gutter with stylesheet padding.
+            selected = action == self.activeAction() and action.isEnabled()
+            painter.fillRect(rect, QColor(COLORS["accent_selection" if selected else "surface_panel"]))
+            text_color = COLORS["text_primary" if action.isEnabled() else "text_disabled"]
+            if action.isChecked():
+                icon("check", text_color, size=check_size).paint(
+                    painter, QRect(rect.left() + (check_column - check_size) // 2,
+                                   rect.center().y() - check_size // 2 + SIZES["menu_icon_y_offset"],
+                                   check_size, check_size)
+                )
+            label_rect = rect.adjusted(check_column + gap, 0, -self.trailing_inset(), 0)
+            painter.setFont(option.font)
+            painter.setPen(QColor(text_color))
+            label = option.fontMetrics.elidedText(action.text(), Qt.TextElideMode.ElideRight,
+                                                 max(0, label_rect.width()))
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                             label)
+            self.paint_action_decoration(painter, action, rect)
+
+    def trailing_inset(self):
+        return SIZES["menu_gap"]
+
+    def paint_action_decoration(self, painter, action, rect):
+        pass
 
 
 class ProjectMembershipMenu(CheckMenu):
@@ -291,47 +333,22 @@ class ProjectMembershipMenu(CheckMenu):
             return
         super().keyPressEvent(event)
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
+    def trailing_inset(self):
+        return SIZES["icon_md"] + 2 * SIZES["menu_gap"]
+
+    def paint_action_decoration(self, painter, action, rect):
         size = SIZES["icon_md"]
         gap = SIZES["menu_gap"]
-        check_size = SIZES["menu_check"]
-        check_column = SIZES["menu_check_column"]
-        color = COLORS["accent_default" if self.collection_changes_enabled else "text_disabled"]
-        for action in self.actions():
-            if not action.isCheckable() or not action.isVisible():
-                continue
-            rect = self.actionGeometry(action)
-            option = QStyleOptionMenuItem()
-            self.initStyleOption(option, action)
-            # Keep native action geometry and interaction, but draw an explicit
-            # check column instead of combining Qt's gutter with stylesheet padding.
-            selected = action == self.activeAction() and action.isEnabled()
-            painter.fillRect(rect, QColor(COLORS["accent_selection" if selected else "surface_panel"]))
-            text_color = COLORS["text_primary" if action.isEnabled() else "text_disabled"]
-            if action.isChecked():
-                icon("check", text_color, size=check_size).paint(
-                    painter, QRect(rect.left() + (check_column - check_size) // 2,
-                                   rect.center().y() - check_size // 2 + SIZES["menu_icon_y_offset"],
-                                   check_size, check_size)
-                )
-            divider = rect.left() + check_column
-            painter.setPen(QColor(COLORS["border_subtle"]))
-            painter.drawLine(divider, rect.top(), divider, rect.bottom())
-            label_rect = rect.adjusted(check_column + gap, 0, -(size + 2 * gap), 0)
-            painter.setFont(option.font)
-            painter.setPen(QColor(text_color))
-            label = option.fontMetrics.elidedText(action.text(), Qt.TextElideMode.ElideRight,
-                                                 max(0, label_rect.width()))
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                             label)
-            if action.property("autoCollection"):
-                icon("refresh-cw", color, size=size).paint(
-                    painter, QRect(rect.right() + 1 - size - gap,
-                                   rect.center().y() - size // 2 + SIZES["menu_cycle_y_offset"],
-                                   size, size)
-                )
+        divider = rect.left() + SIZES["menu_check_column"]
+        painter.setPen(QColor(COLORS["border_subtle"]))
+        painter.drawLine(divider, rect.top(), divider, rect.bottom())
+        if action.property("autoCollection"):
+            color = COLORS["accent_default" if self.collection_changes_enabled else "text_disabled"]
+            icon("refresh-cw", color, size=size).paint(
+                painter, QRect(rect.right() + 1 - size - gap,
+                               rect.center().y() - size // 2 + SIZES["menu_cycle_y_offset"],
+                               size, size)
+            )
 
 
 class FilterMenuButton(QPushButton):
