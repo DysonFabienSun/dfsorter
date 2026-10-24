@@ -14,6 +14,10 @@ GAME_CODE_MAX_LENGTH = 6
 GAME_CODE_PATTERN = r"[A-Z0-9]{2,6}"
 
 
+def _game_key(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
 @dataclass
 class Game:
     name: str
@@ -185,10 +189,10 @@ class Registry:
 
         for field in graph:
             check_cycle(field)
-        aliases = [name, *raw.get("aliases", [])]
+        aliases = [_game_key(alias) for alias in [name, *raw.get("aliases", [])]]
         if name in self.games or any(game.code == code for game in self.games.values()):
             raise ValueError("Duplicate game name or display code")
-        if any(alias.casefold() in self.aliases for alias in aliases):
+        if any(alias in self.aliases for alias in aliases):
             raise ValueError("Game alias already used by another game")
         command_example = raw.get("command_example", "")
         if not isinstance(command_example, str):
@@ -198,10 +202,10 @@ class Registry:
             field_order, review_fields,
         )
         for alias in aliases:
-            self.aliases[alias.casefold()] = name
+            self.aliases[alias] = name
 
     def resolve(self, value: str) -> str | None:
-        return self.aliases.get(value.casefold())
+        return self.aliases.get(_game_key(value))
 
     def game(self, name: str | None) -> Game | None:
         return self.games.get(name)

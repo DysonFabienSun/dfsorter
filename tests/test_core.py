@@ -45,6 +45,38 @@ def test_shipped_game_configs_have_no_collisions(registry):
     assert len(registry.games) == len(list(registry.directory.glob("*.yaml")))
 
 
+@pytest.mark.parametrize("value", [
+    "Call of Duty  Modern Warfare 4",
+    "  CALL OF DUTY\tMODERN WARFARE 4\n",
+    "Call\u00a0of\u2003Duty Modern Warfare 4",
+])
+def test_game_name_whitespace_matching(registry, value):
+    assert registry.resolve(value) == "Call of Duty Modern Warfare 4"
+
+
+def test_game_alias_whitespace_matching_and_collisions(tmp_path):
+    first = {
+        "name": "First Game", "code": "FG", "aliases": ["  Capture\t Name  "],
+        "fields": {}, "display_order": [],
+    }
+    registry = Registry(tmp_path, {"First.yaml": first})
+    assert not registry.errors
+    assert registry.resolve("\tCAPTURE\u00a0\u00a0NAME ") == "First Game"
+    assert registry.resolve("first  game") == "First Game"
+    assert registry.resolve("CaptureName") is None
+    assert registry.resolve("Capture-Name") is None
+    assert registry.game("First Game").name == "First Game"
+
+    for name, aliases in [(" capture name ", []), ("Other", ["capture  name"]),
+                          ("first\tgame", [])]:
+        second = {"name": name, "code": "SG", "aliases": aliases,
+                  "fields": {}, "display_order": []}
+        registry = Registry(tmp_path, {"First.yaml": first, "Second.yaml": second})
+        assert len(registry.errors) == 1
+        assert "Game alias already used" in registry.errors[0]
+        assert registry.resolve("capture name") == "First Game"
+
+
 @pytest.mark.parametrize("alias,faction", [
     ("squid", "Illuminate"), ("squids", "Illuminate"),
     ("bugs", "Terminids"), ("bots", "Automatons"),

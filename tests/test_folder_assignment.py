@@ -7,6 +7,26 @@ from dfsorter.media import discover_paths
 from dfsorter.scanning import ScanCoordinator
 
 
+def test_nvidia_whitespace_folder_fills_unclassified_game(catalogue, registry, tmp_path):
+    root = tmp_path / "NVIDIA"
+    folder = root / "Call of Duty  Modern Warfare 4" / "nested"
+    folder.mkdir(parents=True)
+    video = folder / "Call of Duty  Modern Warfare 4.DVR.mp4"
+    video.touch()
+    folder_id = catalogue.add_folder(root)
+    catalogue.ingest(folder_id, [{"path": str(video), "game": None}])
+    original = catalogue.clips()[0]
+
+    found = discover_paths(root, registry)
+    assert found == [{"path": str(video), "game": "Call of Duty Modern Warfare 4"}]
+    catalogue.ingest(folder_id, found)
+    clip = catalogue.clips()[0]
+    assert clip["clip_id"] == original["clip_id"]
+    assert clip["source_path"] == original["source_path"]
+    assert clip["game"] == "Call of Duty Modern Warfare 4"
+    assert video.exists()
+
+
 def test_modes_and_existing_assignments(catalogue, registry, tmp_path):
     root = tmp_path / "VAL"
     nested = root / "wonderfulVideos123" / "uuid"
