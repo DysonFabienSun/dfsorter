@@ -232,7 +232,10 @@ def source_fallback(clip: dict, game: Game | None, *, include_suffix: bool = Fal
     if not game:
         return fallback
     for leading in (game.name, game.code):
-        match = re.match(rf"{re.escape(leading)}(?=$|[\s._-])[\s._-]*", fallback, re.IGNORECASE)
+        leading_pattern = r"\s+".join(re.escape(word) for word in leading.split())
+        match = re.match(
+            rf"\s*{leading_pattern}(?=$|[\s._-])[\s._-]*", fallback, re.IGNORECASE
+        )
         if match and match.end() < len(fallback):
             return fallback[match.end() :]
     return fallback

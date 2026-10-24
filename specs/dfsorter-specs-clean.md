@@ -518,6 +518,8 @@ When recursively scanning a recorder-organized capture root:
 
 Game-name and game-alias matching trims leading and trailing whitespace and collapses internal whitespace runs (including Unicode whitespace) to one space, in addition to case-insensitive matching. Apply the same normalization when checking aliases for collisions between games. Preserve canonical names, source paths and filenames as stored.
 
+When removing a leading canonical game name or game code from an original-filename fallback, likewise accept leading whitespace and whitespace variations between name words. Retain the existing prefix boundaries and separators, and preserve the remainder's capitalization and internal spacing. Original-filename labels continue to show the complete source filename.
+
 Each capture folder persists one game-assignment mode: **Detect from folder names** (the default, using the rules above), **Assign one game** (a configured game overrides folder-name detection throughout the root), or **Leave unclassified** (disable automatic assignment). All modes recursively discover MP4s. Registered roots must not overlap; no recorder-specific or subtree rules are provided. Existing folders retain their behavior, including previously forced games. Relinking retains the assignment rule; newly registered reassociation destinations default to automatic detection, while reused destinations retain their rules.
 
 Scans preserve existing assigned games and may fill missing games. Leave unclassified never clears existing assignments. A missing configured game for a saved single-game rule reports a folder error and skips ingestion and cleanup for that folder; other folders continue scanning. No bulk reclassification is provided.

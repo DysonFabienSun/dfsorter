@@ -54,6 +54,41 @@ def test_game_name_whitespace_matching(registry, value):
     assert registry.resolve(value) == "Call of Duty Modern Warfare 4"
 
 
+@pytest.mark.parametrize("leading", [
+    "Call of Duty  Modern Warfare 4",
+    "  CALL OF DUTY\tMODERN WARFARE 4",
+    "Call\u00a0of\u2003Duty Modern Warfare 4",
+    "mw4",
+])
+def test_filename_game_prefix_whitespace(registry, leading):
+    remainder = "2026.10.24 - Original  NAME.DVR"
+    clip = {
+        "source_path": f"{leading} {remainder}.mp4",
+        "game": "Call of Duty Modern Warfare 4", "metadata": {}, "mainline": None,
+    }
+    before = deepcopy(clip)
+    game = registry.game(clip["game"])
+    assert source_fallback(clip, game) == remainder
+    assert source_fallback(clip, game, include_suffix=True) == f"{remainder}.mp4"
+    assert title(clip, registry) == f"MW4_{remainder}"
+    assert title(clip, registry, rich=True) == f"MW4_{remainder}"
+    assert title(clip, registry, prefix=False) == f"{leading} {remainder}"
+    assert clip == before
+
+
+@pytest.mark.parametrize("filename", [
+    "Call of Duty  Modern Warfare 40 example.mp4",
+    "Call of DutyModern Warfare 4 example.mp4",
+    "Other Call of Duty  Modern Warfare 4 example.mp4",
+    "Call of Duty  Modern Warfare 4.mp4",
+])
+def test_filename_game_prefix_preserves_nonmatches(registry, filename):
+    clip = {"source_path": filename}
+    assert source_fallback(clip, registry.game("Call of Duty Modern Warfare 4")) == (
+        Path(filename).stem
+    )
+
+
 def test_game_alias_whitespace_matching_and_collisions(tmp_path):
     first = {
         "name": "First Game", "code": "FG", "aliases": ["  Capture\t Name  "],
