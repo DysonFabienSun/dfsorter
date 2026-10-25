@@ -1272,6 +1272,63 @@ def catalogue_dump(window):
         return list(database.iterdump())
 
 
+@pytest.mark.parametrize("case", ["unchanged", "undone", "edited", "command", "range", "membership"])
+def test_atomic_revert_confirms_only_when_discarding_changes(
+    window, application, tmp_path, monkeypatch, case
+):
+    window.set_theme("dark", persist=False)
+    root = tmp_path / "atomic-revert"
+    root.mkdir()
+    path = root / "clip.mp4"
+    path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"}])
+    clip_id = window.catalogue.clips()[0]["clip_id"]
+    project_id = window.catalogue.save_project("Project")
+    baseline = window.catalogue.snapshot(clip_id)
+    history = list(window.catalogue.undo_stack)
+    window.panel("Browse")
+    window.start_atomic_edit(clip_id, "Browse")
+    if case in {"undone", "edited"}:
+        window.edit({"rating": 4})
+        if case == "undone":
+            window.undo()
+            assert not window.atomic_changed()
+    elif case == "command":
+        window.command.setText("Unsubmitted title")
+    elif case == "range":
+        window.pending_in = 100
+    elif case == "membership":
+        window.edit({}, membership=(project_id, True))
+
+    confirmations = []
+
+    def confirm():
+        confirmations.append(True)
+        return len(confirmations) > 1
+
+    monkeypatch.setattr(window, "confirm_revert_atomic", confirm)
+    window.atomic_revert_button.click()
+    if case not in {"unchanged", "undone"}:
+        assert confirmations == [True]
+        assert window.current_panel == "Editing"
+        assert window.atomic_edit is not None
+        if case == "command":
+            assert window.command.text() == "Unsubmitted title"
+        window.atomic_revert_button.click()
+        assert confirmations == [True, True]
+    else:
+        assert not confirmations
+    application.processEvents()
+    assert window.atomic_edit is None
+    assert window.current_panel == "Browse"
+    assert window.selected_id(window.library) == clip_id
+    assert not window.command.text()
+    assert not window.has_pending_range()
+    assert window.catalogue.snapshot(clip_id) == baseline
+    assert window.catalogue.undo_stack == history
+
+
 def test_atomic_single_clip_edit_save_revert_and_session_preservation(
     window, application, tmp_path, monkeypatch
 ):

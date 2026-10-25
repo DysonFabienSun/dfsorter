@@ -2007,7 +2007,9 @@ class Window(QMainWindow):
         return dialog.clickedButton() is discard
 
     def revert_atomic_edit(self):
-        if not self.atomic_edit or not self.confirm_revert_atomic():
+        if not self.atomic_edit:
+            return
+        if (self.atomic_changed() or self.command.text()) and not self.confirm_revert_atomic():
             return
         clip_id = self.atomic_edit.clip_id
         scroll_position = self.atomic_edit.scroll_position
