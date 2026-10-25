@@ -3599,7 +3599,10 @@ class Window(QMainWindow):
                 return
         try:
             if clip["triage"] != "discard":
-                self.catalogue.patch(self.current_id, {"triage": "keep"}, editing=True)
+                self.catalogue.patch(
+                    self.current_id, {"triage": "keep"}, editing=True,
+                    auto_add_destination=self.auto_add_destination(),
+                )
             self.command_error.clear()
             self.command_error.hide()
             clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}

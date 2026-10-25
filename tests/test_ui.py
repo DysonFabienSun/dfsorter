@@ -1323,6 +1323,57 @@ def test_remove_session_clip_preserves_clip_and_selects_survivor(session_window,
     assert window.catalogue.state("session")["ids"] == remaining
 
 
+@pytest.mark.parametrize("auto", [False, True])
+@pytest.mark.parametrize("verdict", [None, "keep", "discard"])
+def test_shift_enter_collects_only_new_keep_with_auto_enabled(session_window, auto, verdict):
+    window, ids = session_window
+    project_id = window.catalogue.save_project("Destination")
+    other_project = window.catalogue.save_project("Existing membership")
+    window.catalogue.patch(ids[0], {"mainline": "Reviewed clip", "triage": verdict},
+                           membership=(other_project, True))
+    window.render_clip()
+    window.toggle_project_collection(project_id)
+    if not auto:
+        window.toggle_project_collection(project_id)
+
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+
+    collected = auto and verdict is None
+    assert window.catalogue.member_ids(project_id) == ({ids[0]} if collected else set())
+    assert window.catalogue.member_ids(other_project) == {ids[0]}
+    assert window.catalogue.clip(ids[0])["triage"] == ("discard" if verdict == "discard" else "keep")
+    assert window.current_id == ids[1]
+    if verdict is None:
+        window.switch_editing_clip(ids[0])
+        window.undo()
+        assert window.catalogue.clip(ids[0])["triage"] is None
+        assert window.catalogue.member_ids(project_id) == set()
+        assert window.catalogue.member_ids(other_project) == {ids[0]}
+        window.undo(redo=True)
+        assert window.catalogue.clip(ids[0])["triage"] == "keep"
+        assert window.catalogue.member_ids(project_id) == ({ids[0]} if collected else set())
+
+
+def test_auto_collected_session_clips_remain_after_ending_session(session_window):
+    window, ids = session_window
+    project_id = window.catalogue.save_project("defib-ex")
+    window.toggle_project_collection(project_id)
+    for clip_id in ids:
+        window.edit({"mainline": "Reviewed clip"})
+        QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.member_ids(project_id) == set(ids)
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_panel == "Session"
+    assert window.catalogue.state("session") is None
+    assert window.catalogue.member_ids(project_id) == set(ids)
+    # Session completion selects Pending in the shared filter, including Browse.
+    window.panel("Browse")
+    assert window.library.count() == 0
+    window.clip_filter.set_selected_values({None, "keep"})
+    assert window.library.count() == len(ids)
+    assert all(Path(window.catalogue.clip(clip_id)["source_path"]).is_file() for clip_id in ids)
+
+
 def test_remove_only_session_clip_returns_to_setup(session_window):
     window, ids = session_window
     window.catalogue.set_state("session", {"ids": ids[:1], "index": 0})
