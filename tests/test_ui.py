@@ -1366,10 +1366,9 @@ def test_auto_collected_session_clips_remain_after_ending_session(session_window
     assert window.current_panel == "Session"
     assert window.catalogue.state("session") is None
     assert window.catalogue.member_ids(project_id) == set(ids)
-    # Session completion selects Pending in the shared filter, including Browse.
+    # Session completion selects Pending for Home/Session without changing Browse.
+    assert window.clip_filter.selected_values() == {None}
     window.panel("Browse")
-    assert window.library.count() == 0
-    window.clip_filter.set_selected_values({None, "keep"})
     assert window.library.count() == len(ids)
     assert all(Path(window.catalogue.clip(clip_id)["source_path"]).is_file() for clip_id in ids)
 
@@ -1886,6 +1885,126 @@ def test_atomic_membership_and_close_discard(window, application, tmp_path):
     assert window.history[clip_id] == ["jett"]
 
 
+def test_browse_filters_are_independent_and_survive_tab_and_atomic_returns(
+    session_window, monkeypatch
+):
+    window, ids = session_window
+    window.catalogue.patch(ids[0], {"triage": "keep"})
+    window.catalogue.patch(ids[1], {"triage": "discard"})
+    window.catalogue.patch(ids[2], {"game": None})
+    project = window.catalogue.save_project("Browse project")
+    window.catalogue.batch_membership(project, [ids[0]], True)
+    window.refresh_references()
+    window.panel("Home")
+    window.clip_filter.set_selected_values({None})
+    window.game_filter.set_selected_values({""})
+    window.project_filter.set_selected_values({project})
+    # Destination previews must use Browse filters even before entering Browse.
+    assert {
+        clip["clip_id"] for clip in window.filtered_clips(window.catalogue.clips(), "Browse")
+    } == {ids[0], ids[2]}
+    assert window.expected_browse_clip()["clip_id"] in {ids[0], ids[2]}
+    window.panel("Browse")
+    assert window.clip_filter.selected_values() == {None, "keep"}
+    assert window.game_filter.all_selected()
+    assert window.project_filter.all_selected()
+    assert window.library.count() == 2
+    window.clip_filter.set_selected_values({"keep"})
+    window.game_filter.set_selected_values({"VALORANT"})
+    window.project_filter.set_selected_values({project})
+    assert window.library.count() == 1
+    for panel in ("Home", "Session"):
+        window.panel(panel)
+        assert window.clip_filter.selected_values() == {None}
+        assert window.game_filter.selected_values() == {""}
+        assert window.project_filter.selected_values() == {project}
+    window.panel("Browse")
+    assert window.clip_filter.selected_values() == {"keep"}
+    assert window.game_filter.selected_values() == {"VALORANT"}
+    assert window.project_filter.selected_values() == {project}
+    window.start_atomic_edit(ids[0], "Browse")
+    window.edit({"rating": 2})
+    monkeypatch.setattr(window, "confirm_revert_atomic", lambda: True)
+    window.revert_atomic_edit()
+    assert window.current_panel == "Browse"
+    assert window.clip_filter.selected_values() == {"keep"}
+    assert window.game_filter.selected_values() == {"VALORANT"}
+    assert window.project_filter.selected_values() == {project}
+    assert window.library.count() == 1
+
+
+def test_browse_dropdown_defaults_reset_on_restart(session_window, application, close_window):
+    window, ids = session_window
+    project = window.catalogue.save_project("Project")
+    window.refresh_references()
+    window.panel("Browse")
+    window.clip_filter.set_selected_values({"discard"})
+    window.game_filter.set_selected_values({"VALORANT"})
+    window.project_filter.set_selected_values({project})
+    window.save_settings()
+    restarted = Window(window.root)
+    try:
+        restarted.set_theme("dark", persist=False)
+        restarted.show()
+        restarted.panel("Browse")
+        assert restarted.clip_filter.selected_values() == {None, "keep"}
+        assert restarted.game_filter.all_selected()
+        assert restarted.project_filter.all_selected()
+        assert restarted.library.count() == len(ids)
+    finally:
+        close_window(restarted, application)
+
+
+def test_browse_availability_is_independent_and_persisted(
+    session_window, application, close_window
+):
+    window, ids = session_window
+    Path(window.catalogue.clip(ids[-1])["source_path"]).unlink()
+    window.panel("Home")
+    window.unavailable_toggle.click()
+    assert window.settings["show_unavailable_clips"] is True
+    assert window.library.count() == 3
+    window.panel("Browse")
+    assert not window.unavailable_toggle.isChecked()
+    assert window.unavailable_toggle.property("iconName") == "eye-off"
+    assert window.library.count() == 2
+    window.unavailable_toggle.click()
+    assert window.settings["browse_show_unavailable_clips"] is True
+    assert window.library.count() == 3
+    window.panel("Home")
+    assert window.unavailable_toggle.isChecked()
+    window.unavailable_toggle.click()
+    assert window.settings["show_unavailable_clips"] is False
+    assert window.settings["browse_show_unavailable_clips"] is True
+    assert window.library.count() == 2
+    restarted = Window(window.root)
+    try:
+        restarted.set_theme("dark", persist=False)
+        restarted.show()
+        assert not restarted.unavailable_toggle.isChecked()
+        restarted.panel("Browse")
+        assert restarted.unavailable_toggle.isChecked()
+        assert restarted.unavailable_toggle.property("iconName") == "eye"
+        assert restarted.library.count() == 3
+    finally:
+        close_window(restarted, application)
+
+
+def test_inactive_browse_project_filter_recovers_after_project_deletion(session_window):
+    window, _ids = session_window
+    project = window.catalogue.save_project("Project")
+    window.refresh_references()
+    window.panel("Browse")
+    window.project_filter.set_selected_values({project})
+    window.panel("Home")
+    window.catalogue.delete_project(project)
+    window.refresh_references()
+    window.panel("Browse")
+    assert window.project_filter.all_selected()
+    assert window.project_filter.menu().actions()[0].isChecked()
+    assert window.library.count() == 3
+
+
 def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch):
     window.set_theme("dark")
     root = tmp_path / "browse-captures"
@@ -1971,7 +2090,7 @@ def test_browse_library_is_read_only(window, application, tmp_path, monkeypatch)
     assert window.browse.clip is None
     assert window.browse.player.status.text() == "No clip selected"
     window.panel("Home")
-    assert window.clip_filter.all_selected()
+    assert window.clip_filter.selected_values() == {None, "keep"}
     assert catalogue_dump(window) == before
     assert window.catalogue.undo_stack == history
 
@@ -5154,6 +5273,49 @@ def test_clip_list_positions_only_on_first_page_open(
     application.processEvents()
 
 
+@pytest.mark.parametrize("case", [
+    "missing_file", "missing_folder", "explorer_failure", "folder_open_failure", "non_windows"
+])
+def test_open_clip_file_location_fallback_and_errors(window, tmp_path, monkeypatch, case):
+    import dfsorter.ui as ui_module
+
+    window.set_theme("dark")
+    folder = tmp_path / "source folder"
+    folder.mkdir()
+    source = folder / "video clip.mp4"
+    source.write_bytes(b"video")
+    folder_id = window.catalogue.add_folder(folder)
+    window.catalogue.ingest(folder_id, [{"path": str(source), "game": None}])
+    window.context_clip_id = window.catalogue.clips()[0]["clip_id"]
+    opened = []
+    warnings = []
+    monkeypatch.setattr(ui_module.sys, "platform", "linux" if case == "non_windows" else "win32")
+    monkeypatch.setattr(ui_module.QDesktopServices, "openUrl",
+                        lambda url: opened.append(Path(url.toLocalFile()))
+                        or case != "folder_open_failure")
+    monkeypatch.setattr(ui_module.QMessageBox, "warning",
+                        lambda _parent, title, message: warnings.append((title, message)))
+
+    def launch(_args):
+        assert case == "explorer_failure"
+        raise OSError("Explorer failed")
+
+    monkeypatch.setattr(ui_module.subprocess, "Popen", launch)
+    if case not in {"explorer_failure", "non_windows"}:
+        source.unlink()
+    if case == "missing_folder":
+        folder.rmdir()
+    window.open_file_location_action.trigger()
+    assert opened == ([] if case in {"missing_folder", "explorer_failure"} else [folder])
+    if case in {"missing_folder", "explorer_failure", "folder_open_failure"}:
+        assert len(warnings) == 1
+        assert warnings[0][0] == "Open file location"
+        assert warnings[0][1]
+    else:
+        assert not warnings
+    assert folder.exists() == (case != "missing_folder")
+
+
 def test_home_clip_left_click_retains_inert_highlight_without_context_menu(
     window, application, tmp_path, monkeypatch
 ):
@@ -7196,7 +7358,7 @@ def test_project_filter_all_clips_is_separate_from_all_named_projects(window, tm
     window.catalogue.batch_membership(first, [ids[0]], True)
     window.catalogue.batch_membership(second, [ids[1]], True)
     window.refresh_references()
-    control = window.project_filter
+    control = window.library_filter_buttons(panel)[2]
 
     def actions():
         return {action.text(): action for action in control.menu().actions() if action.text()}

@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -736,37 +737,20 @@ class Window(QMainWindow):
         filter_row = QHBoxLayout()
         filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(4)
-        self.clip_filter = FilterMenuButton(
-            "Clips",
-            "All clips",
-            [("Pending", None), ("Keep", "keep"), ("Discard", "discard")],
-            selected={None, "keep"},
-        )
-        self.game_filter = FilterMenuButton(
-            "Games", "All games", [("Uncategorized", "")]
-        )
-        self.project_filter = FilterMenuButton(
-            "Projects", "All clips", empty_text="No projects"
-        )
-        for control in (self.clip_filter, self.game_filter, self.project_filter):
-            control.selectionChanged.connect(self.refresh_library_from_controls)
-            filter_row.addWidget(control)
+        self.shared_filter_buttons = self.make_library_filter_buttons()
+        self.browse_filter_buttons = self.make_library_filter_buttons()
+        self.clip_filter, self.game_filter, self.project_filter = self.shared_filter_buttons
+        for controls in (self.shared_filter_buttons, self.browse_filter_buttons):
+            for control in controls:
+                control.selectionChanged.connect(self.refresh_library_from_controls)
+                control.setVisible(controls is self.shared_filter_buttons)
+                filter_row.addWidget(control)
         filter_row.addStretch()
         self.unavailable_toggle = tool(
             "eye-off", "Unavailable clips hidden · Show unavailable clips", self.toggle_unavailable
         )
         self.unavailable_toggle.setCheckable(True)
-        self.unavailable_toggle.setChecked(
-            bool(self.settings.get("show_unavailable_clips", False))
-        )
-        if self.unavailable_toggle.isChecked():
-            set_icon(self.unavailable_toggle, "eye")
-            self.unavailable_toggle.setToolTip(
-                "Unavailable clips shown · Hide unavailable clips"
-            )
-            self.unavailable_toggle.setAccessibleName(
-                "Unavailable clips shown · Hide unavailable clips"
-            )
+        self.update_unavailable_control()
         filter_row.addWidget(self.unavailable_toggle)
         self.time_sort = tool(
             "arrow-down-up", "Oldest first · Switch to newest first", self.toggle_time_sort
@@ -843,6 +827,8 @@ class Window(QMainWindow):
         self.clip_context_menu = QMenu(self.library)
         self.edit_clip_action = self.clip_context_menu.addAction("Edit clip…")
         self.edit_clip_action.triggered.connect(self.edit_context_clip)
+        self.open_file_location_action = self.clip_context_menu.addAction("Open file location")
+        self.open_file_location_action.triggered.connect(self.open_context_file_location)
         self.context_clip_id = None
         left_layout.addWidget(self.library, 1)
         self.session_counts = QLabel()
@@ -1390,6 +1376,20 @@ class Window(QMainWindow):
         self.left_layout.addWidget(self.config_editor.sidebar, 1)
         self.config_editor.sidebar.hide()
 
+    def make_library_filter_buttons(self):
+        return (
+            FilterMenuButton(
+                "Clips", "All clips",
+                [("Pending", None), ("Keep", "keep"), ("Discard", "discard")],
+                selected={None, "keep"},
+            ),
+            FilterMenuButton("Games", "All games", [("Uncategorized", "")]),
+            FilterMenuButton("Projects", "All clips", empty_text="No projects"),
+        )
+
+    def library_filter_buttons(self, panel):
+        return self.browse_filter_buttons if panel == "Browse" else self.shared_filter_buttons
+
     def build_settings_menu(self):
         self.settings_menu = QMenu(self)
         self.browse_write_actions = []
@@ -1925,6 +1925,21 @@ class Window(QMainWindow):
         if self.context_clip_id:
             self.start_atomic_edit(self.context_clip_id, self.current_panel)
 
+    def open_context_file_location(self):
+        clip = self.catalogue.clip(self.context_clip_id) if self.context_clip_id else None
+        if clip is None:
+            return
+        source = Path(clip["source_path"])
+        try:
+            if not source.parent.is_dir():
+                raise OSError(f"Source folder is unavailable: {source.parent}")
+            if source.is_file() and sys.platform == "win32":
+                subprocess.Popen(["explorer.exe", "/select,", str(source)])
+            elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(source.parent))):
+                raise OSError(f"Could not open source folder: {source.parent}")
+        except OSError as error:
+            QMessageBox.warning(self, "Open file location", str(error))
+
     def start_atomic_edit(self, clip_id, origin=None):
         if self.atomic_edit:
             return
@@ -2227,6 +2242,12 @@ class Window(QMainWindow):
                 [self.library.takeItem(0) for _ in range(self.library.count())],
             )
         self.current_panel = name
+        active_filters = self.library_filter_buttons(name)
+        self.clip_filter, self.game_filter, self.project_filter = active_filters
+        for controls in (self.shared_filter_buttons, self.browse_filter_buttons):
+            for control in controls:
+                control.setVisible(controls is active_filters)
+        self.update_unavailable_control()
         self.completed_session_armed = False
         if name != "Editing":
             self.tip_timer.stop()
@@ -2348,11 +2369,16 @@ class Window(QMainWindow):
         self.refreshing = True
         projects = self.catalogue.projects()
         self.update_collection_controls(projects)
-        self.project_filter.set_options([(project["name"], project["project_id"]) for project in projects])
+        for _clips, games, project_filter in (
+            self.shared_filter_buttons, self.browse_filter_buttons
+        ):
+            project_filter.set_options([
+                (project["name"], project["project_id"]) for project in projects
+            ])
+            games.set_options(
+                [("Uncategorized", ""), *((name, name) for name in self.registry.games)]
+            )
         self.workspace.refresh_references()
-        self.game_filter.set_options(
-            [("Uncategorized", ""), *((name, name) for name in self.registry.games)]
-        )
         folder_selection = self.selected_id(self.folders)
         self.folders.clear()
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
@@ -2811,15 +2837,16 @@ class Window(QMainWindow):
             if panel == "Session":
                 excluded = self.catalogue.session_excluded_ids()
                 clips = [clip for clip in clips if clip["clip_id"] not in excluded]
-        if not self.settings.get("show_unavailable_clips", False):
+        if not self.settings.get(self.unavailable_setting_key(panel), False):
             clips = [clip for clip in clips if self.source_available(clip["source_path"])]
-        triage = self.clip_filter.selected_values()
+        clip_filter, game_filter, project_filter = self.library_filter_buttons(panel)
+        triage = clip_filter.selected_values()
         clips = [clip for clip in clips if clip["triage"] in triage]
-        games = self.game_filter.selected_values()
+        games = game_filter.selected_values()
         clips = [clip for clip in clips if (clip["game"] or "") in games]
-        if not self.project_filter.all_selected():
+        if not project_filter.all_selected():
             project_ids = set()
-            for project_id in self.project_filter.selected_values():
+            for project_id in project_filter.selected_values():
                 project_ids.update(self.catalogue.member_ids(project_id))
             clips = [clip for clip in clips if clip["clip_id"] in project_ids]
         clips.sort(
@@ -2911,8 +2938,12 @@ class Window(QMainWindow):
     def toggle_browse_sort(self):
         self.toggle_time_sort()
 
-    def toggle_unavailable(self, checked):
-        self.settings["show_unavailable_clips"] = checked
+    def unavailable_setting_key(self, panel):
+        return "browse_show_unavailable_clips" if panel == "Browse" else "show_unavailable_clips"
+
+    def update_unavailable_control(self):
+        checked = bool(self.settings.get(self.unavailable_setting_key(self.current_panel), False))
+        self.unavailable_toggle.setChecked(checked)
         set_icon(self.unavailable_toggle, "eye" if checked else "eye-off")
         label = (
             "Unavailable clips shown · Hide unavailable clips"
@@ -2921,6 +2952,10 @@ class Window(QMainWindow):
         )
         self.unavailable_toggle.setToolTip(label)
         self.unavailable_toggle.setAccessibleName(label)
+
+    def toggle_unavailable(self, checked):
+        self.settings[self.unavailable_setting_key(self.current_panel)] = checked
+        self.update_unavailable_control()
         self.save_settings()
         self.refresh_library(reset_selection=True)
 

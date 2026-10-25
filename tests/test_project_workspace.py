@@ -1234,6 +1234,12 @@ def test_assemble_300_paused_clips_and_undo(window, application, tmp_path, monke
 def test_clip_right_click_preserves_selection_and_preview(
     window, application, tmp_path, monkeypatch, panel, selection
 ):
+    import dfsorter.ui as ui_module
+
+    window.set_theme("dark")
+    opened = []
+    monkeypatch.setattr(ui_module.sys, "platform", "win32")
+    monkeypatch.setattr(ui_module.subprocess, "Popen", opened.append)
     ids, _project = seed_workspace(window, tmp_path, count=3)
     window.catalogue.enable_folder(window.catalogue.folders()[0]["folder_id"], True)
     for clip_id in ids:
@@ -1270,6 +1276,12 @@ def test_clip_right_click_preserves_selection_and_preview(
     window.show_clip_context_menu(position)
     assert popups
     assert window.context_clip_id == target.data(Qt.ItemDataRole.UserRole)
+    assert [action.text() for action in window.clip_context_menu.actions()] == [
+        "Edit clip…", "Open file location"
+    ]
+    window.open_file_location_action.trigger()
+    source = window.catalogue.clip(window.context_clip_id)["source_path"]
+    assert opened == [["explorer.exe", "/select,", str(Path(source))]]
     assert window.library.currentItem() is current
     assert selected_ids(window) == selected
     assert window.current_id == preview
