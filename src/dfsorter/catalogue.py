@@ -865,6 +865,20 @@ class Catalogue:
             raise ValueError("Only pending clips can be added to a Session")
         self.set_state("session", {"ids": ids, "index": 0})
 
+    def remove_from_session(self, clip_id):
+        session = self.state("session")
+        if not session or clip_id not in session["ids"]:
+            raise ValueError("Clip is not in the active Session")
+        previous = session["ids"]
+        ids = [candidate for candidate in previous if candidate != clip_id]
+        current = next(
+            (candidate for candidate in previous[session["index"] :] if candidate != clip_id),
+            ids[-1] if ids else None,
+        )
+        updated = {"ids": ids, "index": ids.index(current)} if ids else None
+        self.set_state("session", updated)
+        return updated
+
     def navigate(self, index):
         session = self.state("session")
         if not session:

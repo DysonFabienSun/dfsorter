@@ -151,6 +151,8 @@ def editing_action(function):
     def record(self, *args, **kwargs):
         enabled = self.current_panel == "Editing" and self.current_id is not None
         outer = enabled and self._editing_action_depth == 0
+        if outer and function.__name__ != "advance_review":
+            self.completed_session_armed = False
         if outer:
             clip_id, atomic = self.current_id, self.atomic_edit
             history = self.editing_history()
@@ -594,6 +596,7 @@ class Window(QMainWindow):
         self.submit_resume = False
         self.consume_resume_space = False
         self.reject_enter_armed = False
+        self.completed_session_armed = False
         self.space_timer = QTimer(self)
         self.space_timer.setSingleShot(True)
         self.space_timer.setInterval(200)
@@ -1319,6 +1322,9 @@ class Window(QMainWindow):
             triage.addWidget(control)
         triage.addWidget(button("Change game", self.change_game))
         triage.addWidget(self.membership_button)
+        self.remove_session_button = button("Remove from Session", self.remove_from_session)
+        self.remove_session_button.setToolTip("Remove the current clip from the Session")
+        triage.addWidget(self.remove_session_button)
         triage.addStretch()
         editing.addLayout(triage)
         stars = QHBoxLayout()
@@ -2221,6 +2227,7 @@ class Window(QMainWindow):
                 [self.library.takeItem(0) for _ in range(self.library.count())],
             )
         self.current_panel = name
+        self.completed_session_armed = False
         if name != "Editing":
             self.tip_timer.stop()
         if name == "Browse":
@@ -2258,6 +2265,7 @@ class Window(QMainWindow):
         self.next_undefined_button.setVisible(not self.atomic_edit)
         self.atomic_save_button.setVisible(bool(self.atomic_edit))
         self.atomic_revert_button.setVisible(bool(self.atomic_edit))
+        self.remove_session_button.setVisible(not self.atomic_edit)
         self.player.previous_button.setEnabled(not self.atomic_edit)
         self.player.next_button.setEnabled(not self.atomic_edit)
         self.add_project_next.setVisible(not self.atomic_edit)
@@ -2496,6 +2504,7 @@ class Window(QMainWindow):
             clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
         session = self.catalogue.state("session")
         self.nav["Editing"].setEnabled(bool(session))
+        self.remove_session_button.setEnabled(bool(session) and not self.atomic_edit)
         self.session_setup_heading.setText("Active session" if session else "No active session")
         self.session_setup_states.setCurrentIndex(0 if session else 1)
         self.session_counts.setVisible(
@@ -3138,6 +3147,7 @@ class Window(QMainWindow):
             self.workspace.remember()
 
     def switch_editing_clip(self, clip_id):
+        self.completed_session_armed = False
         if self.atomic_edit:
             return
         if clip_id == self.current_id:
@@ -3169,6 +3179,7 @@ class Window(QMainWindow):
     def load_clip(self, clip_id, *, prepared=False):
         if not self.ensure_range_complete():
             return
+        self.completed_session_armed = False
         self.command_submitted_error = False
         self.command_submitted_navigation = False
         self.command_saved_timer.stop()
@@ -3547,7 +3558,7 @@ class Window(QMainWindow):
             self.error(error)
 
     @editing_action
-    def advance_review(self):
+    def advance_review(self, *, finish_completed=False):
         if self.atomic_edit:
             self.save_atomic_edit()
             return
@@ -3565,6 +3576,18 @@ class Window(QMainWindow):
         session = self.catalogue.state("session")
         if not session or not session["ids"]:
             return
+        clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
+        if all(clips[clip_id]["triage"] is not None for clip_id in session["ids"]):
+            if finish_completed and self.completed_session_armed:
+                try:
+                    self.end_session()
+                except (ValueError, OSError, sqlite3.Error) as error:
+                    self.error(error)
+            else:
+                self.completed_session_armed = finish_completed
+                self.show_session_complete()
+            return
+        self.completed_session_armed = False
         clip = self.catalogue.clip(self.current_id)
         if clip["triage"] != "discard":
             game = self.registry.game(clip["game"])
@@ -3597,17 +3620,43 @@ class Window(QMainWindow):
                 if item is not None:
                     self.render_card(item, clips[self.current_id])
                 unfinished = any(clips[clip_id]["triage"] is None for clip_id in session["ids"])
-                message = (
-                    "No pending clips ahead — earlier Session clips remain pending."
-                    if unfinished
-                    else "Session complete — no pending clips remain."
-                )
-                self.statusBar().showMessage(message, 12000)
+                self.completed_session_armed = finish_completed and not unfinished
+                if unfinished:
+                    self.statusBar().showMessage(
+                        "No pending clips ahead — earlier Session clips remain pending.", 12000
+                    )
+                else:
+                    self.show_session_complete()
             self.review_mode()
         except (ValueError, OSError) as error:
             self.error(error)
 
+    def show_session_complete(self):
+        self.statusBar().showMessage(
+            "Session complete — press Shift+Enter again to end the Session.", 12000
+        )
+
+    def remove_from_session(self):
+        if self.current_panel != "Editing" or self.atomic_edit or not self.current_id:
+            return
+        if not self.ensure_range_complete():
+            return
+        try:
+            session = self.catalogue.remove_from_session(self.current_id)
+        except (ValueError, OSError, sqlite3.Error) as error:
+            self.error(error)
+            return
+        self.completed_session_armed = False
+        if session is None:
+            self.return_to_session_setup()
+            return
+        self.refresh_library()
+        self.refresh_session_status()
+        self.begin_page_transition("clip")
+        self.load_clip(session["ids"][session["index"]])
+
     def navigate_next_undefined(self):
+        self.completed_session_armed = False
         if self.atomic_edit:
             return
         session = self.catalogue.state("session")
@@ -3651,6 +3700,7 @@ class Window(QMainWindow):
         return self.export_player if self.current_panel == "Export" else self.player
 
     def remember_draft(self, text):
+        self.completed_session_armed = False
         self.cancel_named_value_registration()
         self.named_value_error = ""
         self.restored_command = None
@@ -4052,7 +4102,7 @@ class Window(QMainWindow):
         QMessageBox.information(
             self,
             "Review shortcuts",
-            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Add to review destination + Next (requires a destination; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “-- ” at start, “ -- ” elsewhere\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
+            'REVIEW MODE\nSpace: Play / Pause · Hold Space: 3×\n← / →: Seek ±5 s · Shift+←/→: ±1 s\n↑ / ↓: Previous / next session clip\nI / O: Set range · Backspace: Reject\nF: Maximize window · / or Enter: Metadata · ?: Help\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nShift+Enter again after Session complete: End Session and open Session\nCtrl+Enter: Add to review destination + Next (requires a destination; preserves triage)\n\nINPUT MODE\nEnter: Submit command and stay in input\n=: Insert “-- ” at start, “ -- ” elsewhere\nShift+Enter: Verdict + Next Pending (command bar must be empty)\nCtrl+Enter: Unavailable\nEscape: Return to review, preserving the draft\n\nType while paused to enter input (Settings → General).\nBlue: valid command. Amber underline: incomplete. Red underline: invalid.\nBrief green underline: saved. The hint shows when Space resumes playback.\nExisting review shortcuts take priority over paused typing.\nUse [LOW_FPS], tag:LOW_FPS or tag:"audio issue"; tag:"" clears.\nSubmit metadata with Enter, then Shift+Enter for verdict.\nKeep requires a configured game and at least one metadata field or mainline.\nExplicit Discard advances without metadata.\nRatings never change verdicts. Drafts last for this run only.',
         )
 
     def update_library_hover_row(self, hovered=None):
@@ -4171,6 +4221,7 @@ class Window(QMainWindow):
                 event.accept()
                 return True
         if event.type() in {QEvent.Type.MouseButtonPress, QEvent.Type.Wheel}:
+            self.completed_session_armed = False
             self.command_separator_range = None
             self.reject_enter_armed = False
             self.submit_resume = False
@@ -4179,6 +4230,7 @@ class Window(QMainWindow):
         if event.type() in {QEvent.Type.ApplicationDeactivate, QEvent.Type.FocusOut}:
             self.command_separator_range = None
             if event.type() == QEvent.Type.ApplicationDeactivate:
+                self.completed_session_armed = False
                 self.submit_resume = False
                 self.consume_resume_space = False
                 self.update_command_state()
@@ -4210,6 +4262,14 @@ class Window(QMainWindow):
         text_editing = isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox))
         key = event.key()
         modifiers = event.modifiers()
+        if not (
+            key == Qt.Key.Key_Shift
+            or (
+                key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}
+                and modifiers == Qt.KeyboardModifier.ShiftModifier
+            )
+        ):
+            self.completed_session_armed = False
         if self.current_panel == "Editing" and focus is self.command:
             if self.named_value_registration and key in {
                 Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape,
@@ -4353,7 +4413,7 @@ class Window(QMainWindow):
                     self.submit()
                 elif modifiers == Qt.KeyboardModifier.ShiftModifier:
                     if not event.isAutoRepeat():
-                        self.advance_review()
+                        self.advance_review(finish_completed=True)
                 return True
         if text_editing:
             if key == Qt.Key.Key_Z and modifiers == (
@@ -4389,7 +4449,7 @@ class Window(QMainWindow):
             return True
         if self.current_panel == "Editing" and key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
             if modifiers == Qt.KeyboardModifier.ShiftModifier and not event.isAutoRepeat():
-                self.advance_review()
+                self.advance_review(finish_completed=True)
             elif modifiers == Qt.KeyboardModifier.ControlModifier and not event.isAutoRepeat():
                 self.add_to_project_next()
             elif modifiers == Qt.KeyboardModifier.NoModifier:
@@ -4760,10 +4820,14 @@ class Window(QMainWindow):
         complete = all(clips[clip_id]["triage"] is not None for clip_id in session["ids"])
         if complete or self.confirm("End this session? Clip metadata stays unchanged."):
             self.catalogue.set_state("session", None)
-            self.current_id = None
-            self.player.load(None)
-            self.clip_filter.set_selected_values({None})
-            self.panel("Session")
+            self.return_to_session_setup()
+
+    def return_to_session_setup(self):
+        self.completed_session_armed = False
+        self.current_id = None
+        self.player.load(None)
+        self.clip_filter.set_selected_values({None})
+        self.panel("Session")
 
     def selected_clip(self):
         clip_id = (
@@ -4863,6 +4927,7 @@ class Window(QMainWindow):
             )
 
     def undo(self, redo=False):
+        self.completed_session_armed = False
         if self.current_panel == "Export":
             self.workspace.undo(redo)
             return

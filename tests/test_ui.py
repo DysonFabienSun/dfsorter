@@ -1272,6 +1272,185 @@ def catalogue_dump(window):
         return list(database.iterdump())
 
 
+@pytest.fixture
+def session_window(window, tmp_path):
+    window.set_theme("dark", persist=False)
+    root = tmp_path / "session-controls"
+    root.mkdir()
+    paths = [root / f"clip-{index}.mp4" for index in range(3)]
+    for path in paths:
+        path.write_bytes(b"video")
+    folder = window.catalogue.add_folder(root)
+    window.catalogue.ingest(folder, [{"path": str(path), "game": "VALORANT"} for path in paths])
+    ids = [clip["clip_id"] for clip in window.catalogue.clips()]
+    window.catalogue.create_session(ids)
+    window.panel("Editing")
+    return window, ids
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_remove_session_clip_preserves_clip_and_selects_survivor(session_window, index):
+    window, ids = session_window
+    window.switch_editing_clip(ids[index])
+    window.edit({"rating": 4, "triage": "discard"})
+    project_id = window.catalogue.save_project("Project")
+    window.edit({}, membership=(project_id, True))
+    window.command.setText("Retained draft")
+    snapshot = window.catalogue.snapshot(ids[index])
+    history = list(window.catalogue.undo_stack)
+    undo = list(window.editing_history().undo_stack)
+    window.confirm = lambda *args: pytest.fail("Removal must not require confirmation")
+
+    window.remove_session_button.click()
+
+    remaining = [clip_id for clip_id in ids if clip_id != ids[index]]
+    target_index = min(index, len(remaining) - 1)
+    assert window.catalogue.state("session") == {"ids": remaining, "index": target_index}
+    assert window.current_id == remaining[target_index]
+    assert window.selected_id(window.library) == window.current_id
+    assert window.library.count() == 2
+    assert window.session_position.text() == f"{target_index + 1} / 2"
+    assert window.catalogue.snapshot(ids[index]) == snapshot
+    assert Catalogue(window.catalogue.path).state("session") == window.catalogue.state("session")
+    assert window.catalogue.undo_stack == history
+    assert window.editing_histories[ids[index]].undo_stack == undo
+    assert window.drafts[ids[index]] == "Retained draft"
+    assert Path(snapshot[0]["source_path"]).is_file()
+    window.panel("Home")
+    window.start_atomic_edit(ids[index], "Home")
+    assert not window.remove_session_button.isVisible()
+    window.remove_from_session()
+    assert window.catalogue.state("session")["ids"] == remaining
+
+
+def test_remove_only_session_clip_returns_to_setup(session_window):
+    window, ids = session_window
+    window.catalogue.set_state("session", {"ids": ids[:1], "index": 0})
+    window.refresh_library()
+    window.command.setText("Retained draft")
+    window.remove_session_button.click()
+    assert window.catalogue.state("session") is None
+    assert window.current_panel == "Session"
+    assert window.current_id is None
+    assert not window.nav["Editing"].isEnabled()
+    assert window.clip_filter.selected_values() == {None}
+    assert window.drafts[ids[0]] == "Retained draft"
+    assert len(window.catalogue.clips()) == 3
+
+
+@pytest.mark.parametrize("case", ["range", "write_failure"])
+def test_remove_session_clip_rejected_without_state_changes(session_window, monkeypatch, case):
+    window, ids = session_window
+    if case == "range":
+        window.pending_in = 100
+    else:
+        def fail(*args):
+            raise OSError("Session write failed")
+        monkeypatch.setattr(window.catalogue, "set_state", fail)
+    window.remove_session_button.click()
+    assert window.catalogue.state("session") == {"ids": ids, "index": 0}
+    assert window.current_id == ids[0]
+    assert window.current_panel == "Editing"
+    assert window.library.count() == 3
+    if case == "range":
+        assert window.pending_in == 100
+
+
+@pytest.mark.parametrize("initial", ["pending", "complete"])
+@pytest.mark.parametrize("focus", ["player", "command"])
+def test_shift_enter_twice_ends_completed_session(session_window, initial, focus):
+    window, ids = session_window
+    for clip_id in ids[:-1] if initial == "pending" else ids:
+        window.catalogue.patch(clip_id, {"triage": "discard"})
+    window.switch_editing_clip(ids[-1])
+    window.edit({"mainline": "Final clip"})
+    target = getattr(window, focus)
+    target.setFocus()
+    QTest.keyClick(target, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_panel == "Editing"
+    assert window.catalogue.state("session") is not None
+    assert window.completed_session_armed
+    assert "Shift+Enter again" in window.statusBar().currentMessage()
+    snapshot = window.catalogue.snapshot(ids[-1])
+    history = list(window.catalogue.undo_stack)
+    target.setFocus()
+    repeat = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return,
+                       Qt.KeyboardModifier.ShiftModifier, "", True)
+    QApplication.sendEvent(target, repeat)
+    assert window.catalogue.state("session") is not None
+    QTest.keyClick(target, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.current_panel == "Session"
+    assert window.catalogue.state("session") is None
+    assert window.catalogue.snapshot(ids[-1]) == snapshot
+    assert window.catalogue.undo_stack == history
+
+
+@pytest.mark.parametrize("action", ["edit", "navigate", "panel", "draft", "remove", "pointer"])
+def test_completed_session_shortcut_resets_after_other_actions(session_window, action):
+    window, ids = session_window
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {"triage": "discard"})
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.completed_session_armed
+    if action == "edit":
+        window.edit({"rating": 2})
+    elif action == "navigate":
+        window.switch_editing_clip(ids[1])
+    elif action == "panel":
+        window.panel("Session")
+        window.panel("Editing")
+    elif action == "remove":
+        window.remove_session_button.click()
+    elif action == "pointer":
+        QTest.mouseClick(window.session_heading, Qt.MouseButton.LeftButton)
+    else:
+        window.command.setText("Draft")
+        window.command.clear()
+    assert not window.completed_session_armed
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.state("session") is not None
+    assert window.completed_session_armed
+
+
+def test_completed_session_shortcut_stays_open_with_pending_clip_or_draft(session_window):
+    window, ids = session_window
+    window.switch_editing_clip(ids[-1])
+    window.edit({"triage": "discard"})
+    for _ in range(2):
+        QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+        assert not window.completed_session_armed
+        assert window.catalogue.state("session") is not None
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {"triage": "discard"})
+    window.command.setText("Unsubmitted")
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert not window.completed_session_armed
+    assert window.command.text() == "Unsubmitted"
+    assert window.catalogue.state("session") is not None
+    window.command.clear()
+    window.pending_in = 100
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert not window.completed_session_armed
+    assert window.pending_in == 100
+    assert window.catalogue.state("session") is not None
+
+
+def test_completed_session_shortcut_keeps_session_when_write_fails(session_window, monkeypatch):
+    window, ids = session_window
+    for clip_id in ids:
+        window.catalogue.patch(clip_id, {"triage": "discard"})
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+
+    def fail(*args):
+        raise OSError("Session write failed")
+
+    monkeypatch.setattr(window.catalogue, "set_state", fail)
+    QTest.keyClick(window.player, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    assert window.catalogue.state("session")["ids"] == ids
+    assert window.current_panel == "Editing"
+    assert window.current_id == ids[0]
+
+
 @pytest.mark.parametrize("case", ["unchanged", "undone", "edited", "command", "range", "membership"])
 def test_atomic_revert_confirms_only_when_discarding_changes(
     window, application, tmp_path, monkeypatch, case

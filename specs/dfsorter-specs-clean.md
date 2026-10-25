@@ -599,7 +599,7 @@ When First N is selected, overlay a cyan rectangular outline from the bar's star
 
 By default, order follows the library's current sort. A common triage workflow is untriaged clips sorted oldest first.
 
-Once locked, Session membership and ordering do not change because metadata or search results change.
+Once locked, Session membership and ordering do not change because metadata or search results change. Explicit Remove from Session in ordinary Editing is a membership-removal exception; surviving clips retain their order.
 
 ### 12.2 Session Progress
 
@@ -609,7 +609,7 @@ While Editing, the left pane shows only Session clips in the frozen order and do
 
 After the final clip in frozen Session order receives a Keep or Discard verdict, if any Session clips remain pending, the Next pending clip button shows a slowly pulsating red outline. Keep this reminder while earlier pending clips are reviewed; remove it when no clips remain pending or the final clip's verdict is cleared. The reminder does not change navigation behavior.
 
-A completed Session remains active for review. Ending a completed Session clears it immediately without confirmation. Ending a Session with pending clips retains confirmation. After ending, open Session and select Pending in the shared Clips filter; later manual filter choices persist normally.
+A completed Session remains active for review. In ordinary Editing, the first Shift+Enter that makes or finds every Session clip decided shows a completion message; the next distinct Shift+Enter ends the Session without confirmation and opens Session. Ignore auto-repeat. Any other key action, pointer interaction, edit, clip navigation or panel change resets this opportunity. Retain the existing empty-command and complete-range requirements, and never end while any Session clip remains pending. Atomic Editing retains its Save behavior. Ending a completed Session clears it immediately without confirmation. Ending a Session with pending clips retains confirmation. After ending, open Session and select Pending in the shared Clips filter; later manual filter choices persist normally.
 
 The Session view should display progress and the proportions/counts of:
 
@@ -632,6 +632,8 @@ The Editing layout provides:
 - collapsible projects on the right, following the normal/maximized visibility rules;
 - command bar at the bottom of the center pane, allowing the left clip list to use the full pane height.
 - a compact footer below the Editing clip list leads with decided progress `(Kept + Rejected)/Total`, followed by rejected count in parentheses, for example `38/50 (5 rejected)`. Skipped pending clips do not count as decided. While the final-clip pending reminder is active, append a middle dot and red pending text, for example `38/50 (5 rejected) · 12 still pending`. Count pending verdicts even when sources are unavailable. Update immediately after verdict changes and undo/redo. Hide empty list-error messages so they reserve no vertical space.
+
+Ordinary Editing provides **Remove from Session** immediately to the right of **Projects** on the existing verdict row; hide it in atomic single-clip Editing. Clicking removes only the current clip ID from persisted Session state immediately, without confirmation or an Undo/Redo entry. Preserve metadata, verdict, project memberships, source files and the clip's current-run draft/history. Complete or clear a pending In/Out range before removal. Select the next surviving clip in Session order, otherwise the preceding clip. Removing the sole remaining clip ends the Session and opens Session with Pending selected. Refresh the clip list, position and progress immediately. A failed Session-state write leaves the current clip and Session unchanged.
 
 ### 13.1 Clip Display
 
