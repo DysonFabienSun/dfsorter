@@ -94,3 +94,50 @@ def test_workflow_restores_annotation_after_checkout_and_checks_source(repositor
         check=True, capture_output=True, text=True,
     )
     assert restored.stdout.strip() == "tag"
+
+
+@pytest.mark.parametrize("invalid", [None, "bundle", "dll"])
+def test_workflow_restores_only_verified_published_runtime(tmp_path, invalid):
+    import hashlib
+    import zipfile
+
+    workflow = yaml.load(
+        (SCRIPT.parents[1] / ".github/workflows/release-windows.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    restore = next(step["run"] for step in workflow["jobs"]["release"]["steps"]
+                   if step.get("name") == "Restore pinned libmpv from published release")
+    fixture = tmp_path / "runtime-fixture.zip"
+    dll = b"verified runtime fixture"
+    with zipfile.ZipFile(fixture, "w") as archive:
+        for name in ("libmpv-2.dll", "Copyright", "LICENSE.GPL", "LICENSE.LGPL"):
+            archive.writestr("DFSorter/runtime/mpv/" + name, dll if name.endswith(".dll") else b"license")
+    restore = restore.replace(
+        "1cceba7837a9ba731e766e21b24a620033ab8bce5cd1e8cc906f7923163194af",
+        "0" * 64 if invalid == "bundle" else hashlib.sha256(fixture.read_bytes()).hexdigest(),
+    ).replace(
+        "673e6397920ab64a9c5b3a618f7f16d38854efe72b58665f1f84e4e873b763a4",
+        "0" * 64 if invalid == "dll" else hashlib.sha256(dll).hexdigest(),
+    )
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "function Invoke-WebRequest { param($Uri, $OutFile) "
+        "Copy-Item -LiteralPath $env:FIXTURE_BUNDLE -Destination $OutFile };\n" + restore
+    )
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-Command", command], cwd=checkout, capture_output=True,
+        env={**os.environ, "RUNNER_TEMP": str(runner), "FIXTURE_BUNDLE": str(fixture)},
+    )
+    assert (result.returncode == 0) is (invalid is None), result.stderr.decode(errors="replace")
+    target = checkout / "runtime/mpv/libmpv-2.dll"
+    if invalid:
+        assert not target.exists()
+    else:
+        assert target.read_bytes() == dll
+        assert {path.name for path in target.parent.iterdir()} == {
+            "libmpv-2.dll", "Copyright", "LICENSE.GPL", "LICENSE.LGPL"
+        }

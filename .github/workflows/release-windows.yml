@@ -77,6 +77,26 @@ jobs:
       - name: Read proposed changelog from annotated tag
         shell: pwsh
         run: ./packaging/read-release-notes.ps1 -Tag $env:RELEASE_TAG -OutputPath "$env:RUNNER_TEMP/release-notes.md"
+      - name: Restore pinned libmpv from published release
+        shell: pwsh
+        run: |
+          # The upstream daily archive has expired. Reuse the identical runtime
+          # already shipped in v1.1.9, with both bundle and DLL identities pinned.
+          $bundle = Join-Path $env:RUNNER_TEMP 'dfsorter-runtime-source.zip'
+          $extracted = Join-Path $env:RUNNER_TEMP 'dfsorter-runtime-source'
+          Invoke-WebRequest 'https://github.com/DysonFabienSun/dfsorter/releases/download/v1.1.9/DFSorter-v1.1.9-Windows-x64.zip' -OutFile $bundle
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne '1cceba7837a9ba731e766e21b24a620033ab8bce5cd1e8cc906f7923163194af') {
+            throw 'Published runtime bundle checksum mismatch.'
+          }
+          Expand-Archive -LiteralPath $bundle -DestinationPath $extracted
+          $runtime = Join-Path $extracted 'DFSorter/runtime/mpv'
+          if ((Get-FileHash -LiteralPath (Join-Path $runtime 'libmpv-2.dll') -Algorithm SHA256).Hash.ToLowerInvariant() -ne '673e6397920ab64a9c5b3a618f7f16d38854efe72b58665f1f84e4e873b763a4') {
+            throw 'Published libmpv checksum mismatch.'
+          }
+          New-Item -ItemType Directory -Force 'runtime/mpv' | Out-Null
+          foreach ($name in @('libmpv-2.dll', 'Copyright', 'LICENSE.GPL', 'LICENSE.LGPL')) {
+            Copy-Item -LiteralPath (Join-Path $runtime $name) -Destination 'runtime/mpv'
+          }
       - name: Build portable ZIP
         shell: pwsh
         run: ./packaging/build-release.ps1 -NoProxy

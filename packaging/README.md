@@ -47,3 +47,11 @@ tag with a corrected workflow, run the workflow manually from `main` with the `t
 input, for example `gh workflow run release-windows.yml --ref main -f tag=v1.1.9`.
 The selected tag supplies the source and notes; an existing release still aborts the
 run, and retrying never requires replacing the remote tag.
+
+## Retired upstream libmpv archive
+
+The September 2026 upstream daily archive is no longer available. CI restores
+its identical libmpv DLL and license files from the published v1.1.9 ZIP before
+building. Both the release ZIP and the extracted DLL are SHA-256 pinned; a
+mismatch aborts the build. Application source and release notes still come from
+the selected tag. No tag replacement or local portable build is required.
