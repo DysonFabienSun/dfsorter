@@ -1,12 +1,47 @@
 # Portable release dependencies
 
-`build-release.ps1` pins FFmpeg by archive name, release URL and SHA-256.
-Use a month-end BtbN build when updating this pin: upstream retains the last
-build of each month for two years, but other daily builds expire after 14 builds.
-Check the asset and checksum before updating all three values, and update
-`THIRD-PARTY-NOTICES.txt` to reference the same release.
+## Retained native dependencies
 
-Upstream retention policy: https://github.com/BtbN/FFmpeg-Builds#release-retention-policy
+`dependencies.json` is the single pin manifest for Windows x64 libmpv and FFmpeg.
+It records each archive URL, version, SHA-256, required binary/licence hashes and
+upstream provenance. `dependencies.ps1` downloads only from the dedicated
+DFSorter dependency release, verifies before caching, and checks extracted files
+before use. Cache hits require no download. Corrupt archives fail with an explicit
+error; incomplete or damaged extraction caches are restored from the verified ZIP.
+Failed downloads do not leave an archive that later builds could mistake for valid.
+
+Large archives are GitHub release assets, not Git blobs or Git LFS objects. The
+retained release uses a non-application tag (`dependencies-windows-x64-2026-11-06`),
+is marked prerelease, and is explicitly excluded from latest-release selection.
+It does not trigger the `v[0-9]*` application build workflow and is never returned
+by the application's stable `/releases/latest` update check. Do not delete, replace
+or overwrite its assets: older source tags depend on those exact bytes.
+
+`setup-playback.ps1` installs the verified DLL and licences from the retained
+libmpv ZIP. The build invokes the same setup and obtains FFmpeg through the same
+helper; no upstream daily archive, raw licence fetch, prior application release or
+7-Zip download is needed. The libmpv bundle preserves the existing DLL identified
+by mpv commit `69e63f425a`; its original upstream daily archive expired, so the
+bundle records that recovery provenance. The FFmpeg asset is the unchanged BtbN
+month-end archive. No native runtime versions are upgraded by this storage change.
+
+Fresh setup/builds still download these assets from GitHub. Python, Python wheels,
+uv and the CI runner/actions keep their existing sources; this is not a fully
+offline build environment. Released application ZIPs remain self-contained.
+
+### Updating a dependency
+
+1. Acquire the intended build and its licences; verify upstream checksums and
+   provenance. Retain the original archive when available. Document any repackaging.
+2. Prepare a new dated dependency release with a non-`v` tag. Use
+   `gh release create <dependency-tag> <archives> <manifest> --prerelease --latest=false`
+   and a UTF-8 notes file describing versions, provenance and checksums. Do not
+   overwrite the older release or use an application version tag.
+3. Update `dependencies.json` with the new asset URLs, archive SHA-256 and required
+   file hashes. Preserve licence files and update `THIRD-PARTY-NOTICES.txt`.
+4. Verify downloads from the retained release and cache reuse with the shared helper,
+   run focused dependency checks, then commit the manifest/setup changes. App release
+   CI consumes the manifest belonging to the selected application source tag.
 
 Release CI builds the portable ZIP and creates a draft release when a version
 tag is pushed. Do not generate the portable ZIP on the development device.
@@ -47,11 +82,3 @@ tag with a corrected workflow, run the workflow manually from `main` with the `t
 input, for example `gh workflow run release-windows.yml --ref main -f tag=v1.1.9`.
 The selected tag supplies the source and notes; an existing release still aborts the
 run, and retrying never requires replacing the remote tag.
-
-## Retired upstream libmpv archive
-
-The September 2026 upstream daily archive is no longer available. CI restores
-its identical libmpv DLL and license files from the published v1.1.9 ZIP before
-building. Both the release ZIP and the extracted DLL are SHA-256 pinned; a
-mismatch aborts the build. Application source and release notes still come from
-the selected tag. No tag replacement or local portable build is required.

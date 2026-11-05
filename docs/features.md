@@ -1,3 +1,10 @@
+# Retained build dependencies
+
+- [x] Six focused cases verify download/cache integrity, partial cleanup, extraction repair, required licences and repeat setup while an unchanged DLL is in use. Real retained-asset downloads, required-file hashes, local installation, FFmpeg execution and offline cache reuse pass; no local application ZIP is built.
+
+- [x] Windows libmpv and FFmpeg inputs use a shared checksum manifest/downloader and durable DFSorter dependency-release assets, with licences and provenance. Cached archives are verified before use; interrupted downloads are discarded and damaged extractions repaired.
+- [x] Native dependency binaries stay outside source Git history. Dedicated non-version prerelease tags are excluded from application update checks. Setup and CI no longer fetch retired upstream archives, live licence files or a previous application ZIP; Python/package downloads remain unchanged.
+
 # Automatic HDR correction and capture-folder management
 
 - [x] Settings → Video includes a default-on NVIDIA HDR override checkbox and grey question-mark help. Disabling it makes Automatic follow metadata; explicit ranges retain precedence. The shared policy refreshes playback/thumbnails and preserves queued Share snapshots.

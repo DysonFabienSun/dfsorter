@@ -24,20 +24,10 @@ try {
             }
         }
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $root 'runtime/mpv/libmpv-2.dll'))) {
-        & (Join-Path $root 'setup-playback.ps1') -NoProxy
-    }
-    $ffmpegName = 'ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0.zip'
-    $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/$ffmpegName"
-    $ffmpegHash = 'a0e45723c72141975f51d8666302e614711745f3102b704ca3f82c897a58d278'
-    $archive = Join-Path $root "cache/$ffmpegName"
-    New-Item -ItemType Directory -Force (Split-Path $archive) | Out-Null
-    if (-not (Test-Path -LiteralPath $archive)) { Invoke-WebRequest $ffmpegUrl -OutFile $archive }
-    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ffmpegHash) {
-        throw 'FFmpeg archive checksum mismatch.'
-    }
-    $extracted = Join-Path $root 'cache/ffmpeg-release-extracted'
-    Expand-Archive -LiteralPath $archive -DestinationPath $extracted -Force
+    . (Join-Path $root 'packaging/dependencies.ps1')
+    & (Join-Path $root 'setup-playback.ps1') -NoProxy
+    $dependency = Get-VerifiedDependency -Name ffmpeg -Root $root
+    $extracted = $dependency.Directory
     $ffmpeg = Get-ChildItem -LiteralPath $extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
     $ffprobe = Get-ChildItem -LiteralPath $extracted -Recurse -Filter ffprobe.exe | Select-Object -First 1
     if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg archive lacks ffmpeg.exe or ffprobe.exe.' }

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "release_tag": "dependencies-windows-x64-2026-11-06",
+  "dependencies": {
+    "libmpv": {
+      "version": "20260903-git-69e63f425a",
+      "archive": "libmpv-69e63f425a-windows-x64.zip",
+      "url": "https://github.com/DysonFabienSun/dfsorter/releases/download/dependencies-windows-x64-2026-11-06/libmpv-69e63f425a-windows-x64.zip",
+      "sha256": "2fcfd86f2ac1d71e186cce70c8977b666a48ea0896e791b99ab6cb1565b51beb",
+      "files": {
+        "mpv/libmpv-2.dll": "673e6397920ab64a9c5b3a618f7f16d38854efe72b58665f1f84e4e873b763a4",
+        "mpv/Copyright": "bfe9ee4cceabcb8ecbfadf208d04156f73d801e6a57369a5606bb8341e204a23",
+        "mpv/LICENSE.GPL": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+        "mpv/LICENSE.LGPL": "72b672113d642cbb8ef5dcc76938db801983c56e50b1400ab930f1a64d6dc8d9"
+      },
+      "source": {
+        "upstream": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260903",
+        "source": "https://github.com/mpv-player/mpv/tree/69e63f425a",
+        "recovery": "Identical installed DLL, hash matched to published DFSorter v1.1.9; original daily archive expired."
+      }
+    },
+    "ffmpeg": {
+      "version": "n9.0.2-17-g2a571b6068",
+      "archive": "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0.zip",
+      "url": "https://github.com/DysonFabienSun/dfsorter/releases/download/dependencies-windows-x64-2026-11-06/ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0.zip",
+      "sha256": "a0e45723c72141975f51d8666302e614711745f3102b704ca3f82c897a58d278",
+      "files": {
+        "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0/LICENSE.txt": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+        "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0/bin/ffmpeg.exe": "513368c81583572ce1d09d5c7ff827feed1a63db352412a5001f4da3a1583d98",
+        "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0/bin/ffprobe.exe": "0fd8f3bae96cc707993bcd8c56c13f8cd73962d37dbcaac0dad4fe3a0ce1f68f"
+      },
+      "source": {
+        "upstream": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08",
+        "source": "https://github.com/BtbN/FFmpeg-Builds"
+      }
+    }
+  }
+}

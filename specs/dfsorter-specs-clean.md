@@ -41,6 +41,9 @@ Only one DFSorter process may run from a given application directory. Acquire a 
 
 Windows distribution uses a portable release ZIP. The extracted directory contains the executable, bundled playback and media tools, resources, default game definitions, active `configs/games/`, `data/`, `cache/`, and update backups. A packaged copy requires no separately installed Python, Git, FFmpeg, or 7-Zip. Updates preserve `data/`, `configs/`, and `cache/`. At startup, game definitions merge against the previous shipped defaults kept in `data/default-games/`. Distinct local and incoming changes are combined; when both change the same setting, the local value is kept and a conflict is reported. An older install without previous default files preserves edited definitions on its first update and offers incoming copies under `configs/default-updates/`. Skipped conflicts appear in a startup dialog and in `configs/default-updates/merge-conflicts.txt`.
 
+Native build inputs (libmpv and FFmpeg) are retained as checksum-pinned assets in a dedicated DFSorter GitHub dependency release, with versions, required file hashes, licences and provenance recorded in `packaging/dependencies.json`. Setup and release CI share the verified downloader/cache and do not depend on upstream daily archives, live licence downloads or earlier application ZIPs. Keep binaries outside ordinary Git history. Dependency releases use non-application tags, are prereleases and are excluded from latest-release selection so they cannot appear as application updates. Retain old dependency assets unchanged for older source tags. Fresh builds still need GitHub and existing Python/package sources; this does not promise fully offline builds. No application runtime behavior or native library version changes are implied.
+
+
 A recommended layout is:
 
 ```text
