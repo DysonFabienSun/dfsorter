@@ -1,3 +1,21 @@
+# Automatic HDR correction and capture-folder management
+
+- [x] Settings → Video includes a default-on NVIDIA HDR override checkbox and grey question-mark help. Disabling it makes Automatic follow metadata; explicit ranges retain precedence. The shared policy refreshes playback/thumbnails and preserves queued Share snapshots.
+
+- [x] One source-aware, immutable color policy covers current/preloaded playback, thumbnails, effective Share descriptions and queued submissions. Supports standard manual/DVR names, legacy dotted dates and numeric segment suffixes; matching SDR remains unchanged. HDR cache treatment is versioned as hdr-v2.
+- [x] Add and Manage share the folder preview, assignment controls and typography. Catalogue-only Edit opens paused/offline roots, stages relinking and commits assignment/path changes together; failures and declined confirmation retain the draft.
+- [x] Folder context menus contain Edit capture folder… then Pause/Resume scanning. More retains the unified editor and global/unlinked actions. Removal lives in the manager and retains saved-root confirmation, backup and cleanup.
+
+- [x] Focused checks cover validated filename variants/false positives, PQ/HLG pixel correction under both mappings, explicit preference persistence, playback state, HDR thumbnail policy keys, source-aware Share summaries and queued snapshots, Add/Edit reuse, transactional rollback/collisions, cancelled relinking and saved-root removal with backup. Dark-mode Add/Manage, empty and disabled-save layouts were inspected in `cache/verification/capture-folder-manager`; changed-file Ruff and diff checks pass.
+
+# HDR color processing
+
+- [x] Settings → Video saves application-wide HDR input range (Automatic / File metadata / Limited / Full) and SDR mapping (BT.2390 / Legacy — Hable). Missing/invalid preferences select Automatic and BT.2390; saved explicit range choices survive. Automatic recognizes validated NVIDIA filename suffixes and resolves HDR to Limited independently of range flags, codec, metadata and folder name. Folder and clip overrides are not added.
+- [x] Share and thumbnails use one versioned libplacebo recipe with explicit peak-detection, smoothing, perceptual gamut and contrast parameters. HDR input interpretation is applied before conversion. Ordinary SDR behavior and byte-preserving Project Export remain unchanged.
+- [x] Source playback applies HDR range interpretation and display-aware mapping through mpv. Live preference changes preserve transport, position and pending markers; PQ/HLG-to-SDR clip changes clear HDR overrides. Current and preloaded players receive the same policy.
+- [x] Share jobs freeze the policy at submission. A bounded, cancellable, executable-identity-cached shader capability check and explicit runtime error reporting stop unavailable BT.2390 processing without changing mapping. Encoder fallback can retain the same treatment. Failed thumbnails keep the empty placeholder with an explanatory tooltip; HDR cache keys include policy/version while SDR keys remain valid.
+- [x] Focused pixel-reference, output-tag, failure/cleanup, thumbnail/cache, queued-job and Dark-mode settings/playback checks cover the change. The pinned release FFmpeg executed the recipe and converted the 28-second gameplay segment; sampled motion frames and the Dark-mode Video tab were visually inspected. Final perceptual comparison during playback remains display-dependent.
+
 # Annotated release changelogs
 
 - [x] CI restores the remote annotated tag after checkout and verifies that its commit matches the build source. Manual workflow dispatch accepts an existing tag so workflow repairs can retry a release without changing the remote tag; focused local-clone checks cover restoration and mismatched-source rejection.

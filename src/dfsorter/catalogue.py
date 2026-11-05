@@ -511,8 +511,11 @@ class Catalogue:
             self.undo_stack.clear()
             self.redo_stack.clear()
 
-    def migration_plan(self, folder_id, destination):
-        folders = {folder["folder_id"]: folder for folder in self.folders()}
+    def migration_plan(self, folder_id, destination, *, database=None):
+        if database is None:
+            with self.connection() as database:
+                return self.migration_plan(folder_id, destination, database=database)
+        folders = {folder["folder_id"]: dict(folder) for folder in database.execute("SELECT * FROM folders")}
         if folder_id not in folders:
             raise ValueError("Capture folder no longer exists")
         old = Path(folders[folder_id]["path"])
@@ -527,15 +530,15 @@ class Catalogue:
             for other_id, folder in folders.items()
         ):
             raise ValueError("Capture folders must not overlap")
-        rows = self.rows(
+        rows = [dict(row) for row in database.execute(
             "SELECT clips.* FROM clips JOIN sources USING(clip_id) WHERE folder_id=?", (folder_id,)
-        )
+        )]
         updates = [
             (normalized(new / Path(row["source_path"]).relative_to(old)), row["clip_id"])
             for row in rows
         ]
         targets = [path for path, clip_id in updates]
-        existing = {Path(clip["source_path"]): clip["clip_id"] for clip in self.clips()}
+        existing = {Path(clip["source_path"]): clip["clip_id"] for clip in database.execute("SELECT * FROM clips")}
         if len(targets) != len({Path(path) for path in targets}) or any(
             Path(path) in existing and existing[Path(path)] != clip_id for path, clip_id in updates
         ):
@@ -543,16 +546,35 @@ class Catalogue:
         return str(new), rows, updates
 
     def migrate(self, folder_id, destination):
-        new, rows, updates = self.migration_plan(folder_id, destination)
-        targets = [path for path, clip_id in updates]
+        self.update_folder(folder_id, destination=destination)
+
+    def update_folder(self, folder_id, *, mode=None, game=None, games=None, destination=None):
+        """Commit assignment and relinking together, preserving scanning and clip identity."""
+        if mode is not None:
+            mode, game = validate_assignment(mode, game, games)
         with self.connection() as database:
-            database.executemany(
-                "DELETE FROM media_cache WHERE path=?",
-                [(row["source_path"],) for row in rows] + [(path,) for path in targets],
-            )
-            database.executemany("UPDATE clips SET source_path=? WHERE clip_id=?", updates)
-            database.execute("UPDATE folders SET path=? WHERE folder_id=?", (new, folder_id))
-        self.hidden_deleted_ids()
+            database.execute("BEGIN IMMEDIATE")
+            if not database.execute("SELECT 1 FROM folders WHERE folder_id=?", (folder_id,)).fetchone():
+                raise ValueError("Capture folder no longer exists")
+            if destination is not None:
+                new, rows, updates = self.migration_plan(folder_id, destination, database=database)
+                database.executemany(
+                    "DELETE FROM media_cache WHERE path=?",
+                    [(row["source_path"],) for row in rows] + [(path,) for path, _ in updates],
+                )
+                database.executemany("UPDATE clips SET source_path=? WHERE clip_id=?", updates)
+                database.execute("UPDATE folders SET path=? WHERE folder_id=?", (new, folder_id))
+                restored = [
+                    (row["clip_id"],) for row in database.execute(
+                        "SELECT clip_id, source_path FROM deleted_sources JOIN clips USING(clip_id)"
+                    ) if Path(row["source_path"]).is_file()
+                ]
+                database.executemany("DELETE FROM deleted_sources WHERE clip_id=?", restored)
+            if mode is not None:
+                database.execute(
+                    "UPDATE folders SET assignment_mode=?,forced_game=? WHERE folder_id=?",
+                    (mode, game, folder_id),
+                )
 
     def projects(self):
         return [

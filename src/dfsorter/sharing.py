@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from .app_paths import tool
+from .color import BT2390_ERROR, ColorPolicy, require_bt2390
 from .share_profiles import frame_rate, share_quality, web_profile
 
 
@@ -76,7 +77,7 @@ def probe(path, cancelled=lambda: False):
 
 def encode_share(
     clip, destination, stem, selected_range, cancelled, progress, *,
-    detailed_progress=None, quality="native",
+    detailed_progress=None, quality="native", color_policy=None,
 ):
     """Create a share; detailed progress uses -1 while output time is unknown."""
     executable = tool("ffmpeg")
@@ -92,6 +93,11 @@ def encode_share(
     if not videos:
         raise ValueError("Source has no video stream")
     hdr = videos[0].get("color_transfer") in {"smpte2084", "arib-std-b67"}
+    color_policy = (color_policy or ColorPolicy()).for_source(source)
+    if hdr and color_policy.mapping == "bt2390":
+        if detailed_progress:
+            detailed_progress(-1, "Checking HDR processing…")
+        require_bt2390(executable, cancelled)
     web = web_profile(videos[0]) if share_quality(quality) == "web_1080p" else None
     duration = float(info["format"]["duration"])
     start, end = 0.0, duration
@@ -124,11 +130,7 @@ def encode_share(
             )
         reencode = bool(web) or selected_range or videos[0]["codec_name"] != "h264" or hdr
         if reencode:
-            treatment = (
-                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
-                "tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,"
-                if hdr else ""
-            )
+            treatment = color_policy.sdr_filter() + "," if hdr else ""
             timestamps = "" if seeking else "setpts=PTS-STARTPTS,"
             web_filters = ""
             if web:
@@ -151,6 +153,8 @@ def encode_share(
             # Input seeking decodes only the lead-in from the preceding seek
             # point. Keep source-relative timestamps for exact filter cuts.
             arguments += ["-copyts", "-start_at_zero", "-ss", str(start), "-accurate_seek"]
+        if hdr:
+            arguments += color_policy.device_arguments()
         arguments += ["-i", str(source)]
         if filters:
             arguments += ["-filter_complex", ";".join(filters)]
@@ -206,7 +210,12 @@ def encode_share(
                 break
             except InterruptedError:
                 raise
-            except OSError:
+            except OSError as error:
+                if hdr and color_policy.mapping == "bt2390" and any(
+                    marker in str(error).lower()
+                    for marker in ("libplacebo", "vulkan", "hwupload", "hwdownload")
+                ):
+                    raise OSError(f"{BT2390_ERROR}\n{error}") from error
                 if attempt == len(encoders) - 1:
                     raise
                 logging.warning(

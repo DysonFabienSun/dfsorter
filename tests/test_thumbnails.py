@@ -121,6 +121,7 @@ def test_stale_thumbnail_does_not_change_filtered_browse(tmp_path, application):
     shutil.copytree(ROOT / "configs/shipped", tmp_path / "configs/games")
     shutil.copytree(ROOT / "configs/tips", tmp_path / "configs/tips")
     window = Window(tmp_path)
+    window.set_theme("dark")
     window.show()
     try:
         folder = tmp_path / "captures"
@@ -150,3 +151,29 @@ def test_stale_thumbnail_does_not_change_filtered_browse(tmp_path, application):
     finally:
         window.close()
         application.processEvents()
+
+
+@pytest.mark.parametrize("hdr", [True, False])
+def test_automatic_thumbnail_resolves_source_and_preserves_sdr(tmp_path, application, monkeypatch, hdr):
+    from dfsorter import color
+
+    source = tmp_path / "游戏 2026.11.06 - 12.34.56.1.DVR.mp4"
+    source.write_bytes(b"video")
+    calls = []
+    def extract(command, **kwargs):
+        calls.append(command)
+        QImage(168, 96, QImage.Format.Format_RGB32).save(command[-1])
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr("dfsorter.thumbnails.subprocess.run", extract)
+    monkeypatch.setattr("dfsorter.thumbnails.require_bt2390", lambda *args: None)
+    cache = ThumbnailCache(tmp_path)
+    clip = {"clip_id": "one", "source_path": str(source), "hdr": hdr}
+    try:
+        key, _ = cache.request(clip)
+        assert wait_for(application, lambda: key in cache.memory)
+        treatment = calls[0][calls[0].index("-vf") + 1]
+        assert ("setparams=range=limited" in treatment) == hdr
+        monkeypatch.setattr(color, "nvidia_filename", lambda source: False)
+        assert (cache.signature(clip) != key) == hdr
+    finally:
+        cache.close()

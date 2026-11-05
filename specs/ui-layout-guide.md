@@ -153,6 +153,8 @@ text and icons.
 
 General's Share group uses an **Output quality:** label and ordinary noneditable select box in the same horizontal label/buddy/control/stretch arrangement as Appearance's Theme row. Reuse its typography, padding, popup, focus and hover behavior without custom delegates, fixed selector widths or local stylesheets. Keep a wrapped shared-secondary description beneath the row and use the existing group spacing.
 
+The **Video** tab uses one **HDR video** preference group with **HDR input range:** (Automatic / File metadata / Limited / Full) and **HDR-to-SDR mapping:** (BT.2390 / Legacy — Hable). Below the selectors, show a default-on **NVIDIA HDR override** checkbox followed by the shared grey (`text_secondary`) circle-help control with an 8 px gap and expanding space to the right. Hover displays the explanation; clicking opens the same explanation. Keep this control available for explicit range selections while explaining that it applies only to Automatic. Align both label/buddy/control rows in shared columns and leave expanding space to the right. Reuse the existing noneditable selector typography and all interaction states. A wrapped secondary explanation states application-wide HDR scope, Automatic filename correction, explicit range choices, native HDR preservation and explicit failure without Legacy substitution. Share surfaces show the effective HDR mapping and input range in compact wrapped secondary text; omit it for SDR clips. Failed HDR thumbnails keep the normal empty placeholder and explain the error in their existing tooltip.
+
 General's Updates group follows the same arrangement for **Download source:**, with a noneditable dropdown and a wrapped shared-secondary explanation beneath it. Update download and local ZIP verification dialogs use the shared progress bar styling, with phase, percentage and decimal MB in the label; unknown-size downloads retain the shared indeterminate bar.
 
 General playback settings use the existing grouped controls. Indent **Use separate start positions for Browse, Editing, and Export** 12 px beneath the unified start-position row, with a compact 4 px vertical gap. Separate start positions show an
@@ -213,7 +215,7 @@ Config game rows show the run's Editing registration count as `(+1 named value)`
 after YAML size. Use the shared secondary metadata font and preserve row alignment
 and selection/hover states; elide long summaries and retain a complete tooltip.
 
-### Add capture folder dialog
+### Add / Manage capture folder dialog
 
 Use 16 px outer padding and a 550 px minimum width. Anchor the content to the top. Keep the
 dialog height driven by its contents rather than a fixed target. Put the Folder label, a compact
@@ -238,8 +240,7 @@ game selector, initially Select a game…. Disable Add until a configured game i
 Keep the assignment group available for empty or fully classified folders. Explain the recursive,
 persistent scope and preservation of existing assigned games in muted text; keep Game configs…
 guidance nearby. Report the count of conflicting folder detections when assigning one game.
-Use the same controls in the Game assignment editor, with Save and Cancel. An unavailable saved
-game remains visible with a configuration-unavailable suffix; require a valid choice before Save.
+Reuse this dialog for **Manage capture folder**, replacing Edit folder… with **Relink folder…** and Add folder with **Save**. Show current scanning status in secondary text beneath the path and label the saved summary **Catalogue**. Counts describe saved entries and do not recompute when the assignment draft changes. Open without inspection, including unavailable/paused roots. Stage the selected destination without closing; validation, declined confirmation and write failures retain the open draft. Keep **Remove folder…** at the left of the footer in the shared danger style, separated by a stretch from right-aligned Save / Cancel. Removal applies to the saved root. Add no HDR controls. An unavailable saved game remains visible with a configuration-unavailable suffix; require a valid choice before Save.
 
 Show the existing parent-folder tip only in automatic mode when the selected folder name resolves to a known game.
 Its message should suggest using Edit folder… to select the parent recordings folder while

@@ -449,6 +449,7 @@ def share_clip(
     progress=lambda text: None,
     detailed_progress=None,
     quality="native",
+    color_policy=None,
 ):
     from .sharing import encode_share
 
@@ -459,6 +460,8 @@ def share_clip(
     options = {"detailed_progress": detailed_progress} if detailed_progress else {}
     if quality != "native":
         options["quality"] = quality
+    if color_policy is not None:
+        options["color_policy"] = color_policy
     return encode_share(
         clip, destination, safe_stem(stem), selected_range, cancelled, progress, **options
     )

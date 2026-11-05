@@ -101,3 +101,63 @@ def test_missing_game_skips_cleanup_and_rule_changes_reuse_cache(catalogue, regi
     result = ScanCoordinator(catalogue, registry).run(catalogue.folders())
     assert any("configuration unavailable" in error for error in result[1])
     assert len(catalogue.clips()) == 1
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_combined_folder_update_transaction(catalogue, clips, registry, tmp_path, fail):
+    from pathlib import Path
+
+    folder = catalogue.folders()[0]
+    folder_id = folder["folder_id"]
+    catalogue.patch(clips[0]["clip_id"], {"mainline": "Preserved"})
+    catalogue.create_session([clip["clip_id"] for clip in clips])
+    catalogue.enable_folder(folder_id, False)
+    project = catalogue.save_project("Preserved")
+    catalogue.batch_membership(project, [clips[0]["clip_id"]], True)
+    destination = tmp_path / "relinked"
+    destination.mkdir()
+    original = Path(clips[0]["source_path"])
+    target = destination / original.name
+    target.write_bytes(original.read_bytes())
+    catalogue.cache_media([dict(path=str(original), size=original.stat().st_size,
+                               mtime_ns=original.stat().st_mtime_ns, duration=1, hdr=1,
+                               created=None, error=None, inspected_at="2026-11-06")])
+    before = catalogue.clips(), catalogue.folders(), catalogue.media_cache(), catalogue.state("session")
+    if fail:
+        with catalogue.connection() as database:
+            database.execute("CREATE TRIGGER fail_assignment BEFORE UPDATE OF assignment_mode ON folders "
+                             "BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END")
+        with pytest.raises(sqlite3.IntegrityError, match="simulated"):
+            catalogue.update_folder(folder_id, mode="unclassified", games=registry.games,
+                                    destination=destination)
+        assert (catalogue.clips(), catalogue.folders(), catalogue.media_cache(), catalogue.state("session")) == before
+    else:
+        catalogue.update_folder(folder_id, mode="unclassified", games=registry.games,
+                                destination=destination)
+        saved = catalogue.folders()[0]
+        assert saved["path"] == str(destination.resolve())
+        assert saved["assignment_mode"] == "unclassified" and not saved["enabled"]
+        assert catalogue.clip(clips[0]["clip_id"])["mainline"] == "Preserved"
+        assert {clip["clip_id"] for clip in catalogue.clips()} == {clip["clip_id"] for clip in clips}
+        assert {clip["game"] for clip in catalogue.clips()} == {"VALORANT"}
+        assert catalogue.state("session") == before[3]
+        assert catalogue.member_ids(project) == {clips[0]["clip_id"]}
+        assert not catalogue.media_cache()
+    assert original.exists() and target.exists()
+
+
+@pytest.mark.parametrize("reason", ["overlap", "collision", "missing"])
+def test_combined_folder_validation_preserves_assignment(catalogue, clips, registry, tmp_path, reason):
+    folder = catalogue.folders()[0]
+    destination = tmp_path / "destination"
+    if reason != "missing":
+        destination.mkdir()
+        other = catalogue.add_folder(destination)
+        if reason == "collision":
+            catalogue.ingest(other, [{"path": str(destination / "clip-0.mp4"), "game": None}])
+            catalogue.remove_folder(other, purge=False)
+    before = catalogue.clips(), catalogue.folders()
+    with pytest.raises(ValueError):
+        catalogue.update_folder(folder["folder_id"], destination=destination,
+                                mode="unclassified", games=registry.games)
+    assert (catalogue.clips(), catalogue.folders()) == before

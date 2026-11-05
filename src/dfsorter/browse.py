@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .color import ColorPolicy
 from .config import title
 from .deletion import delete_reviewed, preview
 from .output import safe_stem, share_clip
@@ -129,6 +130,10 @@ class BrowsePage(QWidget):
         self.range_status = QLabel()
         role(self.range_status, "secondary")
         layout.addWidget(self.range_status)
+        self.color_summary = QLabel()
+        self.color_summary.setWordWrap(True)
+        role(self.color_summary, "secondary")
+        layout.addWidget(self.color_summary)
         footer = QHBoxLayout()
         info = QLabel("H.264 MP4 · All audio tracks mixed to stereo AAC")
         role(info, "secondary")
@@ -338,6 +343,9 @@ class BrowsePage(QWidget):
         # Signals may fire while controls are still being constructed.
         if not hasattr(self, "share_button"):
             return
+        hdr = bool(self.clip and self.window.media_info.get(self.clip["source_path"], {}).get("hdr"))
+        self.color_summary.setVisible(hdr)
+        self.color_summary.setText(ColorPolicy.from_settings(self.window.settings).for_source(self.clip["source_path"]).summary if hdr else "")
         available = bool(self.clip and Path(self.clip["source_path"]).is_file())
         sharing = bool(self.clip and self.window.activities.active_share(self.clip["clip_id"]))
         completed = bool(
@@ -424,6 +432,7 @@ class BrowsePage(QWidget):
         destination = self.destination.text().strip()
         selected_range = self.mode.currentData()
         quality = share_quality(self.window.settings.get("share_quality", "native"))
+        color_policy = ColorPolicy.from_settings(self.window.settings).for_source(clip["source_path"])
         folders = self.window.catalogue.folders()
         self.window.settings["share_folder"] = destination
         self.window.save_settings()
@@ -434,6 +443,7 @@ class BrowsePage(QWidget):
                 selected_range=selected_range, cancelled=cancelled,
                 detailed_progress=progress,
                 quality=quality,
+                color_policy=color_policy,
             ),
             clip_id=clip["clip_id"],
             subtitle=f"{safe_stem(custom)}.mp4",

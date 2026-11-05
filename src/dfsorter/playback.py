@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .color import ColorPolicy
 from .mpv_backend import MpvBackend
 from .theme import COLORS, SIZES, font, role
 from .widgets import icon, set_icon, tool
@@ -768,10 +769,11 @@ class Player(QWidget):
         self.continue_after_end = False
         self.end_space_press.invalidate()
         self.loaded_start_settings = playback_start_settings(self.settings, self.pane)
+        self.loaded_clip = clip
+        self.refresh_color_policy()
         self.video_container.clear_prepared_frame()
         self.prepared_image = None
         self.prepared_position = None
-        self.loaded_clip = clip
         self.retry_load = False
         self.initial_seek_done = False
         self.preview_frame_ready = False
@@ -802,6 +804,12 @@ class Player(QWidget):
         self.awaiting_frame = True
         self.load_timeout.start()
         self.media.setSource(QUrl.fromLocalFile(clip["source_path"]))
+
+    def refresh_color_policy(self):
+        self.loaded_color_policy = ColorPolicy.from_settings(self.settings).for_source(
+            self.loaded_clip["source_path"] if self.loaded_clip else ""
+        )
+        self.media.set_color_policy(self.loaded_color_policy)
 
     def first_frame(self):
         if self.awaiting_frame and not self.initial_seek_done:

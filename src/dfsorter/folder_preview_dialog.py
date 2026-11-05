@@ -73,32 +73,6 @@ class AssignmentControls(QWidget):
         return self.game.currentData() if self.mode.currentData() == "single_game" else None
 
 
-class FolderAssignmentDialog(QDialog):
-    def __init__(self, folder, games, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Game assignment")
-        self.setMinimumWidth(550)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        path = FolderPathLabel(folder["path"])
-        layout.addWidget(path)
-        self.assignment = AssignmentControls(games, folder["assignment_mode"], folder["forced_game"])
-        layout.addWidget(self.assignment)
-        actions = QHBoxLayout()
-        actions.addStretch()
-        save = QPushButton("Save")
-        role(save, "primary")
-        save.clicked.connect(self.accept)
-        cancel = QPushButton("Cancel")
-        cancel.clicked.connect(self.reject)
-        actions.addWidget(save)
-        actions.addWidget(cancel)
-        layout.addLayout(actions)
-        for control in (self.assignment.mode, self.assignment.game):
-            control.currentIndexChanged.connect(lambda: save.setEnabled(self.assignment.valid))
-        save.setEnabled(self.assignment.valid)
-
-
 def icon_label(name, color="text_secondary"):
     label = QLabel()
     label.setPixmap(icon(name, COLORS[color], size=16).pixmap(16, 16))
@@ -116,6 +90,9 @@ class FolderPathLabel(QLabel):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.update_text()
+
+    def update_text(self):
         width = self.contentsRect().width()
         metrics = self.fontMetrics()
         display = metrics.elidedText(self.directory, Qt.TextElideMode.ElideMiddle, width)
@@ -157,9 +134,13 @@ class ResultScrollArea(QScrollArea):
 
 class FolderPreviewDialog(QDialog):
     def __init__(self, directory, found, games, parent=None, *, game_folder=False,
-                 assignment_mode="automatic", selected_game=None):
+                 assignment_mode="automatic", selected_game=None, folder=None,
+                 save_handler=None, remove_handler=None):
         super().__init__(parent)
-        self.setWindowTitle("Add capture folder")
+        self.setWindowTitle("Manage capture folder" if folder else "Add capture folder")
+        self.folder = folder
+        self.save_handler = save_handler
+        self.remove_handler = remove_handler
         self.setMinimumWidth(550)
         self.directory = directory
         self.edit_directory = None
@@ -196,11 +177,16 @@ class FolderPreviewDialog(QDialog):
         self.folder_path = FolderPathLabel(directory)
         path_layout.addWidget(self.folder_path, 1)
         folder_row.addWidget(path_field, 1)
-        edit_folder = QPushButton("Edit folder…")
+        edit_folder = QPushButton("Relink folder…" if folder else "Edit folder…")
         edit_folder.clicked.connect(self.choose_folder)
         folder_row.addWidget(edit_folder)
         content_layout.addLayout(folder_row)
         content_layout.addSpacing(12)
+        if folder:
+            status = QLabel("Scanning: " + ("Enabled" if folder["enabled"] else "Paused"))
+            role(status, "secondary")
+            content_layout.addWidget(status)
+            content_layout.addSpacing(12)
         self.assignment = AssignmentControls(games, assignment_mode, selected_game)
         self.game = self.assignment.game
         content_layout.addWidget(self.assignment)
@@ -209,7 +195,7 @@ class FolderPreviewDialog(QDialog):
         result_heading = QHBoxLayout()
         result_heading.setSpacing(8)
         result_heading.addWidget(icon_label("video"))
-        self.summary = QLabel(f"{len(found)} video{'s' if len(found) != 1 else ''} found")
+        self.summary = QLabel(("Catalogue: " if folder else "") + f"{len(found)} video{'s' if len(found) != 1 else ''}" + (" saved" if folder else " found"))
         self.summary.setFont(font("base", "semibold"))
         result_heading.addWidget(self.summary, 1)
         content_layout.addLayout(result_heading)
@@ -281,12 +267,18 @@ class FolderPreviewDialog(QDialog):
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
+        if folder:
+            self.remove_button = QPushButton("Remove folder…")
+            role(self.remove_button, "danger")
+            self.remove_button.clicked.connect(self.remove_saved_folder)
+            actions.addWidget(self.remove_button)
+            actions.addSpacing(24)
         actions.addStretch()
-        add = QPushButton("Add folder")
+        add = QPushButton("Save" if folder else "Add folder")
         self.add_button = add
         role(add, "primary")
         add.setDefault(True)
-        add.clicked.connect(self.accept)
+        add.clicked.connect(self.save)
         actions.addWidget(add)
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(self.reject)
@@ -298,6 +290,14 @@ class FolderPreviewDialog(QDialog):
 
         screen = self.screen() or QApplication.primaryScreen()
         self.setMaximumHeight(int(screen.availableGeometry().height() * 0.85))
+
+    def save(self):
+        if self.assignment.valid and (self.save_handler is None or self.save_handler(self)):
+            self.accept()
+
+    def remove_saved_folder(self):
+        if self.remove_handler and self.remove_handler():
+            self.reject()
 
     @staticmethod
     def divider():
@@ -324,12 +324,18 @@ class FolderPreviewDialog(QDialog):
         directory = QFileDialog.getExistingDirectory(self, "Capture folder", self.directory)
         if directory:
             self.edit_directory = directory
-            self.reject()
+            if self.folder:
+                self.directory = directory
+                self.folder_path.directory = directory
+                self.folder_path.setToolTip(directory)
+                self.folder_path.update_text()
+            else:
+                self.reject()
 
     def update_assignment_note(self):
         self.add_button.setEnabled(self.assignment.valid)
-        self.parent_folder_tip.setVisible(self.game_folder and self.assignment_mode == "automatic")
-        counts = Counter(item["game"] or "Unclassified" for item in self.assigned_items())
+        self.parent_folder_tip.setVisible(not self.folder and self.game_folder and self.assignment_mode == "automatic")
+        counts = Counter(item["game"] or "Unclassified" for item in (self.found if self.folder else self.assigned_items()))
         entries = sorted(counts.items(), key=lambda item: (item[0] == "Unclassified", item[0]))
         for index, (entry, name, amount) in enumerate(self.result_rows):
             entry.setVisible(index < len(entries))
@@ -341,5 +347,5 @@ class FolderPreviewDialog(QDialog):
         conflicts = sum(bool(item["game"]) and item["game"] != self.forced_game for item in self.found)
         self.assignment_note.setText(
             f"{conflicts} video{'s' if conflicts != 1 else ''} detected as other games will be assigned to {self.forced_game}."
-            if self.forced_game and conflicts else ""
+            if not self.folder and self.forced_game and conflicts else ""
         )

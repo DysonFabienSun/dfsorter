@@ -80,6 +80,7 @@ from .activities import Activities
 from .app_paths import ROOT, prepare_game_configs, prepare_tip_configs
 from .browse import BrowsePage
 from .catalogue import Catalogue
+from .color import ColorPolicy
 from .command_input import CommandInput
 from .config import Registry, has_review_metadata, source_fallback, title
 from .config_editor import ConfigEditor
@@ -87,7 +88,7 @@ from .config_store import GameFile
 from .deletion import delete_reviewed, preview
 from .deletion_dialog import DeletionDialog
 from .folder_assignment import assignment_summary, validate_assignment
-from .folder_preview_dialog import FolderAssignmentDialog, FolderPreviewDialog
+from .folder_preview_dialog import FolderPreviewDialog
 from .history import EditHistory
 from .output import run_export_manifest, safe_stem, share_clip
 from .overview import (
@@ -617,7 +618,7 @@ class Window(QMainWindow):
         self.folder_size_worker = None
         self.folder_size_pending = False
         self.clip_folder_names = self.catalogue.clip_folder_names()
-        self.thumbnails = ThumbnailCache(self.root, self)
+        self.thumbnails = ThumbnailCache(self.root, self, settings=self.settings)
         self.thumbnails.ready.connect(self.thumbnail_ready)
         self.thumbnail_timer = QTimer(self)
         self.thumbnail_timer.setSingleShot(True)
@@ -1073,7 +1074,7 @@ class Window(QMainWindow):
         self.folder_more.setFixedHeight(SIZES["large"])
         self.folder_menu = QMenu(self.folder_more)
         self.folder_toggle_action = self.folder_menu.addAction("Pause scanning", self.toggle_folder)
-        self.folder_assignment_action = self.folder_menu.addAction("Game assignment…", self.edit_folder_assignment)
+        self.folder_edit_action = self.folder_menu.addAction("Edit capture folder…", self.edit_capture_folder)
         self.folder_toggle_action.setToolTip(
             "Pause scanning and exclude this folder from new sessions. Existing clips and sessions remain."
         )
@@ -1098,17 +1099,14 @@ class Window(QMainWindow):
         self.folders.setMinimumHeight(120)
         self.folders.setWordWrap(True)
         self.folder_context_menu = QMenu(self.folders)
+        self.folder_context_menu.addAction(self.folder_edit_action)
         self.folder_context_menu.addAction(self.folder_toggle_action)
-        self.folder_context_menu.addAction(self.folder_assignment_action)
-        self.folder_migrate_action = self.folder_context_menu.addAction("Relink folder…", self.migrate)
-        self.folder_migrate_action.setToolTip("Find an already moved folder; no files are moved.")
-        self.folder_remove_action = self.folder_context_menu.addAction("Remove folder…", self.remove_folder)
         self.folder_context_menu.setToolTipsVisible(True)
         self.folders.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.folders.customContextMenuRequested.connect(self.show_folder_context_menu)
         home.addWidget(self.folders, 1)
         note = QLabel(
-            "Right-click a folder to change game assignment, pause or resume scanning, relink it, or remove it.\n"
+            "Right-click a folder to edit its settings or pause or resume scanning.\n"
             "Paused folders remain in the library but are excluded from new sessions. "
             "Unlinked clips are saved entries from folders no longer tracked."
         )
@@ -1795,6 +1793,8 @@ class Window(QMainWindow):
             and player.loaded_clip is not None
             and getattr(player, "loaded_start_settings", None)
             == playback_start_settings(self.settings, player.pane)
+            and getattr(player, "loaded_color_policy", None)
+            == ColorPolicy.from_settings(self.settings).for_source(clip["source_path"])
             and self.clip_load_key(player.loaded_clip, player.pane)
             == self.clip_load_key(clip, player.pane)
             and not player.awaiting_frame
@@ -2778,6 +2778,7 @@ class Window(QMainWindow):
             duration = media["duration"] if media is not None and "duration" in media.keys() else None
             request_clip = {**clip, "duration": duration, "hdr": media.get("hdr") if media else None}
             key, image = self.thumbnails.request(request_clip)
+            self.thumbnail_status(item, key)
             if key is not None:
                 needed.add(key)
             data = item.data(CLIP_ROLE) or {}
@@ -2787,11 +2788,19 @@ class Window(QMainWindow):
                 item.setData(CLIP_ROLE, data)
         self.thumbnails.retain(needed)
 
+    def thumbnail_status(self, item, key):
+        tooltip = item.toolTip().split("\nThumbnail unavailable:", 1)[0]
+        failure = self.thumbnails.errors.get(key)
+        item.setToolTip(tooltip + (f"\nThumbnail unavailable: {failure}" if failure else ""))
+
     def thumbnail_ready(self, clip_id, key, image):
-        if self.current_panel != "Browse" or image is None:
+        if self.current_panel != "Browse":
             return
         clip = self.catalogue.clip(clip_id)
-        if clip is None or self.thumbnails.signature(clip) != key:
+        if clip is None:
+            return
+        hdr = self.media_info.get(clip["source_path"], {}).get("hdr")
+        if self.thumbnails.signature({**clip, "hdr": hdr}) != key:
             return
         for row in range(self.library.count()):
             item = self.library.item(row)
@@ -2799,6 +2808,7 @@ class Window(QMainWindow):
                 continue
             data = item.data(CLIP_ROLE) or {}
             if data.get("thumbnail_key") == key:
+                self.thumbnail_status(item, key)
                 data["thumbnail"] = image
                 item.setData(CLIP_ROLE, data)
             break
@@ -2888,7 +2898,16 @@ class Window(QMainWindow):
             clip["clip_id"], clip["source_path"], identity,
             clip["in_ms"], clip["out_ms"],
             playback_start_settings(self.settings, pane),
+            ColorPolicy.from_settings(self.settings).for_source(clip["source_path"]),
         )
+
+    def refresh_video_preferences(self):
+        self.prepared_clips.clear()
+        for player in (self.player, self.browse.player, self.export_player):
+            player.refresh_color_policy()
+        self.browse.update_share()
+        self.thumbnail_timer.start()
+        self.schedule_preload()
 
     def schedule_preload(self):
         if not self.close_requested and hasattr(self, "preload_timer"):
@@ -5235,9 +5254,7 @@ class Window(QMainWindow):
         )
         for action in (
             self.folder_toggle_action,
-            self.folder_assignment_action,
-            self.folder_migrate_action,
-            self.folder_remove_action,
+            self.folder_edit_action,
         ):
             action.setEnabled(folder is not None and self.worker is None and not self.activities.busy())
         self.folder_toggle_action.setText(
@@ -5248,23 +5265,50 @@ class Window(QMainWindow):
             folder_id == "__unlinked__" and self.worker is None
         )
 
-    def edit_folder_assignment(self):
+    def edit_capture_folder(self):
         if self.worker is not None or self.activities.busy() or self.current_panel == "Browse":
             return
         folder = next((entry for entry in self.catalogue.folders()
                        if entry["folder_id"] == self.selected_id(self.folders)), None)
         if folder is None:
             return
-        dialog = FolderAssignmentDialog(folder, self.registry.games, self)
-        try:
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                self.catalogue.set_folder_assignment(
-                    folder["folder_id"], dialog.assignment.mode.currentData(),
-                    dialog.assignment.selected_game, games=self.registry.games,
+        clips = self.catalogue.rows(
+            "SELECT clips.* FROM clips JOIN sources USING(clip_id) WHERE folder_id=?",
+            (folder["folder_id"],),
+        )
+
+        def save(dialog):
+            try:
+                destination = dialog.edit_directory
+                if destination is not None:
+                    new, rows, updates = self.catalogue.migration_plan(folder["folder_id"], destination)
+                    found = sum(Path(path).is_file() for path, _ in updates)
+                    if not self.confirm(
+                        f"Relink {len(rows)} catalogue clips to:\n{new}\n\n"
+                        f"{found} files found; {len(rows) - found} will be unavailable.\n"
+                        "Keep clip metadata, projects and session references. No files will be moved."
+                    ):
+                        return False
+                self.catalogue.update_folder(
+                    folder["folder_id"], mode=dialog.assignment_mode, game=dialog.forced_game,
+                    games=self.registry.games, destination=destination,
                 )
-                self.refresh_references()
-        except Exception as error:
-            self.error(error)
+            except Exception as error:
+                self.error(error)
+                return False
+            self.media_info = self.catalogue.media_cache()
+            self.refresh_references()
+            self.refresh_library()
+            return True
+
+        dialog = FolderPreviewDialog(
+            folder["path"], clips, self.registry.games, self, folder=folder,
+            assignment_mode=folder["assignment_mode"], selected_game=folder["forced_game"],
+            save_handler=save,
+            remove_handler=lambda: self.remove_folder(saved_folder_id=folder["folder_id"]),
+        )
+        try:
+            dialog.exec()
         finally:
             dialog.deleteLater()
 
@@ -5280,33 +5324,6 @@ class Window(QMainWindow):
                 self.catalogue.enable_folder(folder_id, not folder["enabled"])
         self.refresh_references()
         self.refresh_library()
-
-    def migrate(self):
-        if self.current_panel == "Browse":
-            return
-        if self.worker is not None:
-            self.error("Wait for the current operation to finish")
-            return
-        folder_id = self.selected_id(self.folders)
-        if not folder_id:
-            return
-        destination = QFileDialog.getExistingDirectory(self, "New location of this capture folder")
-        if destination:
-            try:
-                new, rows, updates = self.catalogue.migration_plan(folder_id, destination)
-                found = sum(Path(path).is_file() for path, clip_id in updates)
-                if not self.confirm(
-                    f"Relink {len(rows)} catalogue clips to:\n{new}\n\n"
-                    f"{found} files found; {len(rows) - found} will be unavailable.\n"
-                    "Keep clip metadata, projects and session references. No files will be moved."
-                ):
-                    return
-                self.catalogue.migrate(folder_id, destination)
-                self.media_info = self.catalogue.media_cache()
-                self.refresh_references()
-                self.refresh_library()
-            except (ValueError, OSError) as error:
-                self.error(error)
 
     def confirm_folder_removal(self, folder, clips):
         ids = {clip["clip_id"] for clip in clips}
@@ -5336,13 +5353,13 @@ class Window(QMainWindow):
         dialog.deleteLater()
         return clicked is remove
 
-    def remove_folder(self):
+    def remove_folder(self, *, saved_folder_id=None):
         if self.current_panel == "Browse":
             return
         if self.worker is not None:
             self.error("Wait for the current operation to finish")
             return
-        folder_id = self.selected_id(self.folders)
+        folder_id = saved_folder_id or self.selected_id(self.folders)
         folder = next(
             (row for row in self.catalogue.folders() if row["folder_id"] == folder_id), None
         )
@@ -5377,7 +5394,8 @@ class Window(QMainWindow):
             self.refresh_library()
             if backup:
                 self.statusBar().showMessage(f"Catalogue entries removed. Backup: {backup}", 20000)
-        except (ValueError, OSError) as error:
+            return True
+        except Exception as error:
             self.error(error)
 
     def export_selection(self, *, refresh_library=True):
@@ -5614,6 +5632,12 @@ class Window(QMainWindow):
         mode.addItem("Whole clip", False)
         layout.addRow("Share", mode)
         layout.addRow(QLabel("H.264 MP4 · All audio tracks mixed to stereo AAC"))
+        color_policy = ColorPolicy.from_settings(self.settings).for_source(clip["source_path"])
+        if self.media_info.get(clip["source_path"], {}).get("hdr"):
+            color_summary = QLabel(color_policy.summary)
+            color_summary.setWordWrap(True)
+            role(color_summary, "secondary")
+            layout.addRow(color_summary)
         if self.atomic_edit and self.command.text():
             self.error("Submit the command with Enter before sharing.")
             return
@@ -5693,6 +5717,7 @@ class Window(QMainWindow):
         include_prefix = prefix.isChecked()
         selected_range = mode.currentData()
         quality = share_quality(self.settings.get("share_quality", "native"))
+        color_policy = ColorPolicy.from_settings(self.settings).for_source(clip["source_path"])
         lowercase = self.settings.get("lowercase_generated_titles", True)
         stem = custom_name or title(clip, self.registry, fields, include_prefix, lowercase=lowercase)
         self.activities.submit(
@@ -5709,6 +5734,7 @@ class Window(QMainWindow):
                 selected_range=selected_range,
                 detailed_progress=progress,
                 quality=quality,
+                color_policy=color_policy,
             ),
             clip_id=clip["clip_id"], subtitle=f"{safe_stem(stem)}.mp4",
             destination=folder,

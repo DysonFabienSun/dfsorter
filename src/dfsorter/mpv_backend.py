@@ -9,6 +9,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer
 
 from .app_paths import ROOT
+from .color import ColorPolicy
 
 
 def load_mpv():
@@ -80,11 +81,15 @@ class MpvBackend(QObject):
         self._audio = False
         self._video_size = (0, 0)
         self._prepared = False
+        self._color_policy = ColorPolicy()
+        self._hdr = False
         self._seeking = False
         self._event.connect(self._receive, Qt.ConnectionType.QueuedConnection)
 
     def setSource(self, source):
         self.stop()
+        self._hdr = False
+        self._apply_color_policy()
         self._source = source
         self._duration = self._position = 0
         self._audio = self._prepared = False
@@ -100,6 +105,8 @@ class MpvBackend(QObject):
         try:
             if self.engine is None:
                 self._initialize()
+            self.engine.vf = ""
+            self.engine.tone_mapping = "auto"
             self._set_status(QMediaPlayer.MediaStatus.LoadingMedia)
             self._set_state(QMediaPlayer.PlaybackState.PausedState)
             self.engine.pause = True
@@ -111,6 +118,18 @@ class MpvBackend(QObject):
                 self._lifecycle.shutdown()
                 self._lifecycle = None
             self._receive(generation, "error", str(error))
+
+    def set_color_policy(self, policy):
+        self._color_policy = policy
+        self._apply_color_policy()
+
+    def _apply_color_policy(self):
+        if self.engine is not None:
+            self.engine.vf = self._color_policy.playback_filter(self._hdr)
+            self.engine.tone_mapping = (
+                ("bt.2390" if self._color_policy.mapping == "bt2390" else "hable")
+                if self._hdr else "auto"
+            )
 
     def _initialize(self):
         mpv = load_mpv()
@@ -161,25 +180,42 @@ class MpvBackend(QObject):
         for prop in ("time-pos", "duration", "eof-reached", "video-out-params"):
             engine.observe_property(prop, lambda name, value: send(name, value))
 
+        def color_parameters(name, parameters):
+            if self._event_generation != self.generation or not parameters:
+                return
+            hdr = parameters.get("gamma") in {"pq", "hlg"}
+            if hdr != self._hdr:
+                self._hdr = hdr
+                try:
+                    self._apply_color_policy()
+                except Exception as error:
+                    send("error", f"HDR playback processing failed: {error}")
+
+        # The decoder's color parameters may arrive after file-loaded. Observe
+        # decoded input, rather than guessing from the processed output frame.
+        engine.observe_property("video-dec-params", color_parameters)
+
         @engine.event_callback("file-loaded")
         def loaded(event):
             if self._event_generation != self.generation:
                 return
             try:
+                color_parameters("video-dec-params", engine.video_dec_params)
                 tracks = [track["id"] for track in engine.track_list if track["type"] == "audio"]
                 engine.lavfi_complex = audio_mix_graph(tracks)
                 try:
-                    size = display_size(engine.command("get_property", "video-out-params"))
+                    size = display_size(engine.video_out_params)
                 except Exception:
                     size = (0, 0)
                 send("loaded", (bool(tracks), engine.duration or 0, size))
             except Exception as error:
-                send("error", f"Audio mixing failed: {error}")
+                send("error", f"Playback preparation failed: {error}")
 
         @engine.event_callback("playback-restart")
         def ready(event):
             try:
-                size = display_size(engine.command("get_property", "video-out-params"))
+                color_parameters("video-dec-params", engine.video_dec_params)
+                size = display_size(engine.video_out_params)
             except Exception:
                 size = (0, 0)
             send("ready", size)

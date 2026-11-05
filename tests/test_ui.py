@@ -2232,12 +2232,20 @@ def test_search_updates_live_and_invalid_query_preserves_results(window, applica
         assert not window.library_error.isHidden()
 
 
+@pytest.mark.parametrize("input_range", ["limited", "automatic"])
 @pytest.mark.parametrize("pane", ["Editing", "Export"])
-def test_generated_share_quality_is_frozen(window, tmp_path, monkeypatch, pane):
+def test_generated_share_quality_is_frozen(window, tmp_path, monkeypatch, pane, input_range):
+    from dfsorter.color import ColorPolicy
+
+    window.set_theme("dark")
     ids = add_clips(window, tmp_path)
-    monkeypatch.setattr(window, "selected_clip", lambda: window.catalogue.clip(ids[0]))
+    clip = window.catalogue.clip(ids[0])
+    clip["source_path"] = str(tmp_path / "游戏 2026.11.06 - 12.34.56.12.mp4")
+    Path(clip["source_path"]).write_bytes(b"video")
+    monkeypatch.setattr(window, "selected_clip", lambda: clip)
     window.current_panel = pane
     window.settings.update(share_quality="web_1080p", share_folder=str(tmp_path / "shares"))
+    window.settings.update(hdr_input_range=input_range, hdr_sdr_mapping="bt2390")
     work, calls = [], []
     monkeypatch.setattr(
         window.activities, "submit", lambda kind, title, function, **kwargs: work.append(function)
@@ -2252,8 +2260,37 @@ def test_generated_share_quality_is_frozen(window, tmp_path, monkeypatch, pane):
     window.share()
     assert len(work) == 1
     window.settings["share_quality"] = "native"
+    window.settings.update(hdr_input_range="full", hdr_sdr_mapping="hable")
     work[0](lambda: False, lambda *args: None)
     assert calls[0]["quality"] == "web_1080p"
+    assert calls[0]["color_policy"] == ColorPolicy(input_range, "bt2390").for_source(clip["source_path"])
+
+
+@pytest.mark.parametrize("input_range", ["limited", "automatic"])
+def test_browse_share_color_policy_is_frozen(window, tmp_path, monkeypatch, input_range):
+    from dfsorter.color import ColorPolicy
+
+    window.set_theme("dark")
+    ids = add_clips(window, tmp_path)
+    browse = window.browse
+    browse.clip = window.catalogue.clip(ids[0])
+    browse.clip["source_path"] = str(tmp_path / "游戏 2026.11.06 - 12.34.56.12.mp4")
+    Path(browse.clip["source_path"]).write_bytes(b"video")
+    window.media_info[browse.clip["source_path"]] = {"hdr": True}
+    browse.custom_title.setText("color snapshot")
+    browse.destination.setText(str(tmp_path / "shares"))
+    window.settings.update(hdr_input_range=input_range, hdr_sdr_mapping="bt2390")
+    work, calls = [], []
+    monkeypatch.setattr(window.activities, "submit", lambda kind, title, function, **kwargs: work.append(function))
+    monkeypatch.setattr("dfsorter.browse.share_clip", lambda *args, **kwargs: calls.append(kwargs))
+    browse.update_share()
+    if input_range == "automatic":
+        assert "Input range: Limited · NVIDIA filename" in browse.color_summary.text()
+    browse.share()
+    assert len(work) == 1
+    window.settings.update(hdr_input_range="full", hdr_sdr_mapping="hable")
+    work[0](lambda: False, lambda *args: None)
+    assert calls[0]["color_policy"] == ColorPolicy(input_range, "bt2390").for_source(browse.clip["source_path"])
 
 
 def test_share_quality_settings_use_theme_selector(window, application):
@@ -2286,6 +2323,116 @@ def test_share_quality_settings_use_theme_selector(window, application):
     settings = SettingsDialog(window)
     assert settings.share_quality.currentData() == "native"
     settings.close()
+
+
+@pytest.mark.parametrize("selected_range", ["metadata", "limited", "full"])
+def test_hdr_video_settings_persist_and_preserve_preview_state(window, application, selected_range):
+    from dfsorter.color import ColorPolicy
+
+    window.set_theme("dark")
+    settings = SettingsDialog(window)
+    settings.show()
+    tabs = settings.findChild(QTabWidget)
+    tabs.setCurrentIndex(next(i for i in range(tabs.count()) if tabs.tabText(i) == "Video"))
+    application.processEvents()
+    assert settings.hdr_input_range.currentData() == "automatic"
+    assert settings.hdr_sdr_mapping.currentData() == "bt2390"
+    assert settings.hdr_input_range.font() == settings.share_quality.font()
+    markers = (window.browse.in_ms, window.browse.out_ms, window.pending_in, window.pending_out)
+    settings.hdr_input_range.setCurrentIndex(settings.hdr_input_range.findData(selected_range))
+    settings.hdr_sdr_mapping.setCurrentIndex(settings.hdr_sdr_mapping.findData("hable"))
+    policy = ColorPolicy(selected_range, "hable")
+    saved = yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))
+    assert ColorPolicy.from_settings(saved) == policy
+    for player in (window.player, window.browse.player, window.export_player):
+        assert player.loaded_color_policy == policy
+    assert markers == (window.browse.in_ms, window.browse.out_ms, window.pending_in, window.pending_out)
+    settings.close()
+    reopened = SettingsDialog(window)
+    assert reopened.hdr_input_range.currentData() == selected_range
+    assert reopened.hdr_sdr_mapping.currentData() == "hable"
+    reopened.close()
+
+
+def test_hdr_thumbnail_failure_is_explained_and_rekeyed(window, application, tmp_path, monkeypatch):
+    from dfsorter.color import BT2390_ERROR
+    from dfsorter.thumbnails import ThumbnailCache
+
+    window.set_theme("dark")
+    source = tmp_path / "hdr.mp4"
+    source.write_bytes(b"original")
+    clip = {"clip_id": "hdr", "source_path": str(source), "hdr": True}
+    cache = ThumbnailCache(tmp_path, settings=window.settings)
+    monkeypatch.setattr("dfsorter.thumbnails.require_bt2390", lambda *args: (_ for _ in ()).throw(OSError(BT2390_ERROR)))
+    try:
+        key, _ = cache.request(clip)
+        assert wait_for(application, lambda: key in cache.failed)
+        assert "Select Legacy" in cache.errors[key]
+        item = QListWidgetItem("HDR recording")
+        item.setToolTip("Original details HDR")
+        window.thumbnails.errors[key] = cache.errors[key]
+        window.thumbnail_status(item, key)
+        assert "Thumbnail unavailable:" in item.toolTip()
+        assert "Select Legacy" in item.toolTip()
+        window.settings["hdr_sdr_mapping"] = "hable"
+        changed = cache.signature(clip)
+        assert changed != key
+        window.thumbnail_status(item, changed)
+        assert item.toolTip() == "Original details HDR"
+    finally:
+        cache.close()
+
+
+@pytest.mark.parametrize("transfer", ["smpte2084", "arib-std-b67"])
+def test_hdr_playback_range_changes_preserve_transport_and_clear_on_sdr(window, application, tmp_path, transfer):
+    window.set_theme("dark")
+    window.preload_timer.stop()
+    window.schedule_preload = lambda: None
+    source = tmp_path / "Game 2026.11.06 - 12.34.56.1.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12",
+        "-t", "3", "-vf", "format=yuv420p10le", "-c:v", "libx265", "-threads", "2",
+        "-x265-params", f"pools=2:log-level=error:colorprim=bt2020:transfer={transfer}:colormatrix=bt2020nc",
+        str(source),
+    ], check=True, capture_output=True)
+    player = window.browse.player
+    clip = {"clip_id": "hdr", "source_path": str(source), "in_ms": 500, "out_ms": 2500}
+    player.load(clip)
+    assert wait_for(application, lambda: not player.awaiting_frame)
+    assert player.media._hdr
+    assert player.media.engine.vf[0]["params"]["colorlevels"] == "limited"
+    assert player.loaded_color_policy.source_range == "limited"
+    player.seek.pending_in = 1200
+    position, generation = player.media.position(), player.media.generation
+    window.settings["hdr_input_range"] = "limited"
+    window.refresh_video_preferences()
+    assert player.media.engine.vf[0]["params"]["colorlevels"] == "limited"
+    assert player.media.engine.tone_mapping == "bt.2390"
+    assert player.media.position() == position
+    assert player.media.generation == generation
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.PausedState
+    assert player.seek.pending_in == 1200
+    player.media.play()
+    window.settings["hdr_sdr_mapping"] = "hable"
+    window.refresh_video_preferences()
+    assert player.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+    player.media.pause()
+    window.settings["hdr_input_range"] = "metadata"
+    window.refresh_video_preferences()
+    assert not player.media.engine.vf
+    window.settings["hdr_input_range"] = "limited"
+    window.refresh_video_preferences()
+    sdr = tmp_path / "Game 2026.11.06 - 12.34.56.2.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=160x90:r=12:d=1",
+        "-c:v", "libx264", str(sdr),
+    ], check=True, capture_output=True)
+    window.settings["hdr_input_range"] = "automatic"
+    player.load({**clip, "source_path": str(sdr), "in_ms": None, "out_ms": None})
+    assert wait_for(application, lambda: not player.awaiting_frame)
+    assert not player.media._hdr
+    assert not player.media.engine.vf
+    assert player.media.engine.tone_mapping == "auto"
 
 
 def test_generated_share_dialog_defaults_and_master_toggle(
@@ -2499,15 +2646,13 @@ def test_home_folder_context_toggle(window, application, tmp_path, enabled):
     assert menu.isVisible()
     assert window.selected_id(window.folders) == target
     assert [action.text() for action in menu.actions()] == [
+        "Edit capture folder…",
         "Pause scanning" if enabled else "Resume scanning",
-        "Game assignment…",
-        "Relink folder…",
-        "Remove folder…",
     ]
     assert all(action.isEnabled() for action in menu.actions())
     assert "Relink folder…" not in [action.text() for action in window.folder_menu.actions()]
     assert "Remove folder…" not in [action.text() for action in window.folder_menu.actions()]
-    action = menu.actions()[0]
+    action = menu.actions()[1]
     assert action.isEnabled()
     QTest.mouseClick(menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center())
     folders = {folder["folder_id"]: folder for folder in window.catalogue.folders()}
@@ -2678,7 +2823,6 @@ def test_home_removes_folder_entries_after_confirmation(window, application, tmp
     window.folders.setCurrentRow(0)
     window.update_folder_actions()
     assert window.folder_toggle_action.text() == "Pause scanning"
-    assert window.folder_remove_action.isEnabled()
     monkeypatch.setattr(window, "confirm_folder_removal", lambda folder, clips: False)
     window.remove_folder()
     assert len(window.catalogue.clips()) == 1
@@ -6235,7 +6379,7 @@ def test_folder_preview_groups_mixed_scan_and_optional_assignment(window, applic
 
 
 def test_folder_assignment_editor_save_cancel_and_missing_game(window, application, tmp_path, monkeypatch):
-    from dfsorter.folder_preview_dialog import FolderAssignmentDialog, FolderPreviewDialog
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
 
     window.toggle_theme()
     root = tmp_path / "captures"
@@ -6245,26 +6389,28 @@ def test_folder_assignment_editor_save_cancel_and_missing_game(window, applicati
     root.rmdir()
     window.refresh_references()
     window.folders.setCurrentRow(0)
-    assert window.folder_assignment_action in window.folder_menu.actions()
-    assert window.folder_assignment_action in window.folder_context_menu.actions()
+    assert window.folder_edit_action in window.folder_menu.actions()
+    assert window.folder_edit_action in window.folder_context_menu.actions()
     assert wait_for(application, lambda: window.worker is None and not window.activities.busy())
 
     def edit(dialog):
         dialog.assignment.mode.setCurrentIndex(1)
         dialog.assignment.game.setCurrentText("VALORANT")
-        return QDialog.DialogCode.Accepted
+        dialog.save()
+        return dialog.result()
 
-    monkeypatch.setattr(FolderAssignmentDialog, "exec", edit)
-    window.edit_folder_assignment()
+    monkeypatch.setattr(FolderPreviewDialog, "exec", edit)
+    window.edit_capture_folder()
     folder = window.catalogue.folders()[0]
     assert folder["forced_game"] == "VALORANT"
     assert folder["enabled"] == 0
     assert window.worker is None
     assert "Single game · VALORANT" in window.folders.item(0).toolTip()
-    monkeypatch.setattr(FolderAssignmentDialog, "exec", lambda dialog: QDialog.DialogCode.Rejected)
-    window.edit_folder_assignment()
+    monkeypatch.setattr(FolderPreviewDialog, "exec", lambda dialog: QDialog.DialogCode.Rejected)
+    window.edit_capture_folder()
     assert window.catalogue.folders()[0] == folder
-    dialog = FolderAssignmentDialog(folder, {}, window)
+    dialog = FolderPreviewDialog(folder["path"], [], {}, window, folder=folder,
+                                 assignment_mode=folder["assignment_mode"], selected_game=folder["forced_game"])
     assert not dialog.assignment.valid
     assert "configuration unavailable" in dialog.assignment.game.currentText()
     dialog.assignment.mode.setCurrentIndex(2)
@@ -7200,6 +7346,7 @@ def test_prepared_video_warms_behind_frame_before_reveal(window, application, tm
 
 
 def test_hdr_preloaded_browse_reveals_live_surface(window, application, tmp_path):
+    window.set_theme("dark")
     clip_id = add_clips(window, tmp_path, valid=True)[0]
     clip = window.catalogue.clip(clip_id)
     window.media_info[clip["source_path"]] = {"hdr": 1}
@@ -7918,3 +8065,122 @@ def test_deferred_close_waits_for_nested_dialogs_and_allows_exit_decline(window,
     application.processEvents()
     assert window.isVisible()
     window.activities.cancel_all()
+
+
+@pytest.mark.parametrize("remove", [False, True])
+def test_capture_folder_manager_stages_relink_and_retains_failed_draft(
+    window, application, tmp_path, monkeypatch, remove
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from dfsorter.folder_preview_dialog import FolderPreviewDialog
+
+    window.set_theme("dark")
+    assert wait_for(application, lambda: window.worker is None and not window.activities.busy())
+    window.scan_timer.stop()
+    window.scan_retry_timer.stop()
+    ids = add_clips(window, tmp_path)
+    window.panel("Home")
+    folder = window.catalogue.folders()[0]
+    window.catalogue.enable_folder(folder["folder_id"], False)
+    window.refresh_references()
+    window.folders.setCurrentRow(0)
+    before = window.catalogue.clips(), window.catalogue.folders()
+    destination = tmp_path / "staged"
+    destination.mkdir()
+    source = Path(before[0][0]["source_path"])
+    (destination / source.name).write_bytes(source.read_bytes())
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(destination))
+    confirmations, errors = [], []
+    monkeypatch.setattr(window, "confirm", lambda message: confirmations.append(message) or False)
+    monkeypatch.setattr(window, "error", lambda error: errors.append(str(error)))
+    monkeypatch.setattr(window, "confirm_folder_removal", lambda *args: False)
+
+    def manage(dialog):
+        dialog.show()
+        application.processEvents()
+        assert dialog.windowTitle() == "Manage capture folder"
+        assert dialog.add_button.text() == "Save"
+        assert dialog.summary.text() == "Catalogue: 1 video saved"
+        assert "Paused" in " ".join(label.text() for label in dialog.findChildren(QLabel))
+        counts = [label.text() for label in dialog.composition.findChildren(QLabel)]
+        dialog.assignment.mode.setCurrentIndex(dialog.assignment.mode.findData("unclassified"))
+        assert [label.text() for label in dialog.composition.findChildren(QLabel)] == counts
+        dialog.choose_folder()
+        assert dialog.isVisible() and dialog.edit_directory == str(destination)
+        assert (window.catalogue.clips(), window.catalogue.folders()) == before
+        dialog.save()
+        assert dialog.isVisible() and confirmations
+        assert str(destination.resolve()) in confirmations[-1]
+        assert "1 files found; 0 will be unavailable" in confirmations[-1]
+        assert (window.catalogue.clips(), window.catalogue.folders()) == before
+        dialog.remove_saved_folder()  # Rejected removal retains all draft values.
+        assert dialog.isVisible() and dialog.edit_directory == str(destination)
+        assert dialog.assignment_mode == "unclassified"
+        if remove:
+            removed = []
+            monkeypatch.setattr(window, "confirm_folder_removal", lambda saved, clips: removed.append(saved) or True)
+            dialog.remove_saved_folder()
+            assert removed[0]["path"] == folder["path"]
+            assert not window.catalogue.folders() and not window.catalogue.clips()
+            assert not dialog.isVisible()
+            assert list((window.catalogue.path.parent / "backups").glob("*"))
+        else:
+            monkeypatch.setattr(window, "confirm", lambda message: True)
+            original_update = window.catalogue.update_folder
+            def fail(*args, **kwargs):
+                raise OSError("simulated write failure")
+            monkeypatch.setattr(window.catalogue, "update_folder", fail)
+            dialog.save()
+            assert errors == ["simulated write failure"] and dialog.isVisible()
+            assert (window.catalogue.clips(), window.catalogue.folders()) == before
+            monkeypatch.setattr(window.catalogue, "update_folder", original_update)
+            dialog.save()
+            assert not dialog.isVisible()
+            saved = window.catalogue.folders()[0]
+            assert saved["path"] == str(destination.resolve())
+            assert not saved["enabled"] and saved["assignment_mode"] == "unclassified"
+            clip = window.catalogue.clip(ids[0])
+            assert clip["source_path"] == str((destination / source.name).resolve())
+            assert clip["game"] == before[0][0]["game"]
+        assert source.exists()
+        return dialog.result()
+
+    monkeypatch.setattr(FolderPreviewDialog, "exec", manage)
+    window.edit_capture_folder()
+
+
+def test_nvidia_hdr_override_settings_persist_refresh_and_explain(window, application, tmp_path, monkeypatch):
+    from dfsorter.color import ColorPolicy
+    from dfsorter.settings_dialog import NVIDIA_OVERRIDE_HELP
+
+    window.set_theme("dark")
+    window.schedule_preload = lambda: None
+    source = tmp_path / "Game 2026.11.06 - 12.34.56.1.mp4"
+    clip = {"source_path": str(source)}
+    window.browse.player.loaded_clip = clip
+    settings = SettingsDialog(window)
+    settings.show()
+    tabs = settings.findChild(QTabWidget)
+    tabs.setCurrentIndex(next(i for i in range(tabs.count()) if tabs.tabText(i) == "Video"))
+    application.processEvents()
+    assert settings.nvidia_hdr_override.isChecked()
+    assert settings.nvidia_override_help.property("iconColorRole") == "text_secondary"
+    assert settings.nvidia_override_help.toolTip() == NVIDIA_OVERRIDE_HELP
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: messages.append(args))
+    settings.nvidia_override_help.click()
+    assert messages[0][2] == NVIDIA_OVERRIDE_HELP
+    frozen = ColorPolicy.from_settings(window.settings).for_source(source)
+    settings.nvidia_hdr_override.setChecked(False)
+    saved = yaml.safe_load(window.settings_path.read_text(encoding="utf-8"))
+    assert saved["nvidia_hdr_override"] is False and saved["hdr_input_range"] == "automatic"
+    assert window.browse.player.loaded_color_policy.source_range == "metadata"
+    assert frozen.source_range == "limited"
+    settings.close()
+    reopened = SettingsDialog(window)
+    assert not reopened.nvidia_hdr_override.isChecked()
+    reopened.nvidia_hdr_override.setChecked(True)
+    assert window.browse.player.loaded_color_policy.source_range == "limited"
+    reopened.close()
+    window.browse.player.loaded_clip = None

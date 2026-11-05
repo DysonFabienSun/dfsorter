@@ -11,19 +11,22 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QImage
 
 from .app_paths import tool
+from .color import BT2390_ERROR, ColorPolicy, require_bt2390
 
 
 class ThumbnailCache(QObject):
     ready = Signal(str, str, object)
 
-    def __init__(self, root, parent=None):
+    def __init__(self, root, parent=None, *, settings=None):
         super().__init__(parent)
         self.directory = Path(root) / "cache" / "thumbnails"
+        self.settings = settings if settings is not None else {}
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumbnail")
         self.memory = OrderedDict()
         self.pending = set()
         self.futures = {}
         self.failed = set()
+        self.errors = {}
         self.closed = False
         self.ready.connect(self._finished)
 
@@ -36,6 +39,8 @@ class ThumbnailCache(QObject):
         except OSError:
             return None
         raw = f'v2\0{clip["clip_id"]}\0{source.resolve()}\0{stat.st_size}\0{stat.st_mtime_ns}\0{bool(clip.get("hdr"))}'
+        if clip.get("hdr"):
+            raw += "\0" + ColorPolicy.from_settings(self.settings).for_source(source).signature
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, clip):
@@ -61,7 +66,8 @@ class ThumbnailCache(QObject):
         clip_id = clip["clip_id"]
         source = clip["source_path"]
         duration = clip.get("duration") or 0
-        future = self.executor.submit(self._extract, key, source, duration, bool(clip.get("hdr")))
+        policy = ColorPolicy.from_settings(self.settings).for_source(source).for_source(source)
+        future = self.executor.submit(self._extract, key, source, duration, bool(clip.get("hdr")), policy)
         self.futures[key] = future
 
         def completed(result):
@@ -69,7 +75,8 @@ class ThumbnailCache(QObject):
                 return
             try:
                 image = result.result()
-            except Exception:
+            except Exception as error:
+                self.errors[key] = str(error)
                 image = None
             try:
                 self.ready.emit(clip_id, key, image)
@@ -85,17 +92,21 @@ class ThumbnailCache(QObject):
                 self.futures.pop(key, None)
                 self.pending.discard(key)
 
-    def _extract(self, key, source, duration, hdr=False):
+    def _extract(self, key, source, duration, hdr=False, color_policy=None):
         executable = tool("ffmpeg")
         if not executable:
             return None
+        color_policy = (color_policy or ColorPolicy()).for_source(source)
+        if hdr and color_policy.mapping == "bt2390":
+            require_bt2390(executable, lambda: self.closed)
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self.directory / f"{key}.png"
         temporary = self.directory / f"{key}.tmp.png"
         points = [max(0.0, duration / 2) if duration and duration < 1 else 1.0, 0.0]
         for point in dict.fromkeys(points):
-            treatment = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p," if hdr else ""
+            treatment = color_policy.sdr_filter() + "," if hdr else ""
             command = [executable, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                       *(color_policy.device_arguments() if hdr else []),
                        "-ss", str(point), "-i", source, "-frames:v", "1",
                        "-vf", treatment + "scale=168:96:force_original_aspect_ratio=decrease,pad=168:96:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
                        str(temporary)]
@@ -108,11 +119,18 @@ class ThumbnailCache(QObject):
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
                 image = QImage(str(temporary)) if result.returncode == 0 else QImage()
+                if result.returncode:
+                    detail = (result.stderr or b"").decode("utf-8", "replace")[-1200:]
+                    self.errors[key] = (
+                        f"{BT2390_ERROR}\n{detail}"
+                        if hdr and color_policy.mapping == "bt2390" else detail
+                    )
                 if not image.isNull():
                     temporary.replace(path)
+                    self.errors.pop(key, None)
                     return image
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+            except (OSError, subprocess.TimeoutExpired) as error:
+                self.errors[key] = f"Thumbnail extraction failed: {error}"
             temporary.unlink(missing_ok=True)
         return None
 

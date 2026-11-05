@@ -5,8 +5,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -14,10 +16,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .color import HDR_MAPPINGS, HDR_RANGES, ColorPolicy
 from .playback import playback_start_settings, start_offset_seconds
 from .release_update import DEFAULT_DOWNLOAD_SOURCE, DOWNLOAD_SOURCES, download_source
 from .share_profiles import SHARE_QUALITY_CHOICES, share_quality
 from .theme import font, role
+from .widgets import set_icon, tool
+
+NVIDIA_OVERRIDE_HELP = (
+    "Some NVIDIA HDR recordings contain Limited-range video marked as Full, which can cause "
+    "raised blacks and washed-out contrast. With HDR input range set to Automatic, this override "
+    "interprets HDR recordings with supported NVIDIA filenames as Limited in playback, thumbnails "
+    "and Share. Turning it off makes Automatic follow file metadata.\n\n"
+    "File metadata, Limited and Full selections bypass this override. SDR recordings and original "
+    "files remain unchanged. Filename conventions cannot reliably identify renamed recordings "
+    "or establish recording provenance."
+)
 
 
 class SettingsDialog(QDialog):
@@ -231,6 +245,59 @@ class SettingsDialog(QDialog):
         appearance_layout.addStretch()
         self.theme.currentIndexChanged.connect(self.save_theme_preference)
         tabs.addTab(appearance, "Appearance")
+        video = QWidget()
+        video_layout = QVBoxLayout(video)
+        video_layout.setSpacing(12)
+        hdr_group, hdr_layout = self.preference_group("HDR video")
+        policy = ColorPolicy.from_settings(window.settings)
+        video_controls = QGridLayout()
+        video_controls.setColumnStretch(2, 1)
+        for index, (name, label, choices, selected) in enumerate((
+            ("hdr_input_range", "HDR input range:", HDR_RANGES, policy.input_range),
+            ("hdr_sdr_mapping", "HDR-to-SDR mapping:", HDR_MAPPINGS, policy.mapping),
+        )):
+            heading = QLabel(label)
+            control = QComboBox()
+            for text, value in choices:
+                control.addItem(text, value)
+            control.setCurrentIndex(control.findData(selected))
+            heading.setBuddy(control)
+            video_controls.addWidget(heading, index, 0)
+            video_controls.addWidget(control, index, 1)
+            setattr(self, name, control)
+            control.currentIndexChanged.connect(self.save_video_preferences)
+        hdr_layout.addLayout(video_controls)
+        nvidia_row = QHBoxLayout()
+        nvidia_row.setSpacing(8)
+        self.nvidia_hdr_override = QCheckBox("NVIDIA HDR override")
+        self.nvidia_hdr_override.setChecked(policy.nvidia_override)
+        self.nvidia_hdr_override.toggled.connect(self.save_video_preferences)
+        nvidia_row.addWidget(self.nvidia_hdr_override)
+        self.nvidia_override_help = tool(
+            "circle-help", NVIDIA_OVERRIDE_HELP,
+            lambda: QMessageBox.information(self, "NVIDIA HDR override", NVIDIA_OVERRIDE_HELP),
+        )
+        self.nvidia_override_help.setAccessibleName("About NVIDIA HDR override")
+        set_icon(self.nvidia_override_help, "circle-help", "text_secondary")
+        nvidia_row.addWidget(self.nvidia_override_help)
+        nvidia_row.addStretch()
+        hdr_layout.addLayout(nvidia_row)
+        explanation = QLabel(
+            "Input range applies to all HDR recordings in playback, thumbnails and Share. "
+            "With NVIDIA HDR override enabled, Automatic uses Limited for supported NVIDIA filenames "
+            "and file metadata otherwise. "
+            "Filenames indicate a convention, not recording provenance. File metadata, Limited "
+            "and Full bypass automatic correction.\n\n"
+            "BT.2390 maps HDR to SDR for thumbnails and Share, and for playback on SDR displays. "
+            "Native HDR playback remains HDR. Unavailable BT.2390 processing stops Share; "
+            "Legacy can be selected explicitly. Original files and Project Export remain unchanged."
+        )
+        explanation.setWordWrap(True)
+        role(explanation, "secondary")
+        hdr_layout.addWidget(explanation)
+        video_layout.addWidget(hdr_group)
+        video_layout.addStretch()
+        tabs.addTab(video, "Video")
         tabs.setCurrentIndex(0)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
@@ -276,6 +343,13 @@ class SettingsDialog(QDialog):
     def save_share_preference(self):
         self.window.settings["share_quality"] = self.share_quality.currentData()
         self.window.save_settings()
+
+    def save_video_preferences(self):
+        self.window.settings["hdr_input_range"] = self.hdr_input_range.currentData()
+        self.window.settings["hdr_sdr_mapping"] = self.hdr_sdr_mapping.currentData()
+        self.window.settings["nvidia_hdr_override"] = self.nvidia_hdr_override.isChecked()
+        self.window.save_settings()
+        self.window.refresh_video_preferences()
 
     def save_update_source(self):
         self.window.settings["update_download_source"] = self.update_download_source.currentData()
