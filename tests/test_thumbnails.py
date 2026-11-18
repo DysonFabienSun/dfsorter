@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from threading import Event
 
 import pytest
 from PySide6.QtCore import Qt
@@ -51,6 +52,48 @@ def test_thumbnail_cache_extracts_reuses_and_invalidates(tmp_path, application):
         changed, image = cache.get(clip)
         assert changed != key and image is None
     finally:
+        cache.close()
+
+
+def test_thumbnail_queue_prioritizes_viewport_and_serializes_hdr(tmp_path, application, monkeypatch):
+    cache = ThumbnailCache(tmp_path)
+    names = ("nearby", "visible-hdr", "second-hdr", "visible-sdr")
+    release = {name: Event() for name in names}
+    started = {name: Event() for name in names}
+
+    def extract(key, source, duration, hdr, policy):
+        started[key].set()
+        assert release[key].wait(8)
+        return QImage(1, 1, QImage.Format.Format_RGB32)
+
+    monkeypatch.setattr(cache, "get", lambda clip: (clip["clip_id"], None))
+    monkeypatch.setattr(cache, "_extract", extract)
+    try:
+        cache.pause()
+        for name in names:
+            cache.request({"clip_id": name, "source_path": name, "hdr": name.endswith("hdr")})
+        cache.retain(("visible-hdr", "second-hdr", "visible-sdr", "nearby"), paused=True)
+        assert not cache.futures
+
+        cache.retain(("visible-hdr", "second-hdr", "visible-sdr", "nearby"))
+        assert started["visible-hdr"].wait(2)
+        assert started["visible-sdr"].wait(2)
+        assert not started["second-hdr"].is_set()
+        assert not started["nearby"].is_set()
+
+        cache.pause()
+        release["visible-hdr"].set()
+        assert wait_for(application, lambda: "visible-hdr" in cache.memory)
+        assert not started["second-hdr"].is_set()
+        cache.retain(("second-hdr", "visible-sdr"))
+        assert "nearby" not in cache.pending
+        assert started["second-hdr"].wait(2)
+        release["second-hdr"].set()
+        release["visible-sdr"].set()
+        assert wait_for(application, lambda: not cache.pending)
+    finally:
+        for event in release.values():
+            event.set()
         cache.close()
 
 

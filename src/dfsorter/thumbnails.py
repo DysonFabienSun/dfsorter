@@ -7,7 +7,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QImage
 
 from .app_paths import tool
@@ -23,12 +23,18 @@ class ThumbnailCache(QObject):
         self.settings = settings if settings is not None else {}
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thumbnail")
         self.memory = OrderedDict()
-        self.pending = set()
+        self.queued = {}
         self.futures = {}
+        self.running_hdr = None
+        self.paused = False
         self.failed = set()
         self.errors = {}
         self.closed = False
-        self.ready.connect(self._finished)
+        self.ready.connect(self._finished, Qt.ConnectionType.QueuedConnection)
+
+    @property
+    def pending(self):
+        return self.queued.keys() | self.futures.keys()
 
     def signature(self, clip):
         source = Path(clip["source_path"])
@@ -58,16 +64,49 @@ class ThumbnailCache(QObject):
                 return key, image
         return key, None
 
-    def request(self, clip):
+    def request(self, clip, *, dispatch=True):
         key, image = self.get(clip)
-        if key is None or image is not None or key in self.pending or key in self.failed:
+        if (self.closed or key is None or image is not None or key in self.queued
+                or key in self.futures or key in self.failed):
             return key, image
-        self.pending.add(key)
         clip_id = clip["clip_id"]
         source = clip["source_path"]
         duration = clip.get("duration") or 0
-        policy = ColorPolicy.from_settings(self.settings).for_source(source).for_source(source)
-        future = self.executor.submit(self._extract, key, source, duration, bool(clip.get("hdr")), policy)
+        policy = ColorPolicy.from_settings(self.settings).for_source(source)
+        self.queued[key] = (clip_id, source, duration, bool(clip.get("hdr")), policy)
+        if dispatch:
+            self._dispatch()
+        return key, None
+
+    def pause(self):
+        self.paused = True
+
+    def resume(self, first=None):
+        if first in self.queued:
+            self.queued = {first: self.queued.pop(first), **self.queued}
+        self.paused = False
+        self._dispatch()
+
+    def retain(self, keys, *, paused=False):
+        self.queued = {key: self.queued[key] for key in keys if key in self.queued}
+        self.paused = paused
+        self._dispatch()
+
+    def _dispatch(self):
+        if self.closed or self.paused:
+            return
+        for key, job in list(self.queued.items()):
+            if len(self.futures) >= 2:
+                break
+            if job[3] and self.running_hdr is not None:
+                continue
+            del self.queued[key]
+            self._start(key, *job)
+
+    def _start(self, key, clip_id, source, duration, hdr, policy):
+        if hdr:
+            self.running_hdr = key
+        future = self.executor.submit(self._extract, key, source, duration, hdr, policy)
         self.futures[key] = future
 
         def completed(result):
@@ -84,13 +123,6 @@ class ThumbnailCache(QObject):
                 pass
 
         future.add_done_callback(completed)
-        return key, None
-
-    def retain(self, keys):
-        for key, future in list(self.futures.items()):
-            if key not in keys and future.cancel():
-                self.futures.pop(key, None)
-                self.pending.discard(key)
 
     def _extract(self, key, source, duration, hdr=False, color_policy=None):
         executable = tool("ffmpeg")
@@ -141,13 +173,16 @@ class ThumbnailCache(QObject):
             self.memory.popitem(last=False)
 
     def _finished(self, clip_id, key, image):
-        self.pending.discard(key)
         self.futures.pop(key, None)
+        if self.running_hdr == key:
+            self.running_hdr = None
         if image is None:
             self.failed.add(key)
         else:
             self._remember(key, image)
+        self._dispatch()
 
     def close(self):
         self.closed = True
+        self.queued.clear()
         self.executor.shutdown(wait=False, cancel_futures=True)

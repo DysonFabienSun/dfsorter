@@ -1695,6 +1695,8 @@ class Window(QMainWindow):
 
     def begin_page_transition(self, scope="page"):
         self.cancel_prepared_video_reveal()
+        if self.current_panel == "Browse":
+            self.thumbnails.pause()
         active = self.active_player() if self.current_panel in {"Browse", "Editing", "Export"} else None
         active_hdr = bool(
             active and active.loaded_clip and self.media_info.get(
@@ -1753,6 +1755,7 @@ class Window(QMainWindow):
         self.command_cover.hide()
         self.transition_image.hide()
         self.transition_image.clear()
+        self.resume_thumbnails()
 
     def cancel_page_transition(self):
         if not self.transition_pending:
@@ -1767,6 +1770,7 @@ class Window(QMainWindow):
         for player in (self.player, self.export_player, self.browse.player):
             player.video.clearMask()
             player.video.show()
+        self.resume_thumbnails()
 
     def page_needs_cover(self, name, clip=None):
         if name not in {"Browse", "Editing", "Export"}:
@@ -2757,6 +2761,18 @@ class Window(QMainWindow):
         if self.current_panel == "Browse" and hasattr(self, "thumbnail_timer"):
             self.thumbnail_timer.start(30)
 
+    def resume_thumbnails(self):
+        if (self.current_panel != "Browse" or self.thumbnail_timer.isActive()
+                or self.browse.player.awaiting_frame):
+            return
+        item = self.library.currentItem()
+        first = None
+        if item is not None and self.library.visualItemRect(item).intersects(
+            self.library.viewport().rect()
+        ):
+            first = (item.data(CLIP_ROLE) or {}).get("thumbnail_key")
+        self.thumbnails.resume(first)
+
     def request_visible_thumbnails(self):
         if self.current_panel != "Browse" or not self.library.count():
             self.thumbnails.retain(set())
@@ -2768,8 +2784,19 @@ class Window(QMainWindow):
         bottom = self.library.count() - 1 if bottom < 0 else bottom
         screen = max(1, bottom - top + 1)
         clips = {clip["clip_id"]: clip for clip in self.catalogue.clips()}
-        needed = set()
-        for row in range(max(0, top - screen), min(self.library.count(), bottom + screen + 1)):
+        visible = list(range(top, bottom + 1))
+        selected = self.library.currentRow()
+        if selected in visible:
+            visible.remove(selected)
+            visible.insert(0, selected)
+        nearby = [
+            row
+            for distance in range(1, screen + 1)
+            for row in (top - distance, bottom + distance)
+            if 0 <= row < self.library.count()
+        ]
+        needed = []
+        for row in visible + nearby:
             item = self.library.item(row)
             clip = clips.get(item.data(Qt.ItemDataRole.UserRole))
             if clip is None:
@@ -2777,16 +2804,18 @@ class Window(QMainWindow):
             media = self.media_info.get(clip["source_path"])
             duration = media["duration"] if media is not None and "duration" in media.keys() else None
             request_clip = {**clip, "duration": duration, "hdr": media.get("hdr") if media else None}
-            key, image = self.thumbnails.request(request_clip)
+            key, image = self.thumbnails.request(request_clip, dispatch=False)
             self.thumbnail_status(item, key)
             if key is not None:
-                needed.add(key)
+                needed.append(key)
             data = item.data(CLIP_ROLE) or {}
             if data.get("thumbnail_key") != key or data.get("thumbnail") is not image:
                 data["thumbnail_key"] = key
                 data["thumbnail"] = image
                 item.setData(CLIP_ROLE, data)
-        self.thumbnails.retain(needed)
+        self.thumbnails.retain(
+            needed, paused=self.transition_pending or self.browse.player.awaiting_frame
+        )
 
     def thumbnail_status(self, item, key):
         tooltip = item.toolTip().split("\nThumbnail unavailable:", 1)[0]

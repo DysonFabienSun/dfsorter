@@ -146,6 +146,8 @@ class MpvBackend(QObject):
             osc=False,
             idle=True,
             keep_open=True,
+            # Keep the embedded Windows video output across stop/load transitions.
+            force_window=os.name == "nt",
             pause=True,
             load_scripts=False,
             load_auto_profiles=False,
