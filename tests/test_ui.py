@@ -2692,7 +2692,7 @@ def test_home_folder_context_guards(window, application, tmp_path):
 
 
 def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
-    window.toggle_theme()
+    window.set_theme("dark", persist=False)
     first = tmp_path / "MEDAL-EXP"
     second = tmp_path / "NVIDIA"
     first.mkdir()
@@ -2717,7 +2717,10 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         window.media_info[clip["source_path"]] = {"duration": float(index * 10)}
     window.refresh_references()
     window.panel("Home")
+    selected_folder = window.folders.item(0)
+    window.folders.setCurrentItem(selected_folder)
     assert wait_for(application, lambda: window.folder_sizes.get(str(first)) is not None)
+    assert window.folders.currentItem() is selected_folder
 
     assert isinstance(window.folders.itemDelegate(), CaptureFolderDelegate)
     assert window.folder_summary.text() == "2 folders · 4 clips"
@@ -2752,6 +2755,7 @@ def test_home_folder_hierarchy_and_summary(window, application, tmp_path):
         "path": str(first),
         "status": "Enabled",
         "enabled": True,
+        "summary_base": "Automatic · 3 clips",
         "summary": "Automatic · 3 clips · 0.00 GB",
         "summary_new": "",
         "details": "VALORANT: 2 (2 new)   Escape from Tarkov: 1 (1 new)",
@@ -7689,6 +7693,9 @@ def test_auto_scan_defers_busy_and_modal_and_runs_on_focus(window, application, 
     assert not calls
     monkeypatch.setattr(QApplication, "activeModalWidget", lambda: None)
     window.scan_retry_timer.stop()
+    window.eventFilter(application, QEvent(QEvent.Type.ApplicationActivate))
+    assert not window.scan_retry_timer.isActive()
+    window.eventFilter(application, QEvent(QEvent.Type.ApplicationDeactivate))
     window.eventFilter(application, QEvent(QEvent.Type.ApplicationActivate))
     assert window.scan_retry_timer.isActive()
     assert wait_for(application, lambda: bool(calls))

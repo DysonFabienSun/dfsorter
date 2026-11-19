@@ -299,12 +299,14 @@ class Catalogue:
 
     def ingest(self, folder_id, discovered, cancelled=lambda: False):
         removed = []
+        discovered_paths = set()
         with self.connection() as database:
             database.execute("BEGIN IMMEDIATE")
             for item in discovered:
                 if cancelled():
                     raise InterruptedError("Scan cancelled")
                 path = normalized(item["path"])
+                discovered_paths.add(os.path.normcase(path))
                 database.execute(
                     """INSERT OR IGNORE INTO clips
                     (clip_id,source_path,game,catalogue_modified_at) VALUES (?,?,?,?)""",
@@ -324,7 +326,6 @@ class Catalogue:
                 database.execute("INSERT OR IGNORE INTO sources VALUES (?,?)", (folder_id, clip_id))
             if cancelled():
                 raise InterruptedError("Scan cancelled")
-            discovered_paths = {os.path.normcase(normalized(item["path"])) for item in discovered}
             candidates = database.execute(
                 "SELECT clips.* FROM clips JOIN sources USING(clip_id) "
                 "WHERE sources.folder_id=? AND NOT EXISTS "

@@ -577,6 +577,7 @@ class ConfigEditor(QWidget):
         self.last_state = None
         self.revert_armed = False
         self.loading = False
+        self.files_loaded = False
         self.sidebar_header = QWidget(window.left)
         self.sidebar_header.setObjectName("configSidebarHeader")
         header_layout = QVBoxLayout(self.sidebar_header)
@@ -649,7 +650,14 @@ class ConfigEditor(QWidget):
             rows.table.itemSelectionChanged.connect(
                 lambda rows=rows: self.select_table(rows)
             )
-        self.refresh_files()
+
+    def enter_panel(self):
+        if self.files_loaded:
+            self.refresh_named_value_rows()
+        else:
+            self.refresh_files()
+        self.game_search.setFocus()
+        self.game_search.selectAll()
 
     def build_identity(self):
         page = QWidget()
@@ -1108,6 +1116,7 @@ class ConfigEditor(QWidget):
             self.tabs.setEnabled(False)
             self.save_button.setEnabled(False)
             self.revert_button.setEnabled(False)
+        self.files_loaded = True
 
     def set_named_value_row(self, item, game_name):
         count = self.window.named_value_additions[game_name]

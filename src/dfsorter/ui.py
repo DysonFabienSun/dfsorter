@@ -998,6 +998,7 @@ class Window(QMainWindow):
         self.scan_timer = QTimer(self)
         self.scan_timer.setInterval(30_000)
         self.scan_timer.timeout.connect(self.request_auto_scan)
+        self.scan_on_reactivation = False
         self.scan_retry_timer = QTimer(self)
         self.scan_retry_timer.setSingleShot(True)
         self.scan_retry_timer.setInterval(1000)
@@ -2342,9 +2343,7 @@ class Window(QMainWindow):
         elif name == "Export":
             self.export_selection(refresh_library=False)
         elif name == "Config":
-            self.config_editor.refresh_named_value_rows()
-            self.config_editor.game_search.setFocus()
-            self.config_editor.game_search.selectAll()
+            self.config_editor.enter_panel()
         if ready_player is not None and not self.transition_pending:
             ready_player.video_container.layout_surface()
             if not self.media_info.get(ready_player.loaded_clip["source_path"], {}).get("hdr"):
@@ -2406,12 +2405,6 @@ class Window(QMainWindow):
                 game: count for (deleted_folder, game), count in self.deleted_clip_counts.items()
                 if deleted_folder == folder["folder_id"]
             })
-            folder_bytes = self.folder_sizes.get(folder["path"])
-            size_text = (
-                storage_gb(folder_bytes)
-                if folder_bytes is not None
-                else "Size unavailable" if folder["path"] in self.folder_sizes else "Calculating size…"
-            )
             new_bytes = 0
             for clip_id in ids:
                 if clip_id in self.opening_clip_ids:
@@ -2421,7 +2414,6 @@ class Window(QMainWindow):
                     new_bytes += stamp.st_size
             new_size_text = f" (+{storage_gb(new_bytes)} new)" if new_bytes else ""
             linked_clip_count += len(ids)
-            text = f"{folder['path']}\n"
             game_details = [
                 {
                     "text": f"{name}: {count}",
@@ -2440,19 +2432,15 @@ class Window(QMainWindow):
                 if name not in counts:
                     game_details.append({"text": f"{name}: 0", "new": 0, "deleted": count})
                     games += ("   " if games else "") + f"{name}: 0 ({count} deleted)"
-            rule = assignment_summary(folder)
-            text += f"{'Enabled' if folder['enabled'] else 'Paused'} · {rule} · {len(ids)} clips · {size_text}{new_size_text}\n"
-            text += games or "No detected games"
-            item = QListWidgetItem(text)
-            item.setToolTip(text)
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, folder["folder_id"])
-            item.setData(
-                FOLDER_ROLE,
+            self.update_folder_size_row(
+                item,
                 {
                     "path": folder["path"],
                     "status": "Enabled" if folder["enabled"] else "Paused",
                     "enabled": bool(folder["enabled"]),
-                    "summary": f"{rule} · {len(ids)} clips · {size_text}",
+                    "summary_base": f"{assignment_summary(folder)} · {len(ids)} clips",
                     "summary_new": new_size_text,
                     "details": games or "No detected games",
                     "game_details": game_details,
@@ -2495,6 +2483,22 @@ class Window(QMainWindow):
         self.reference_stamp = self.catalogue_stamp()
         self.schedule_preload()
 
+    def update_folder_size_row(self, item, data):
+        path = data["path"]
+        folder_bytes = self.folder_sizes.get(path)
+        if folder_bytes is not None:
+            size_text = storage_gb(folder_bytes)
+        else:
+            size_text = "Size unavailable" if path in self.folder_sizes else "Calculating size…"
+        summary = f"{data['summary_base']} · {size_text}"
+        if summary == data.get("summary"):
+            return
+        data["summary"] = summary
+        text = f"{path}\n{data['status']} · {summary}{data['summary_new']}\n{data['details']}"
+        item.setText(text)
+        item.setToolTip(text)
+        item.setData(FOLDER_ROLE, data)
+
     def request_folder_sizes(self, folders=None, *, force=False):
         folders = folders if folders is not None else self.catalogue.folders()
         paths = tuple(folder["path"] for folder in folders)
@@ -2521,7 +2525,10 @@ class Window(QMainWindow):
             if results:
                 self.folder_sizes = results[0]
                 self.folder_size_updated_at = time.monotonic()
-                self.refresh_references()
+                for row in range(self.folders.count()):
+                    item = self.folders.item(row)
+                    if item.data(Qt.ItemDataRole.UserRole) != "__unlinked__":
+                        self.update_folder_size_row(item, item.data(FOLDER_ROLE))
             if self.folder_size_pending:
                 self.folder_size_pending = False
                 self.request_folder_sizes(force=True)
@@ -4283,7 +4290,10 @@ class Window(QMainWindow):
                 and event.button() == Qt.MouseButton.LeftButton
             ):
                 return True
-        if event.type() == QEvent.Type.ApplicationActivate:
+        if event.type() == QEvent.Type.ApplicationDeactivate:
+            self.scan_on_reactivation = True
+        elif event.type() == QEvent.Type.ApplicationActivate and self.scan_on_reactivation:
+            self.scan_on_reactivation = False
             self.request_auto_scan()
         if (
             event.type() == QEvent.Type.Resize
@@ -5916,7 +5926,6 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DFSorter.Desktop")
     application = QApplication(sys.argv)
     application.setWindowIcon(QIcon(str(ROOT / "resources/mascot/dfsorter.ico")))
-    style_application(application)
     window = Window()
     window.show()
     if config_notices:

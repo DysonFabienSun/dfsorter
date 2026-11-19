@@ -378,8 +378,11 @@ def test_config_game_rows_have_nonoverlapping_vertical_space(editor_window):
 
 
 def test_config_game_navigator_shows_summary_and_invalid_files(editor_window):
-    editor_window.panel("Config")
     editor = editor_window.config_editor
+    assert editor.games.count() == 0
+    assert editor.source is None
+    editor_window.panel("Config")
+    assert editor.source is not None
     apex = next(editor.games.item(index) for index in range(editor.games.count())
                 if editor.games.item(index).data(Qt.ItemDataRole.UserRole) == "Apex Legends.yaml")
     assert apex.text() == "Apex Legends"
