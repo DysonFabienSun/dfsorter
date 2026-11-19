@@ -12,8 +12,17 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 import PySide6
 import pytest
 import yaml
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QSize, Qt
-from PySide6.QtGui import QColor, QCursor, QImage, QKeyEvent, QMouseEvent, QPainter, QTextDocument
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QFontMetrics,
+    QImage,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QTextDocument,
+)
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -35,6 +44,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QStyle,
     QStyleOptionComboBox,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -49,7 +59,7 @@ from dfsorter.command_input import CommandInput, command_expansions
 from dfsorter.deletion import preview
 from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
-from dfsorter.theme import COLORS, FONT_SIZES, symbol_text
+from dfsorter.theme import COLORS, FONT_SIZES, font, symbol_text
 from dfsorter.tips import TipWidget
 from dfsorter.ui import ROOT, FilterMenuButton, Window, style_application
 from dfsorter.unavailable_dialog import UnavailableClipsDialog
@@ -622,6 +632,33 @@ def test_startup_filters_never_show_as_standalone_windows(application, tmp_path,
             close_window(window, application)
     finally:
         application.removeEventFilter(watcher)
+
+
+def test_first_theme_application_sets_library_font(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "settings.yaml").write_text("theme: dark\n", encoding="utf-8")
+    script = """
+import sys
+from pathlib import Path
+from PySide6.QtGui import QFontInfo
+from PySide6.QtWidgets import QApplication
+from dfsorter.ui import Window
+
+app = QApplication([])
+window = Window(Path(sys.argv[1]))
+window.show()
+app.processEvents()
+shared = QFontInfo(app.font())
+library = QFontInfo(window.library.font())
+assert (library.family(), library.pixelSize()) == (shared.family(), shared.pixelSize())
+window.close()
+"""
+    result = subprocess.run(
+        [os.sys.executable, "-c", script, str(tmp_path)],
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_home_game_configs_button_opens_config(window):
@@ -4259,6 +4296,73 @@ def test_hdr_clip_card_label(window, tmp_path, panel):
         pytest.skip("Panel does not list this clip")
     assert item.data(CLIP_ROLE)["hdr"] is True
     assert "captures HDR" in item.toolTip()
+
+
+def painted_clip_card_text(window, item, option):
+    drawn = []
+
+    class TextRecorder(QPainter):
+        def drawText(self, rect, flags, text):
+            drawn.append((rect.width(), text))
+            super().drawText(rect, flags, text)
+
+    image = QImage(option.rect.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    painter = TextRecorder(image)
+    try:
+        window.library.itemDelegate().paint(painter, option, window.library.indexFromItem(item))
+    finally:
+        painter.end()
+    return drawn
+
+
+def test_home_folder_label_stays_visible_when_full_text_fits(window):
+    item = QListWidgetItem()
+    item.setData(CLIP_ROLE, {
+        "compact_card": True,
+        "compact_time": "2y ago",
+        "game": "VALORANT",
+        "folder": "VAL",
+    })
+    window.library.addItem(item)
+    option = QStyleOptionViewItem()
+    option.initFrom(window.library)
+    option.font = window.library.font()
+    option.rect = QRect(0, 0, 413, 60)
+
+    drawn = painted_clip_card_text(window, item, option)
+    assert [text for _width, text in drawn if text] == ["2y ago", "VALORANT", " · VAL"]
+
+
+def test_browse_folder_label_uses_remaining_width_after_capture_time_and_hdr(window):
+    capture = "Now · "
+    item = QListWidgetItem()
+    window.library.addItem(item)
+    option = QStyleOptionViewItem()
+    option.initFrom(window.library)
+    option.font = window.library.font()
+    metrics = QFontMetrics(font("sm", base=option.font))
+    option.rect = QRect(0, 0, 500, 60)
+
+    def paint_folder(folder):
+        item.setData(CLIP_ROLE, {
+            "browse_details": capture + folder,
+            "folder": folder,
+            "hdr": True,
+        })
+        return painted_clip_card_text(window, item, option)
+
+    [(detail_width, _), _] = paint_folder("NVIDIA")
+    needed = metrics.horizontalAdvance(capture + "NVIDIA") + metrics.horizontalAdvance(" HDR")
+    option.rect.setWidth(option.rect.width() - detail_width + needed + 2)
+
+    [(_, text), (hdr_room, hdr)] = paint_folder("NVIDIA")
+    assert text == capture + "NVIDIA"
+    assert hdr == " HDR" and hdr_room >= metrics.horizontalAdvance(hdr)
+
+    [(_, text), (hdr_room, hdr)] = paint_folder("NVIDIA capture archive")
+    assert text.startswith(capture + "N")
+    assert "…" in text and text.endswith("e")
+    assert hdr == " HDR" and hdr_room >= metrics.horizontalAdvance(hdr)
 
 
 def test_cards_and_verdict_state(window, application, tmp_path):

@@ -1044,53 +1044,62 @@ class ClipDelegate(QStyledItemDelegate):
         painter.setFont(detail_font)
         verdict = data.get("triage")
         warning = "  Unavailable" if data.get("unavailable") else ""
-        rating = data.get("rating")
-        rating_text = f"R{rating}" if rating is not None else ""
-        rating_font = font("xs" if compact_card else "sm", "bold", base=option.font)
-        rating_metrics = QFontMetrics(rating_font)
-        separator = " · " if rating is not None else ""
-        folder_separator = " · "
         full_folder = data.get("folder") or "Unlinked"
-        folder = full_folder
         hdr_label = " HDR" if data.get("hdr") else ""
         hdr_width = detail_metrics.horizontalAdvance(hdr_label)
-        fixed_width = (
-            detail_metrics.horizontalAdvance(separator)
-            + rating_metrics.horizontalAdvance(rating_text)
-            + detail_metrics.horizontalAdvance(folder_separator + warning)
-            + (13 if warning else 0)
-            + hdr_width
-        )
-        flexible_width = max(0, detail.width() - fixed_width)
-        folder = detail_metrics.elidedText(
-            folder,
-            Qt.TextElideMode.ElideMiddle,
-            min(detail_metrics.horizontalAdvance(folder), flexible_width // 2),
-        )
-        folder_width = detail_metrics.horizontalAdvance(folder)
-        reserved = (
-            fixed_width + folder_width
-        )
-        game = detail_metrics.elidedText(
-            data.get("game") or "Unassigned",
-            Qt.TextElideMode.ElideRight,
-            max(0, detail.width() - reserved),
-        )
-        text = game + separator + rating_text + folder_separator + folder
-        if data.get("browse_details") is not None:
+        warning_icon_width = 13 if warning else 0
+        painter.setClipRect(card)
+        painter.setPen(QColor(COLORS["text_secondary"]))
+        if browse:
             capture = data["browse_details"].removesuffix(full_folder)
             if capture == data["browse_details"]:
                 capture = ""
-            available_width = max(0, detail.width() - hdr_width - detail_metrics.horizontalAdvance(warning) - (13 if warning else 0))
-            capture = detail_metrics.elidedText(capture, Qt.TextElideMode.ElideRight, available_width // 2)
-            folder = detail_metrics.elidedText(folder, Qt.TextElideMode.ElideMiddle, max(0, available_width - detail_metrics.horizontalAdvance(capture)))
+            available_width = max(
+                0, detail.width() - hdr_width - detail_metrics.horizontalAdvance(warning)
+                - warning_icon_width,
+            )
+            capture_width = max(
+                available_width // 2, available_width - detail_metrics.horizontalAdvance(full_folder)
+            )
+            capture = detail_metrics.elidedText(capture, Qt.TextElideMode.ElideRight, capture_width)
+            folder = detail_metrics.elidedText(
+                full_folder,
+                Qt.TextElideMode.ElideMiddle,
+                max(0, available_width - detail_metrics.horizontalAdvance(capture)),
+            )
             text = capture + folder
-        painter.setClipRect(card)
-        painter.setPen(QColor(COLORS["text_secondary"]))
-        if data.get("browse_details") is not None:
             painter.drawText(detail, Qt.AlignmentFlag.AlignVCenter, text)
             warning_offset = detail_metrics.horizontalAdvance(text)
         else:
+            rating = data.get("rating")
+            rating_text = f"R{rating}" if rating is not None else ""
+            rating_font = font("xs" if compact_card else "sm", "bold", base=option.font)
+            rating_metrics = QFontMetrics(rating_font)
+            separator = " · " if rating is not None else ""
+            folder_separator = " · "
+            fixed_width = (
+                detail_metrics.horizontalAdvance(separator)
+                + rating_metrics.horizontalAdvance(rating_text)
+                + detail_metrics.horizontalAdvance(folder_separator + warning)
+                + warning_icon_width
+                + hdr_width
+            )
+            flexible_width = max(0, detail.width() - fixed_width)
+            game_name = data.get("game") or "Unassigned"
+            folder_budget = max(
+                flexible_width // 2, flexible_width - detail_metrics.horizontalAdvance(game_name)
+            )
+            folder = detail_metrics.elidedText(
+                full_folder,
+                Qt.TextElideMode.ElideMiddle,
+                folder_budget,
+            )
+            folder_width = detail_metrics.horizontalAdvance(folder)
+            game = detail_metrics.elidedText(
+                game_name,
+                Qt.TextElideMode.ElideRight,
+                max(0, detail.width() - fixed_width - folder_width),
+            )
             game_width = detail_metrics.horizontalAdvance(game)
             separator_width = detail_metrics.horizontalAdvance(separator)
             rating_width = rating_metrics.horizontalAdvance(rating_text)

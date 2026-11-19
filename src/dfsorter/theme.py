@@ -546,7 +546,6 @@ def apply_theme(application, mode="light"):
     families.extend(name for name in chinese_families if name in available)
     application_font = QFont()
     application_font.setFamilies(families)
-    application.setFont(font(base=application_font))
     palette = QPalette()
     for name, token in {
         "Window": "surface_canvas",
@@ -572,6 +571,8 @@ def apply_theme(application, mode="light"):
         )
     application.setPalette(palette)
     application.setStyleSheet(stylesheet())
+    # The first application stylesheet can install a native font for item views.
+    application.setFont(font(base=application_font))
     return ACTIVE_SCHEME
 
 
