@@ -51,7 +51,7 @@ from dfsorter.deletion_dialog import DeletionDialog
 from dfsorter.settings_dialog import SettingsDialog
 from dfsorter.theme import COLORS, FONT_SIZES, symbol_text
 from dfsorter.tips import TipWidget
-from dfsorter.ui import ROOT, Window, style_application
+from dfsorter.ui import ROOT, FilterMenuButton, Window, style_application
 from dfsorter.unavailable_dialog import UnavailableClipsDialog
 from dfsorter.update_ui import UpdateController
 from dfsorter.widgets import CLIP_ROLE, FOLDER_ROLE, CaptureFolderDelegate, VerdictBar, icon
@@ -586,6 +586,42 @@ def test_status_bar_exists_before_deferred_startup_work(window):
     assert window.status_bar is window.statusBar()
     assert not window.status_bar.isHidden()
     assert window.status_bar.currentMessage() == ""
+
+
+def test_startup_filters_never_show_as_standalone_windows(application, tmp_path, close_window):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "settings.yaml").write_text("theme: dark\n", encoding="utf-8")
+    standalone_filters = []
+
+    class WatchFilterShows(QObject):
+        def eventFilter(self, watched, event):
+            if (
+                event.type() == QEvent.Type.Show
+                and isinstance(watched, FilterMenuButton)
+                and watched.isWindow()
+            ):
+                standalone_filters.append(watched.accessibleName())
+            return False
+
+    watcher = WatchFilterShows()
+    application.installEventFilter(watcher)
+    try:
+        window = Window(tmp_path)
+        try:
+            window.show()
+            application.processEvents()
+            assert not standalone_filters
+            assert all(control.isVisible() for control in window.shared_filter_buttons)
+            assert all(not control.isVisible() for control in window.browse_filter_buttons)
+            window.panel("Browse")
+            application.processEvents()
+            assert all(not control.isVisible() for control in window.shared_filter_buttons)
+            assert all(control.isVisible() for control in window.browse_filter_buttons)
+        finally:
+            close_window(window, application)
+    finally:
+        application.removeEventFilter(watcher)
 
 
 def test_home_game_configs_button_opens_config(window):

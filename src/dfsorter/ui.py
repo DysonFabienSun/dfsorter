@@ -744,7 +744,6 @@ class Window(QMainWindow):
         for controls in (self.shared_filter_buttons, self.browse_filter_buttons):
             for control in controls:
                 control.selectionChanged.connect(self.refresh_library_from_controls)
-                control.setVisible(controls is self.shared_filter_buttons)
                 filter_row.addWidget(control)
         filter_row.addStretch()
         self.unavailable_toggle = tool(
